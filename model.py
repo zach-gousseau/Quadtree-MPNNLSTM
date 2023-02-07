@@ -15,7 +15,7 @@ class MPNNLSTM(nn.Module):
 
         self.convolution1 = GCNConv(input_features, hidden_size)
         self.convolution2 = GCNConv(hidden_size, hidden_size)
-        # self.convolution3 = GCNConv(hidden_size, hidden_size)
+        self.convolution3 = GCNConv(hidden_size, hidden_size)
         # self.convolution4 = GCNConv(hidden_size, hidden_size)
         
         # self.bn1 = nn.BatchNorm1d(hidden_size, track_running_stats=False)
@@ -25,13 +25,14 @@ class MPNNLSTM(nn.Module):
 
         self.bn1 = nn.LayerNorm(hidden_size)
         self.bn2 = nn.LayerNorm(hidden_size)
+        self.bn3 = nn.LayerNorm(hidden_size)
 
         self.recurrents = nn.LSTM(hidden_size, hidden_size, 2)
 
-        # self.lin1 = nn.Linear(hidden_size+input_timesteps, hidden_size)
-        # self.lin2 = nn.Linear(hidden_size, 1)
+        self.lin1 = nn.Linear(hidden_size+input_timesteps, hidden_size)
+        self.lin2 = nn.Linear(hidden_size, 1)
 
-        self.lin1 = nn.Linear(hidden_size+input_timesteps, 1)
+        # self.lin1 = nn.Linear(hidden_size+input_timesteps, 1)
 
 
     def forward(self, X, edge_index, edge_weight=None):
@@ -47,9 +48,9 @@ class MPNNLSTM(nn.Module):
             H = self.bn2(H)
             H = F.dropout(H, p=self.dropout, training=self.training)
 
-            # H = F.relu(self.convolution3(H, edge_index, edge_weight=edge_weight))
-            # H = self.bn3(H)
-            # H = F.dropout(H, p=self.dropout, training=self.training)
+            H = F.relu(self.convolution3(H, edge_index, edge_weight=edge_weight))
+            H = self.bn3(H)
+            H = F.dropout(H, p=self.dropout, training=self.training)
 
             # H = F.relu(self.convolution4(H, edge_index, edge_weight=edge_weight))
             # H = self.bn4(H)
@@ -68,8 +69,8 @@ class MPNNLSTM(nn.Module):
 
         # FC for output
         H = self.lin1(H)
-        # H = F.relu(H)
-        # H = self.lin2(H)
+        H = F.relu(H)
+        H = self.lin2(H)
         # H = F.relu(H)
         
         # Dropout and sigmoid out
