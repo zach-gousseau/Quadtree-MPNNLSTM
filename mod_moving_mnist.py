@@ -29,6 +29,8 @@ class ModMovingMNIST:
         to desired size
         """
         img = np.array(load_image(choice(self.mnist_files)))
+        # img = np.array(load_image(self.mnist_files[1]))
+        # img = np.ones(size) * 255
         img = img / 255
         digit = self.resize(img, size=size)
         return digit
@@ -43,6 +45,9 @@ class ModMovingMNIST:
 
         # Object moves one pixel in both x and y 
         v_x, v_y = choice([-1, 1]), choice([-1, 1])
+
+        # x, y = 5, 5
+        # v_x, v_y = 1, 1
 
         out_x, out_y = [], []
         
@@ -103,23 +108,18 @@ class ModMovingMNIST:
                 
         return distance_array
 
-    def create_dataset(self, num_samples, input_timesteps, n_digits=1):
+    def create_dataset(self, num_samples, input_timesteps, output_timesteps=1, n_digits=1, gap=0):
         """Create a dataset of arrays with channels (pixel_intensity, x_position, y_position)"""
-        
-        # Position encoding
-        # ii = np.tile(np.array(range(self.canvas_size[0])), (self.canvas_size[1], 1))
-        # jj = np.tile(np.array(range(self.canvas_size[0])), (self.canvas_size[1], 1)).T
 
         x = []
         y = []
         for _ in range(num_samples):
-            imgs = self.generate_moving_digits(input_timesteps+1, n_digits)
-            # imgs = np.array([[np.array(imgs[i]) + self.noise(self.canvas_size, std=self.pixel_noise), ii, jj] for i in range(len(imgs))])
+            imgs = self.generate_moving_digits(input_timesteps+output_timesteps+gap, n_digits)
             white_noise = self.noise((len(imgs), *self.canvas_size), std=self.pixel_noise)
             imgs = imgs + white_noise
             imgs = np.swapaxes(imgs, 1, -1)
-            x.append(imgs[:-1])
-            y.append(imgs[-1:])
+            x.append(imgs[:input_timesteps])
+            y.append(imgs[-output_timesteps:])
 
         x, y = np.array(x), np.array(y)
         x, y = np.expand_dims(x, -1), np.expand_dims(y, -1)
