@@ -8,7 +8,7 @@ from torch_geometric.nn.inits import glorot, zeros
 
 class MPNNLSTM(nn.Module):
 
-    def __init__(self, hidden_size, dropout, input_timesteps=3, input_features=4):
+    def __init__(self, hidden_size, dropout, input_timesteps=3, input_features=4, output_features=1):
         super(MPNNLSTM, self).__init__()
         self.dropout = dropout
         self.input_timesteps = input_timesteps
@@ -30,7 +30,7 @@ class MPNNLSTM(nn.Module):
         self.recurrents = nn.LSTM(hidden_size, hidden_size, 2)
 
         self.lin1 = nn.Linear(hidden_size+input_timesteps, hidden_size)
-        self.lin2 = nn.Linear(hidden_size, 1)
+        self.lin2 = nn.Linear(hidden_size, output_features)
 
         # self.lin1 = nn.Linear(hidden_size+input_timesteps, 1)
 
@@ -80,7 +80,7 @@ class MPNNLSTM(nn.Module):
         return H
 
 class MPNNLSTMI(nn.Module):
-    def __init__(self, hidden_size, dropout, input_timesteps=3, input_features=4, n_layers=2):
+    def __init__(self, hidden_size, dropout, input_timesteps=3, input_features=4, n_layers=2, output_features=1):
         super(MPNNLSTMI, self).__init__()
         # self.recurrent_1 = GConvLSTM(input_features, hidden_size)
         # self.recurrent_2 = GConvLSTM(hidden_size, hidden_size)
@@ -93,7 +93,7 @@ class MPNNLSTMI(nn.Module):
         # self.bn4 = nn.BatchNorm1d(hidden_size, track_running_stats=False)
 
         self.lin1 = nn.Linear(hidden_size, hidden_size)
-        self.lin2 = nn.Linear(hidden_size, 1)
+        self.lin2 = nn.Linear(hidden_size, output_features)
 
         # self.lin1 = nn.Linear(hidden_size, 1)
 

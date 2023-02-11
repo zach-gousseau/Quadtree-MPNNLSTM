@@ -1,6 +1,10 @@
 # User
 __pycache__/
 results/
+data/
+scrap.ipynb
+viz.ipynb
+ice_results/
 .DS_Store
 
 # Byte-compiled / optimized / DLL files
