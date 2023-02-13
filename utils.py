@@ -11,8 +11,11 @@ def get_n_params(model):
     return pp
 
 
-def add_positional_encoding(x, num_timesteps):
-    image_shape = x[0].shape[1:]
+def add_positional_encoding(x):
+    """(n_samples, n_timesteps, w, h, c)"""
+    n_samples, n_timesteps, w, h, c = x.shape
+
+    image_shape = (w, h, c)
 
     # Position encoding
     ii = np.tile(np.array(range(image_shape[1])), (image_shape[0], 1))
@@ -22,35 +25,9 @@ def add_positional_encoding(x, num_timesteps):
     ii = ii / image_shape[1]
     jj = jj / image_shape[0]
 
-    # ii = ii +0.1
-    # jj = jj +0.1
+    pos_encoding = np.moveaxis(np.array([[ii, jj]]*n_timesteps), 1, -1)
 
-    # print(jj)
-    # print('allo')
-
-    # ii = ii / image_shape[0]
-    # jj = jj / image_shape[0]
-
-    # print(jj)
-    # print('voila')
-
-    pos_encoding = np.moveaxis(np.array([[ii, jj]]*num_timesteps), 1, -1)
-
-    # print(pos_encoding)
-    # fds
-
-    # print(x.shape)
-    # print(np.array([pos_encoding]*len(x)).shape)
-    
-    # print(x.shape)
     x = np.concatenate((x, np.array([pos_encoding]*len(x))), axis=-1)
-    # print('par ici')
-    # print(x[0, 0, :4, :4, 1])
-    # import matplotlib.pyplot as plt
-    # plt.imshow(x[0, 0, :, :, 0])
-    # plt.colorbar()
-    # plt.show()
-    # ds
     return x
 
 

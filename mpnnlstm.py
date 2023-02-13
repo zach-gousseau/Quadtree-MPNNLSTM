@@ -51,7 +51,7 @@ class NextFramePredictor():
     def test_threshold(self, x, thresh, frame_index=0, mask=None):
         image_shape = x[0].shape[1:-1]
 
-        x_with_pos_encoding = add_positional_encoding(x, self.input_timesteps)
+        x_with_pos_encoding = add_positional_encoding(x)
         frames = x_with_pos_encoding[frame_index]
 
         graph = image_to_graph(frames, thresh=thresh, mask=mask)
@@ -109,7 +109,7 @@ class NextFramePredictor():
             for i in tqdm(range(len(x)), leave=False):
 
                 x_batch_img = x[[i]]  # 2D images (num_timesteps, x, y)
-                x_batch_img = add_positional_encoding(x_batch_img, self.input_timesteps).squeeze(0)
+                x_batch_img = add_positional_encoding(x_batch_img).squeeze(0)
 
 
                 x_graph = image_to_graph(x_batch_img, thresh=self.thresh, mask=mask)
@@ -146,7 +146,7 @@ class NextFramePredictor():
                         y_hat = np.expand_dims(y_hat.detach().numpy(), 0)
                         y_hat_img = unflatten(y_hat, x_graph['graph_nodes'], x_graph['mappings'], image_shape=image_shape)
                         y_hat_img = np.expand_dims(y_hat_img, (0))
-                        y_hat_img = add_positional_encoding(y_hat_img, num_timesteps=1)
+                        y_hat_img = add_positional_encoding(y_hat_img)
                         x_batch_img = np.concatenate([x_batch_img[1:], y_hat_img[0]], 0)
 
                         # Generate new graph using the new X
@@ -166,7 +166,7 @@ class NextFramePredictor():
             for i in range(len(x_test)):
 
                 x_batch_test_img = x_test[[i]]  # 2D images (num_timesteps, x, y)
-                x_batch_test_img = add_positional_encoding(x_batch_test_img, self.input_timesteps).squeeze(0)
+                x_batch_test_img = add_positional_encoding(x_batch_test_img).squeeze(0)
 
                 x_test_graph = image_to_graph(x_batch_test_img, thresh=self.thresh, mask=mask)
 
@@ -194,7 +194,7 @@ class NextFramePredictor():
                         y_hat = np.expand_dims(y_hat.detach().numpy(), 0)
                         y_hat_img = unflatten(y_hat, x_test_graph['graph_nodes'], x_test_graph['mappings'], image_shape=image_shape)
                         y_hat_img = np.expand_dims(y_hat_img, (0))
-                        y_hat_img = add_positional_encoding(y_hat_img, num_timesteps=1)
+                        y_hat_img = add_positional_encoding(y_hat_img)
                         x_batch_img = np.concatenate([x_batch_img[1:], y_hat_img[0]], 0)
                         # x_batch_img = np.concatenate([x_batch_img[1:], y_hat_img], 0)
 
@@ -239,7 +239,7 @@ class NextFramePredictor():
         
         image_shape = x[0].shape[1:-1]
 
-        x = add_positional_encoding(x, self.input_timesteps)
+        x = add_positional_encoding(x)
 
         y_pred = []
         for i in range(len(x)):
@@ -268,7 +268,7 @@ class NextFramePredictor():
                 y_hat_img = unflatten(y_hat, x_graph['graph_nodes'], x_graph['mappings'], image_shape=image_shape)
                 y_hat_img = np.expand_dims(y_hat_img, (0))
                 
-                y_hat_img = add_positional_encoding(y_hat_img, num_timesteps=1)
+                y_hat_img = add_positional_encoding(y_hat_img)
 
                 x_batch_img = np.concatenate([x_batch_img[1:], y_hat_img[0]], 0)
 
