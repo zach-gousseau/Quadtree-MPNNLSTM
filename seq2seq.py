@@ -208,8 +208,8 @@ class Seq2Seq(torch.nn.Module):
                 # Then we convert it back to a graph representation where the graph is determined by
                 # its own values (rather than the one created by the input images / previous step)
                 y_hat_img = np.expand_dims(y_hat_img, (0))
-                y_hat_img = add_positional_encoding(y_hat_img, num_timesteps=1)  # Add pos. embedding
-                graph_structure = image_to_graph(y_hat_img[0], num_features=3, thresh=thresh)  # Generate new graph using the new X
+                y_hat_img = add_positional_encoding(y_hat_img)  # Add pos. embedding
+                graph_structure = image_to_graph(y_hat_img[0], thresh=thresh)  # Generate new graph using the new X
 
                 device = hidden.device
 
@@ -224,7 +224,7 @@ class Seq2Seq(torch.nn.Module):
                 if teacher_force:
                     input_img = y[t]
                     input_img = np.expand_dims(input_img, (0, 1))
-                    input_img = add_positional_encoding(input_img, num_timesteps=1)
+                    input_img = add_positional_encoding(input_img)
                     curr_graph_structure = image_to_graph(input_img[0], num_features=3, thresh=thresh)
 
                     skip = torch.from_numpy(curr_graph_structure['data'][0, :, :1]).float()
@@ -235,10 +235,10 @@ class Seq2Seq(torch.nn.Module):
 
                 hidden_img = np.swapaxes(hidden_img, 0, -1)
 
-                hidden, _, _ = flatten(hidden_img, curr_graph_structure['labels'], num_features=self.n_layers)
+                hidden, _ = flatten(hidden_img, curr_graph_structure['labels'])
 
                 cell_img = np.swapaxes(cell_img, 0, -1)
-                cell, _, _ = flatten(cell_img, curr_graph_structure['labels'], num_features=self.n_layers)
+                cell, _ = flatten(cell_img, curr_graph_structure['labels'])
 
                 hidden, cell = np.swapaxes(hidden, 0, -1), np.swapaxes(cell, 0, -1)
 
@@ -258,8 +258,8 @@ class Seq2Seq(torch.nn.Module):
                 if teacher_force:
                     input_img = y[t]
                     input_img = np.expand_dims(input_img, (0, 1))
-                    input_img = add_positional_encoding(input_img, num_timesteps=1)
-                    input_x, _, _ = flatten(input_img, curr_graph_structure['labels'], num_features=3)
+                    input_img = add_positional_encoding(input_img).squeeze(0)
+                    input_x, _ = flatten(input_img, curr_graph_structure['labels'])
 
                     curr_graph.x = torch.cat((curr_graph.x[..., 1:], torch.from_numpy(input_x[..., [0]])), -1).float()
 
