@@ -18,38 +18,30 @@ from graph_functions import image_to_graph, flatten, create_graph_structure, unf
 from model import MPNNLSTMI, MPNNLSTM
 from utils import get_n_params, add_positional_encoding
 
+from abc import ABC, abstractmethod
 
-class NextFramePredictor():
+
+class NextFramePredictor(ABC):
     def __init__(self, 
-                 experiment_name='reduced', 
+                 model,
+                 experiment_name='experiment', 
                  decompose=True, 
                  input_features=1,
-                 multi_step_loss=1, 
-                 integrated_space_time=True,
-                 device=None,
-                 **model_kwargs):
+                 device=None):
 
         self.experiment_name = experiment_name
-        self.multi_step_loss = multi_step_loss
 
         # Set the threshold to negative infinity if we want to keep the full basis (i.e. split all the way down)
         self.thresh = None if decompose else -np.inf
         self.decompose = decompose
 
-        # Add 3 to the number of input features since we add positional encoding (x, y) and node size (s)
-        if integrated_space_time:
-            self.model = MPNNLSTMI(input_features=input_features+3, output_features=input_features, **model_kwargs).float()
-        else:
-            self.model = MPNNLSTM(input_features=input_features+3, output_features=input_features, **model_kwargs).float()
-
-        self.input_features = input_features  # Number of user features 
-
+        self.model = model
+        self.input_features = input_features 
         self.device = device
 
-        self.input_timesteps = self.model.input_timesteps
-
     def test_threshold(self, x, thresh, frame_index=0, mask=None):
-        image_shape = x[0].shape[1:-1]
+        n_sample, input_timesteps, w, h, c = x.shape
+        image_shape = (w, h)
 
         x_with_pos_encoding = add_positional_encoding(x)
         frames = x_with_pos_encoding[frame_index]
@@ -58,9 +50,9 @@ class NextFramePredictor():
         img_reconstructed = unflatten(graph['data'][..., [0]], graph['graph_nodes'], graph['mappings'], image_shape=image_shape)
 
         num_nodes = len(np.unique(graph['labels']))
-        fig, axs = plt.subplots(1, self.input_timesteps, figsize=(5*self.input_timesteps, 4))
+        fig, axs = plt.subplots(1, input_timesteps, figsize=(5*input_timesteps, 4))
 
-        for i in range(self.input_timesteps):
+        for i in range(input_timesteps):
             axs[i].imshow(img_reconstructed[i, ..., 0])
             plot_contours(axs[i], graph['labels'])
 
@@ -73,6 +65,53 @@ class NextFramePredictor():
 
     def get_n_params(self):
         return get_n_params(self.model)
+
+    def save(self, directory):
+        torch.save(self.model.state_dict(), os.path.join(directory, f'{self.experiment_name}.pth'))
+
+    def load(self, path):
+        self.model.load_state_dict(torch.load(path))
+
+    @abstractmethod
+    def train(
+        self,
+        x,
+        y,
+        x_test,
+        y_test,
+        n_epochs=200,
+        lr=0.01,
+        lr_decay=0.95,
+        mask=None
+        ):
+        pass
+
+    @abstractmethod
+    def predict(self, x, mask=None, rollout=None):
+        pass
+
+    @abstractmethod
+    def score(self, x, y, rollout=None):
+        pass
+
+
+class NextFramePredictorAR(NextFramePredictor):
+    def __init__(self, 
+                 model,
+                 experiment_name='experiment', 
+                 decompose=True, 
+                 input_features=1,
+                 multi_step_loss=1, 
+                 device=None):
+        super().__init__(
+                 model,
+                 experiment_name=experiment_name, 
+                 decompose=decompose, 
+                 input_features=input_features,
+                 device=device)
+
+        self.multi_step_loss = multi_step_loss
+
 
     def train(
         self,
@@ -228,13 +267,7 @@ class NextFramePredictor():
 
         })
 
-    def save(self, directory):
-        torch.save(self.model.state_dict(), os.path.join(directory, f'{self.experiment_name}.pth'))
-
-    def load(self, path):
-        self.model.load_state_dict(torch.load(path))
-
-    def predict(self, x, autoregressive_steps=1, mask=None):
+    def predict(self, x, rollout=1, mask=None):
         self.model.eval()
         
         image_shape = x[0].shape[1:-1]
@@ -254,7 +287,7 @@ class NextFramePredictor():
             x_batch = x_graph['data']  # Image in graph format
             
             y_hat_batch = []
-            for j in range(autoregressive_steps):
+            for j in range(rollout):
                 graph.x = torch.from_numpy(x_batch).float()
                 # graph.y = torch.from_numpy(y_batch).float()
 
@@ -286,12 +319,208 @@ class NextFramePredictor():
         return np.array(y_pred)
 
 
-    def score(self, x, y, autoregressive_steps=1):
+    def score(self, x, y, rollout=1):
 
         # metric = torch.nn.MSELoss()
         metric = torch.nn.BCELoss()
 
-        y_hat = self.predict(x, autoregressive_steps=autoregressive_steps)
+        y_hat = self.predict(x, rollout=rollout)
 
-        score = metric(torch.Tensor(y_hat), torch.Tensor(y))  # These indices are weird. Look into it. 
+        score = metric(torch.Tensor(y_hat), torch.Tensor(y))
         return score
+
+
+class NextFramePredictorS2S(NextFramePredictor):
+    def __init__(self,
+                 model,
+                 experiment_name='experiment', 
+                 decompose=True, 
+                 input_features=1,
+                 output_timesteps=3,
+                 device=None,
+                 **model_kwargs):
+        
+        super().__init__(
+                 model=model,
+                 experiment_name=experiment_name, 
+                 decompose=decompose, 
+                 input_features=input_features,
+                 device=device,
+                 **model_kwargs)
+        
+        self.output_timesteps = output_timesteps
+
+    def train(
+        self,
+        x,
+        y,
+        x_test,
+        y_test,
+        n_epochs=200,
+        lr=0.01,
+        lr_decay=0.95,
+        mask=None
+        ):
+
+        if self.thresh is None:
+            raise ValueError('Please set the threshold using set_thresh(thresh)!')
+
+        image_shape = x[0].shape[1:-1]
+
+        x = add_positional_encoding(x)
+        x_test = add_positional_encoding(x_test)
+
+        # Add 2 to the number of features since we add positional encoding (x, y)
+        # x_graph = [image_to_graph(img, num_features=self.input_features+2, thresh=self.thresh) for img in x]
+        # x_test_graph = [image_to_graph(img, num_features=self.input_features+2, thresh=self.thresh) for img in x_test]
+            
+        self.model.to(self.device)
+        self.model.train()
+
+        # loss_func = torch.nn.MSELoss()
+        loss_func = torch.nn.BCELoss()
+        optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9)
+        scheduler = StepLR(optimizer, step_size=10, gamma=lr_decay)
+
+        test_loss = []
+        train_loss = []
+
+        st = time.time()
+        for epoch in range(n_epochs): 
+            running_loss = 0
+            step = 0
+            for i in tqdm(range(len(x)), leave=False):
+
+                x_batch_img = x[i]  # 2D images (num_timesteps, x, y)
+                y_batch_img = y[i]
+
+                x_graph = image_to_graph(x_batch_img, thresh=self.thresh, mask=mask)
+
+                # Create a PyG graph object
+                graph = create_graph_structure(x_graph['graph_nodes'], x_graph['distances'])
+
+                x_batch = x_graph['data']  # Image in graph format
+                # y_batch, _, _ = flatten(y_batch_img, x_graph['labels'], num_features=1)
+                
+                # Turn target frame into graph using the graph structure from the input frames
+                # y_batch, _, _ = flatten(y[i], x_graph['labels'], num_features=1)
+
+
+                graph.x = torch.from_numpy(x_batch).float()
+                graph.y = torch.from_numpy(y_batch_img).float()
+
+                graph.to(self.device)
+
+                optimizer.zero_grad()
+                
+                skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
+
+                y_hat, y_hat_graph = self.model(graph.x, graph.y, x_graph, skip, image_shape, thresh=self.thresh, teacher_forcing_ratio=0.5, mask=mask)
+                
+                y_true = [torch.Tensor(flatten(np.expand_dims(y_batch_img[i], 0), y_hat_graph[i]['labels'])[0])[0] for i in range(self.output_timesteps)]
+                
+                y_hat = torch.cat(y_hat, dim=0)
+                y_true = torch.cat(y_true, dim=0)
+
+                loss = loss_func(y_hat, y_true)
+
+                loss.backward()
+                optimizer.step()
+
+                step += 1
+                running_loss += loss
+
+
+            running_loss_test = 0
+            step_test = 0
+            for i in range(len(x_test)):
+
+                x_batch_test_img = x_test[i]  # 2D images (num_timesteps, x, y)
+                y_batch_img = y_test[i]
+
+                x_test_graph = image_to_graph(x_batch_test_img, thresh=self.thresh, mask=mask)
+
+                graph = create_graph_structure(x_test_graph['graph_nodes'], x_test_graph['distances'])
+
+                x_batch = x_test_graph['data']
+                
+                
+                graph.x = torch.from_numpy(x_batch).float()
+                graph.y = torch.from_numpy(y_batch_img).float()
+
+                graph.to(self.device)
+
+                skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
+                
+                y_hat, y_hat_graph = self.model(graph.x, graph.y, x_test_graph, skip, image_shape, thresh=self.thresh, teacher_forcing_ratio=0.5, mask=mask)
+                
+                y_true = [torch.Tensor(flatten(np.expand_dims(y_batch_img[i], 0), y_hat_graph[i]['labels'])[0])[0] for i in range(self.output_timesteps)]
+                
+                y_hat = torch.cat(y_hat, dim=0)
+                y_true = torch.cat(y_true, dim=0)
+                
+                loss = loss_func(y_hat, y_true)
+
+                step_test += 1
+                running_loss_test += loss
+
+
+            running_loss = running_loss / (step + 1)
+            running_loss_test = running_loss_test / (step_test + 1)
+
+            scheduler.step()
+
+            train_loss.append(running_loss.item())
+            test_loss.append(running_loss_test.item())
+            
+            print(f"Epoch {epoch} train MSE: {running_loss.item():.4f}, "+ \
+                f"test MSE: {running_loss_test.item():.4f}, lr: {scheduler.get_last_lr()[0]:.4f}, time_per_epoch: {(time.time() - st) / (epoch+1):.1f}")
+        
+        print(f'Finished in {(time.time() - st)/60} minutes')
+
+        self.loss = pd.DataFrame({
+            'train_loss': train_loss,
+            'test_loss': test_loss,
+
+        })
+        
+    def predict(self, x, mask=None):
+
+        if self.thresh is None:
+            raise ValueError('Please set the threshold using set_thresh(thresh)!')
+
+        image_shape = x[0].shape[1:-1]
+
+        x = add_positional_encoding(x)
+            
+        self.model.to(self.device)
+        
+        y_pred = []
+
+
+        for i in tqdm(range(len(x)), leave=False):
+
+            x_batch_img = x[i]  # 2D images (num_timesteps, x, y)
+
+            x_graph = image_to_graph(x_batch_img, thresh=self.thresh, mask=mask)
+
+            # Create a PyG graph object
+            graph = create_graph_structure(x_graph['graph_nodes'], x_graph['distances'])
+
+            x_batch = x_graph['data']  # Image in graph format
+
+            graph.x = torch.from_numpy(x_batch).float()
+
+            graph.to(self.device)
+            
+            skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
+
+            y_hat, y_hat_graph = self.model(graph.x, None, x_graph, skip, image_shape, thresh=self.thresh, teacher_forcing_ratio=0)
+            y_hat_img = [unflatten(np.expand_dims(y_hat[i].detach(), 0), y_hat_graph[i]['graph_nodes'], y_hat_graph[i]['mappings'], image_shape=image_shape).squeeze(0) for i in range(self.output_timesteps)]
+            
+            y_pred.append(y_hat_img)
+            
+        return np.array(y_pred)
+
+    def score(self, x, y, rollout=None):
+        pass
