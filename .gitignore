@@ -1,7 +1,9 @@
 # User
 __pycache__/
 results/
+ice_results*/
 data/
+pseudocode
 scrap.ipynb
 viz.ipynb
 ice_results/

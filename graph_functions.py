@@ -158,7 +158,7 @@ def quadtree_decompose(img, padding=2, thresh=0.05, max_size=8, mask=None):
 
 
 
-def get_adj(labels, xx=None, yy=None, calculate_distances=True):
+def get_adj(labels, xx=None, yy=None, calculate_distances=True, edges_at_corners=False):
     """Get the adjacency matrix for a given label matrix (this could be more efficient)"""
     w, h = labels.shape
     adj_dict = {}
@@ -188,6 +188,16 @@ def get_adj(labels, xx=None, yy=None, calculate_distances=True):
                 neighbors.add(labels[i][j-1])
             if j != h-1:
                 neighbors.add(labels[i][j+1])
+            
+            if edges_at_corners:
+                if (i != 0) and (j != 0):
+                    neighbors.add(labels[i-1][j-1])
+                if (i != w-1) and (j != 0):
+                    neighbors.add(labels[i+1][j-1])
+                if (i != 0) and (j != h-1):
+                    neighbors.add(labels[i-1][j+1])
+                if (i != w-1) and (j != h-1):
+                    neighbors.add(labels[i+1][j+1])
 
             # Remove self-loop if it exists
             try:
@@ -291,7 +301,7 @@ def grouped_mean_along_axis_2d(arr, labels, axes):
     return np.apply_along_axis(grouped_mean_along_axis, axis=axes[1], arr=arr, labels=labels) 
 
 
-def unflatten(img_flat, graph_nodes, mappings, image_shape=(8, 8), nan_value=np.nan):
+def unflatten(img_flat, graph_nodes, mappings, image_shape=(8, 8), nan_value=0):
     """Create an image of shape (n, w, h, c) for n samples of dimensions w, h and c channels"""
     
     # Start with an array of dimension (n, w*h, c) since spatial indexing is column-wise flattened

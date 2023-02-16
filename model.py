@@ -27,7 +27,7 @@ class MPNNLSTM(nn.Module):
         self.bn2 = nn.LayerNorm(hidden_size)
         self.bn3 = nn.LayerNorm(hidden_size)
 
-        self.recurrents = nn.LSTM(hidden_size, hidden_size, 2)
+        self.recurrents = nn.LSTM(hidden_size, hidden_size, 4)
 
         self.lin1 = nn.Linear(hidden_size+input_timesteps, hidden_size)
         self.lin2 = nn.Linear(hidden_size, output_features)
@@ -85,7 +85,7 @@ class MPNNLSTMI(nn.Module):
         # self.recurrent_1 = GConvLSTM(input_features, hidden_size)
         # self.recurrent_2 = GConvLSTM(hidden_size, hidden_size)
 
-        self.recurrents = [GConvLSTM(input_features, hidden_size)] + [GConvLSTM(hidden_size, hidden_size) for _ in range(n_layers-1)]
+        self.recurrents = nn.ModuleList([GConvLSTM(input_features, hidden_size)] + [GConvLSTM(hidden_size, hidden_size) for _ in range(n_layers-1)])
 
         self.bn1 = nn.BatchNorm1d(hidden_size, track_running_stats=False)
         # self.bn2 = nn.BatchNorm1d(hidden_size, track_running_stats=False)
