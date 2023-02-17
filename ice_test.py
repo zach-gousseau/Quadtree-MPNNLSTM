@@ -8,12 +8,10 @@ import xarray as xr
 
 from utils import normalize
 
-from mod_moving_mnist import ModMovingMNIST
-from mpnnlstm import NextFramePredictorAR, NextFramePredictorS2S
-from model import MPNNLSTMI, MPNNLSTM
+from mpnnlstm import NextFramePredictorS2S
 from seq2seq import Seq2Seq
 
-ds = xr.open_zarr('data/era5_hb_daily.zarr')
+ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
 mask = np.isnan(ds.siconc.isel(time=0)).values
 
 np.random.seed(42)
@@ -69,6 +67,8 @@ x_vars = ['siconc', 't2m']#, 'v10', 'u10', 'sshf']
 y_vars = ['siconc']  # ['siconc', 't2m']
 training_years = (2010, 2016)
 
+input_features = len(x_vars)
+
 x, y = [], []
 for year in range(training_years[0], training_years[1]):
     x_year, y_year = xarray_to_x_y(ds,
@@ -111,6 +111,9 @@ nn = Seq2Seq(
     input_features=input_features+3,
     output_timesteps=output_timesteps,
     n_layers=3).float()
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print('device:', device)
 
 
 model = NextFramePredictorS2S(

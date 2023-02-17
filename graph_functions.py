@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from torch_geometric.data import Data
 import matplotlib.pyplot as plt
+from collections import defaultdict
 
 def plot_contours(ax, labels):
     for i in range(labels.shape[0]):
@@ -250,7 +251,11 @@ def flatten(img, labels):
     # Get mappings from pixel space to graph space and vice versa
     labels_flat = labels.flatten(order='C')
     map_pixel_to_graph = {i: n for i, n in enumerate(labels_flat) if n!=-1}  # One-to-one mapping
-    map_graph_to_pixel = {n: np.where(labels_flat == i)[0] for i, n in enumerate(graph_nodes)}  # One-to-many mapping
+    # map_graph_to_pixel = {n: np.where(labels_flat == i)[0] for i, n in enumerate(graph_nodes)}  # One-to-many mapping
+    map_graph_to_pixel = {n: [] for n in graph_nodes}  # One-to-many mapping  or use defaultdict(list)
+    for i, n in enumerate(labels_flat):
+        if n != -1:
+            map_graph_to_pixel[n].append(i)
 
     # Store mappings - TODO: this can be its own class
     mappings = {
@@ -305,7 +310,7 @@ def unflatten(img_flat, graph_nodes, mappings, image_shape=(8, 8), nan_value=0):
     """Create an image of shape (n, w, h, c) for n samples of dimensions w, h and c channels"""
     
     # Start with an array of dimension (n, w*h, c) since spatial indexing is column-wise flattened
-    img = np.full((img_flat.shape[0], np.prod(image_shape), img_flat.shape[-1]), nan_value)
+    img = np.full((img_flat.shape[0], np.prod(image_shape), img_flat.shape[-1]), nan_value, dtype=float)
     for n in graph_nodes:
         for p in mappings['n->p'][n]:
             img[:, p] = img_flat[:, n]
