@@ -188,20 +188,22 @@ class Seq2Seq(torch.nn.Module):
         super().__init__()
         
         self.encoder = Encoder(input_features, hidden_size, dropout, n_layers=n_layers)
-        self.decoder = Decoder(input_features, hidden_size, dropout, n_layers=n_layers)
+        self.decoder = Decoder(1+3, hidden_size, dropout, n_layers=n_layers)  # 1 output variable + 3 (positional encoding and node size)
 
         self.input_timesteps = input_timesteps
         self.output_timesteps = output_timesteps
         self.n_layers = n_layers
         
     def forward(self, X, y, input_graph_structure, input_skip_connection, image_shape, thresh, teacher_forcing_ratio=0.5, mask=None):
+
+        device = X.device
         
         #tensor to store decoder outputs
         outputs = []
         outputs_graph_structures = []
 
         # Input graph structure
-        curr_graph = create_graph_structure(input_graph_structure['graph_nodes'], input_graph_structure['distances'])
+        curr_graph = create_graph_structure(input_graph_structure['graph_nodes'], input_graph_structure['distances']).to(device)
         curr_graph_structure = input_graph_structure
 
         # Skip connection
@@ -214,7 +216,7 @@ class Seq2Seq(torch.nn.Module):
         
         #first input to the decoder is the <sos> tokens
         # curr_graph.x = torch.zeros_like(X[:1])
-        curr_graph.x = X[[-1]]
+        curr_graph.x = X[[-1]][..., [0, -1, -2, -3]]
 
         # hidden = hidden.squeeze(0)
         # cell = cell.squeeze(0)
@@ -234,7 +236,7 @@ class Seq2Seq(torch.nn.Module):
 
                 # Output is a prediction on the original graph structure
                 # First convert it back to its grid representation
-                output_detached = output.detach().numpy()
+                output_detached = output.cpu().detach().numpy()
                 output_detached = np.expand_dims(output_detached, 0)
 
                 y_hat_img = unflatten(output_detached, curr_graph_structure['graph_nodes'], curr_graph_structure['mappings'], image_shape=image_shape)
@@ -247,9 +249,7 @@ class Seq2Seq(torch.nn.Module):
                 y_hat_img = add_positional_encoding(y_hat_img)  # Add pos. embedding
                 graph_structure = image_to_graph(y_hat_img[0], thresh=thresh, mask=mask)  # Generate new graph using the new X
 
-                device = hidden.device
-
-                hidden, cell = hidden.detach().numpy(), cell.detach().numpy()
+                hidden, cell = hidden.cpu().detach().numpy(), cell.cpu().detach().numpy()
 
                 hidden_img = unflatten(hidden, curr_graph_structure['graph_nodes'], curr_graph_structure['mappings'], image_shape=image_shape)
                 cell_img = unflatten(cell, curr_graph_structure['graph_nodes'], curr_graph_structure['mappings'], image_shape=image_shape)
@@ -258,7 +258,7 @@ class Seq2Seq(torch.nn.Module):
                 # Now we decide whether to use the prediction or ground truth for the input to the next rollout step
                 teacher_force = random.random() < teacher_forcing_ratio
                 if teacher_force:
-                    input_img = y[t]
+                    input_img = y[t].cpu()
                     input_img = np.expand_dims(input_img, (0, 1))
                     input_img = add_positional_encoding(input_img)
                     curr_graph_structure = image_to_graph(input_img[0], thresh=thresh, mask=mask)

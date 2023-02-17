@@ -129,6 +129,9 @@ class NextFramePredictorAR(NextFramePredictor):
             raise ValueError('Please set the threshold using set_thresh(thresh)!')
 
         image_shape = x[0].shape[1:-1]
+
+        if mask is not None:
+            assert mask.shape == image_shape
             
         self.model.to(self.device)
         self.model.train()
@@ -137,6 +140,8 @@ class NextFramePredictorAR(NextFramePredictor):
         loss_func = torch.nn.BCELoss()
         optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9)
         scheduler = StepLR(optimizer, step_size=10, gamma=lr_decay)
+
+        scaler = torch.cuda.amp.GradScaler()
 
         test_loss = []
         train_loss = []
@@ -161,7 +166,6 @@ class NextFramePredictorAR(NextFramePredictor):
                 # Turn target frame into graph using the graph structure from the input frames
                 y_batch, _ = flatten(y[i], x_graph['labels'])
 
-
                 for j in range(self.multi_step_loss):
                     graph.x = torch.from_numpy(x_batch).float()
                     graph.y = torch.from_numpy(y_batch).float()
@@ -173,8 +177,11 @@ class NextFramePredictorAR(NextFramePredictor):
                     y_hat = self.model(graph.x, graph.edge_index, graph.edge_attr)
                     loss = loss_func(y_hat, graph.y[j])
 
-                    loss.backward()
-                    optimizer.step()
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                    # loss.backward()
+                    # optimizer.step()
 
                     step += 1
                     running_loss += loss
@@ -367,6 +374,9 @@ class NextFramePredictorS2S(NextFramePredictor):
 
         image_shape = x[0].shape[1:-1]
 
+        if mask is not None:
+            assert mask.shape == image_shape
+
         x = add_positional_encoding(x)
         x_test = add_positional_encoding(x_test)
 
@@ -405,7 +415,6 @@ class NextFramePredictorS2S(NextFramePredictor):
                 # Turn target frame into graph using the graph structure from the input frames
                 # y_batch, _, _ = flatten(y[i], x_graph['labels'], num_features=1)
 
-
                 graph.x = torch.from_numpy(x_batch).float()
                 graph.y = torch.from_numpy(y_batch_img).float()
 
@@ -421,6 +430,8 @@ class NextFramePredictorS2S(NextFramePredictor):
                 
                 y_hat = torch.cat(y_hat, dim=0)
                 y_true = torch.cat(y_true, dim=0)
+
+                y_true = y_true.to(self.device)
 
                 loss = loss_func(y_hat, y_true)
 
