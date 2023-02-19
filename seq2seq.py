@@ -140,7 +140,7 @@ class Decoder(torch.nn.Module):
 
         self.rnns = nn.ModuleList([GConvLSTM(input_features, hidden_size)] + [GConvLSTM(hidden_size, hidden_size) for _ in range(n_layers-1)])
         
-        # self.fc_out1 = torch.nn.Linear(hidden_size, hidden_size)
+        self.fc_out1 = torch.nn.Linear(hidden_size, hidden_size)
         self.fc_out2 = torch.nn.Linear(hidden_size, 1)  # Assuming output has 1 dimension
         # self.bn1 = nn.BatchNorm1d(hidden_size, track_running_stats=False)
         self.norm_o = nn.LayerNorm(hidden_size)
@@ -175,8 +175,8 @@ class Decoder(torch.nn.Module):
 
         # skip connection
         # output = torch.cat([output, skip], dim=-1)
-        # prediction = self.fc_out1(output)
-        # output = F.relu(output)
+        prediction = self.fc_out1(output)
+        output = F.relu(output)
         prediction = self.fc_out2(output)
         prediction = torch.sigmoid(prediction)
 
@@ -184,7 +184,7 @@ class Decoder(torch.nn.Module):
         
 
 class Seq2Seq(torch.nn.Module):
-    def __init__(self, hidden_size, dropout, input_timesteps=3, input_features=4, output_timesteps=5, n_layers=4):
+    def __init__(self, hidden_size, dropout, thresh, input_timesteps=3, input_features=4, output_timesteps=5, n_layers=4, device=None):
         super().__init__()
         
         self.encoder = Encoder(input_features, hidden_size, dropout, n_layers=n_layers)
@@ -193,30 +193,32 @@ class Seq2Seq(torch.nn.Module):
         self.input_timesteps = input_timesteps
         self.output_timesteps = output_timesteps
         self.n_layers = n_layers
-        
-    def forward(self, X, y, input_graph_structure, input_skip_connection, image_shape, thresh, teacher_forcing_ratio=0.5, mask=None):
 
-        device = X.device
+        self.thresh = thresh
+
+        self.device = device
+        
+    def forward(self, graph, image_shape, teacher_forcing_ratio=0.5, mask=None):
         
         #tensor to store decoder outputs
         outputs = []
         outputs_graph_structures = []
 
         # Input graph structure
-        curr_graph = create_graph_structure(input_graph_structure['graph_nodes'], input_graph_structure['distances']).to(device)
-        curr_graph_structure = input_graph_structure
-
-        # Skip connection
-        skip = input_skip_connection
+        # curr_graph = create_graph_structure(input_graph_structure['graph_nodes'], input_graph_structure['distances']).to(device)
+        curr_graph = graph
+        curr_graph_structure = graph.input_graph_structure
+        image_shape = graph.image_shape
         
         #last hidden state of the encoder is used as the initial hidden state of the decoder
         hidden, cell = [None], [None]
         for t in range(self.input_timesteps):
-            hidden, cell = self.encoder(X[t], curr_graph.edge_index, curr_graph.edge_weight, H=hidden[-1], C=hidden[-1])
+            hidden, cell = self.encoder(graph.x[t], curr_graph.edge_index, curr_graph.edge_weight, H=hidden[-1], C=hidden[-1])
         
         #first input to the decoder is the <sos> tokens
         # curr_graph.x = torch.zeros_like(X[:1])
-        curr_graph.x = X[[-1]][..., [0, -1, -2, -3]]
+        curr_graph.x = graph.x[[-1]][..., [0, -1, -2, -3]]
+        curr_graph.skip = graph.x[[-1]][..., [0, -1, -2, -3]]  # TODO: Check that this is the right skip connection !!
 
         # hidden = hidden.squeeze(0)
         # cell = cell.squeeze(0)
@@ -224,14 +226,13 @@ class Seq2Seq(torch.nn.Module):
         for t in range(self.output_timesteps):
 
             # Perform decoding step
-            output, hidden, cell = self.decoder(curr_graph.x, curr_graph.edge_index, curr_graph.edge_weight, skip, hidden, cell)
+            output, hidden, cell = self.decoder(curr_graph.x, curr_graph.edge_index, curr_graph.edge_weight, curr_graph.skip, hidden, cell)
 
             # This is the prediction we are outputting. 
-            # outputs.append(y_hat_img[0])
             outputs.append(output)
             outputs_graph_structures.append(curr_graph_structure)
 
-            if thresh != -np.inf:
+            if self.thresh != -np.inf:
 
 
                 # Output is a prediction on the original graph structure
@@ -241,13 +242,11 @@ class Seq2Seq(torch.nn.Module):
 
                 y_hat_img = unflatten(output_detached, curr_graph_structure['graph_nodes'], curr_graph_structure['mappings'], image_shape=image_shape)
                 
-                # y_hat_img = np.expand_dims(y_hat_img, (0, -1))
-                
                 # Then we convert it back to a graph representation where the graph is determined by
                 # its own values (rather than the one created by the input images / previous step)
                 y_hat_img = np.expand_dims(y_hat_img, (0))
                 y_hat_img = add_positional_encoding(y_hat_img)  # Add pos. embedding
-                graph_structure = image_to_graph(y_hat_img[0], thresh=thresh, mask=mask)  # Generate new graph using the new X
+                graph_structure = image_to_graph(y_hat_img[0], thresh=self.thresh, mask=mask)  # Generate new graph using the new X
 
                 hidden, cell = hidden.cpu().detach().numpy(), cell.cpu().detach().numpy()
 
@@ -258,10 +257,10 @@ class Seq2Seq(torch.nn.Module):
                 # Now we decide whether to use the prediction or ground truth for the input to the next rollout step
                 teacher_force = random.random() < teacher_forcing_ratio
                 if teacher_force:
-                    input_img = y[t].cpu()
+                    input_img = graph.y[t].cpu()
                     input_img = np.expand_dims(input_img, (0, 1))
                     input_img = add_positional_encoding(input_img)
-                    curr_graph_structure = image_to_graph(input_img[0], thresh=thresh, mask=mask)
+                    curr_graph_structure = image_to_graph(input_img[0], thresh=self.thresh, mask=mask)
 
                     skip = torch.from_numpy(curr_graph_structure['data'][0, :, :1]).float()
                 else:
@@ -279,13 +278,14 @@ class Seq2Seq(torch.nn.Module):
                 hidden, cell = np.swapaxes(hidden, 0, -1), np.swapaxes(cell, 0, -1)
 
                 hidden = torch.Tensor(hidden)
-                hidden.to(device)
+                hidden.to(self.device)
                 cell = torch.Tensor(cell)
-                cell.to(device)
+                cell.to(self.device)
 
                 # Create a PyG graph object for input into next rollout
                 curr_graph = create_graph_structure(curr_graph_structure['graph_nodes'], curr_graph_structure['distances'])
                 curr_graph.x = torch.Tensor(curr_graph_structure['data'])
+                curr_graph.skip = skip
 
             else:
                 # curr_graph_structure does not change
@@ -293,19 +293,19 @@ class Seq2Seq(torch.nn.Module):
                 teacher_force = random.random() < teacher_forcing_ratio
                 teacher_force = False
                 if teacher_force:
-                    input_img = y[t]
+                    input_img = graph.y[t]
                     input_img = np.expand_dims(input_img, (0, 1))
                     input_img = add_positional_encoding(input_img).squeeze(0)
                     input_x, _ = flatten(input_img, curr_graph_structure['labels'])
 
                     curr_graph.x = torch.cat((curr_graph.x[..., 1:], torch.from_numpy(input_x[..., [0]])), -1).float()
 
-                    skip = torch.from_numpy(input_x[0, :, :1]).float()
+                    curr_graph.skip = torch.from_numpy(input_x[0, :, :1]).float()
                 else:
                     # TODO the input and skip are the same thing... that's silly
                     output_detached = torch.from_numpy(np.expand_dims(output.detach().numpy(), 0))
                     # output_detached = output.detach()
                     curr_graph.x = torch.cat((curr_graph.x[..., 1:], output_detached), -1).float()
-                    skip = output
+                    curr_graph.skip = output
             
         return outputs, outputs_graph_structures
