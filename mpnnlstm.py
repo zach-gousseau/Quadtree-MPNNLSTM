@@ -24,6 +24,7 @@ from abc import ABC, abstractmethod
 class NextFramePredictor(ABC):
     def __init__(self, 
                  model,
+                 thresh,
                  experiment_name='experiment', 
                  decompose=True, 
                  input_features=1,
@@ -36,6 +37,7 @@ class NextFramePredictor(ABC):
         self.decompose = decompose
 
         self.model = model
+        self.thresh = thresh
         self.input_features = input_features 
         self.device = device
 
@@ -58,10 +60,6 @@ class NextFramePredictor(ABC):
 
         plt.suptitle(f'Threshold: {thresh} | Num. nodes: {num_nodes}')
         return fig, axs
-
-    def set_thresh(self, thresh):
-        if self.decompose:
-            self.thresh = thresh
 
     def get_n_params(self):
         return get_n_params(self.model)
@@ -98,6 +96,7 @@ class NextFramePredictor(ABC):
 class NextFramePredictorAR(NextFramePredictor):
     def __init__(self, 
                  model,
+                 thresh,
                  experiment_name='experiment', 
                  decompose=True, 
                  input_features=1,
@@ -105,6 +104,7 @@ class NextFramePredictorAR(NextFramePredictor):
                  device=None):
         super().__init__(
                  model,
+                 thresh=thresh,
                  experiment_name=experiment_name, 
                  decompose=decompose, 
                  input_features=input_features,
@@ -124,9 +124,6 @@ class NextFramePredictorAR(NextFramePredictor):
         lr_decay=0.95,
         mask=None
         ):
-
-        if self.thresh is None:
-            raise ValueError('Please set the threshold using set_thresh(thresh)!')
 
         image_shape = x[0].shape[1:-1]
 
@@ -340,6 +337,7 @@ class NextFramePredictorAR(NextFramePredictor):
 class NextFramePredictorS2S(NextFramePredictor):
     def __init__(self,
                  model,
+                 thresh,
                  experiment_name='experiment', 
                  decompose=True, 
                  input_features=1,
@@ -349,6 +347,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         
         super().__init__(
                  model=model,
+                 thresh=thresh,
                  experiment_name=experiment_name, 
                  decompose=decompose, 
                  input_features=input_features,
@@ -369,28 +368,25 @@ class NextFramePredictorS2S(NextFramePredictor):
         mask=None
         ):
 
-        if self.thresh is None:
-            raise ValueError('Please set the threshold using set_thresh(thresh)!')
-
         image_shape = x[0].shape[1:-1]
 
         if mask is not None:
-            assert mask.shape == image_shape
+            assert mask.shape == image_shape, f'Mask and image shapes do not match. Got {mask.shape} and {image_shape}'
 
-        x = add_positional_encoding(x)
-        x_test = add_positional_encoding(x_test)
-
-        # Add 2 to the number of features since we add positional encoding (x, y)
-        # x_graph = [image_to_graph(img, num_features=self.input_features+2, thresh=self.thresh) for img in x]
-        # x_test_graph = [image_to_graph(img, num_features=self.input_features+2, thresh=self.thresh) for img in x_test]
+        if self.device == 'cpu' or self.device is None:
+            self.device = [self.device]
+            n_devices = 1
+        else:
+            n_devices = len(self.device)
             
-        self.model.to(self.device)
+        # self.model.to(self.device)
         self.model.train()
+        # model = nn.DataParallel(self.model)
 
         # loss_func = torch.nn.MSELoss()
         loss_func = torch.nn.BCELoss()
         optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9)
-        scheduler = StepLR(optimizer, step_size=10, gamma=lr_decay)
+        scheduler = StepLR(optimizer, step_size=3, gamma=lr_decay)
 
         test_loss = []
         train_loss = []
@@ -399,39 +395,41 @@ class NextFramePredictorS2S(NextFramePredictor):
         for epoch in range(n_epochs): 
             running_loss = 0
             step = 0
-            for i in tqdm(range(len(x)), leave=False):
+            for i in tqdm(np.arange(0, len(x), n_devices), leave=False):
+                    
+                for j in range(n_devices):
 
-                x_batch_img = x[i]  # 2D images (num_timesteps, x, y)
-                y_batch_img = y[i]
+                    x_batch_img = x[[i+j]]  # 2D images (num_timesteps, x, y)
+                    x_batch_img = add_positional_encoding(x_batch_img).squeeze(0)
+                    y_batch_img = y[i+j]
 
-                x_graph = image_to_graph(x_batch_img, thresh=self.thresh, mask=mask)
+                    x_graph = image_to_graph(x_batch_img, thresh=self.thresh, mask=mask)
 
-                # Create a PyG graph object
-                graph = create_graph_structure(x_graph['graph_nodes'], x_graph['distances'])
+                    # Create a PyG graph object
+                    graph = create_graph_structure(x_graph['graph_nodes'], x_graph['distances'])
 
-                x_batch = x_graph['data']  # Image in graph format
-                # y_batch, _, _ = flatten(y_batch_img, x_graph['labels'], num_features=1)
-                
-                # Turn target frame into graph using the graph structure from the input frames
-                # y_batch, _, _ = flatten(y[i], x_graph['labels'], num_features=1)
+                    x_batch = x_graph['data']  # Image in graph format
 
-                graph.x = torch.from_numpy(x_batch).float()
-                graph.y = torch.from_numpy(y_batch_img).float()
+                    graph.x = torch.from_numpy(x_batch).float()
+                    graph.y = torch.from_numpy(y_batch_img).float()
 
-                graph.to(self.device)
+                    graph.input_graph_structure = x_graph
+                    graph.image_shape = image_shape
+
+                    graph.to(self.device[j])
 
                 optimizer.zero_grad()
-                
+
                 skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
 
-                y_hat, y_hat_graph = self.model(graph.x, graph.y, x_graph, skip, image_shape, thresh=self.thresh, teacher_forcing_ratio=0.5, mask=mask)
-                
+                y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
+
                 y_true = [torch.Tensor(flatten(np.expand_dims(y_batch_img[i], 0), y_hat_graph[i]['labels'])[0])[0] for i in range(self.output_timesteps)]
-                
+
                 y_hat = torch.cat(y_hat, dim=0)
                 y_true = torch.cat(y_true, dim=0)
 
-                y_true = y_true.to(self.device)
+                y_true = y_true.to(self.device[j])  # TODO: Somehow y_true has to be distributed to all GPUs....
 
                 loss = loss_func(y_hat, y_true)
 
@@ -446,7 +444,8 @@ class NextFramePredictorS2S(NextFramePredictor):
             step_test = 0
             for i in range(len(x_test)):
 
-                x_batch_test_img = x_test[i]  # 2D images (num_timesteps, x, y)
+                x_batch_test_img = x_test[[i]]  # 2D images (num_timesteps, x, y)
+                x_batch_test_img = add_positional_encoding(x_batch_test_img).squeeze(0)
                 y_batch_img = y_test[i]
 
                 x_test_graph = image_to_graph(x_batch_test_img, thresh=self.thresh, mask=mask)
@@ -459,11 +458,15 @@ class NextFramePredictorS2S(NextFramePredictor):
                 graph.x = torch.from_numpy(x_batch).float()
                 graph.y = torch.from_numpy(y_batch_img).float()
 
-                graph.to(self.device)
+                graph.input_graph_structure = x_test_graph
+                graph.image_shape = image_shape
 
                 skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
+                graph.skip = skip
+
+                graph.to(self.device)
                 
-                y_hat, y_hat_graph = self.model(graph.x, graph.y, x_test_graph, skip, image_shape, thresh=self.thresh, teacher_forcing_ratio=0.5, mask=mask)
+                y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
                 
                 y_true = [torch.Tensor(flatten(np.expand_dims(y_batch_img[i], 0), y_hat_graph[i]['labels'])[0])[0] for i in range(self.output_timesteps)]
                 
@@ -497,9 +500,6 @@ class NextFramePredictorS2S(NextFramePredictor):
         
     def predict(self, x, mask=None):
 
-        if self.thresh is None:
-            raise ValueError('Please set the threshold using set_thresh(thresh)!')
-
         image_shape = x[0].shape[1:-1]
 
         x = add_positional_encoding(x)
@@ -521,12 +521,13 @@ class NextFramePredictorS2S(NextFramePredictor):
             x_batch = x_graph['data']  # Image in graph format
 
             graph.x = torch.from_numpy(x_batch).float()
+            graph.skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
+
+            graph.input_graph_structure = x_graph
 
             graph.to(self.device)
-            
-            skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
 
-            y_hat, y_hat_graph = self.model(graph.x, None, x_graph, skip, image_shape, thresh=self.thresh, teacher_forcing_ratio=0)
+            y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0)
             y_hat_img = [unflatten(np.expand_dims(y_hat[i].detach(), 0), y_hat_graph[i]['graph_nodes'], y_hat_graph[i]['mappings'], image_shape=image_shape).squeeze(0) for i in range(self.output_timesteps)]
             
             y_pred.append(y_hat_img)
