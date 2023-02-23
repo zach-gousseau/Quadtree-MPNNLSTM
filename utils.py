@@ -1,4 +1,18 @@
 import numpy as np
+import numba
+
+
+@numba.jit
+def minmax(x):
+    maximum = x[0, 0]
+    minimum = x[0, 0]
+    for i in x[1:]:
+        for j in i[1:]:
+            if j > maximum:
+                maximum = j
+            elif j < minimum:
+                minimum = j
+    return (minimum, maximum)
 
 def get_n_params(model):
     """Get number of parameters in a PyTorch model"""

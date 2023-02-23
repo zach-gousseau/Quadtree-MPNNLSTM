@@ -358,17 +358,15 @@ class NextFramePredictorS2S(NextFramePredictor):
 
     def train(
         self,
-        x,
-        y,
-        x_test,
-        y_test,
+        loader_train,
+        loader_test,
         n_epochs=200,
         lr=0.01,
         lr_decay=0.95,
         mask=None
         ):
 
-        image_shape = x[0].shape[1:-1]
+        image_shape = loader_train.dataset.image_shape
 
         if mask is not None:
             assert mask.shape == image_shape, f'Mask and image shapes do not match. Got {mask.shape} and {image_shape}'
@@ -395,28 +393,30 @@ class NextFramePredictorS2S(NextFramePredictor):
         for epoch in range(n_epochs): 
             running_loss = 0
             step = 0
-            for i in tqdm(np.arange(0, len(x), n_devices), leave=False):
+            # for i in tqdm(np.arange(0, len(loader_train), n_devices), leave=False):
+            for x, y in tqdm(loader_train, leave=False):
+                
+                y = y.squeeze(0)
                     
-                for j in range(n_devices):
+                # for j in range(n_devices):
 
-                    x_batch_img = x[[i+j]]  # 2D images (num_timesteps, x, y)
-                    x_batch_img = add_positional_encoding(x_batch_img).squeeze(0)
-                    y_batch_img = y[i+j]
+                # x = np.expand_dims(x, 0)  # 2D images (num_timesteps, x, y)
+                x = add_positional_encoding(x).squeeze(0)
 
-                    x_graph = image_to_graph(x_batch_img, thresh=self.thresh, mask=mask)
+                x_graph = image_to_graph(x, thresh=self.thresh, mask=mask)
 
-                    # Create a PyG graph object
-                    graph = create_graph_structure(x_graph['graph_nodes'], x_graph['distances'])
+                # Create a PyG graph object
+                graph = create_graph_structure(x_graph['graph_nodes'], x_graph['distances'])
 
-                    x_batch = x_graph['data']  # Image in graph format
+                x_batch = x_graph['data']  # Image in graph format
 
-                    graph.x = torch.from_numpy(x_batch).float()
-                    graph.y = torch.from_numpy(y_batch_img).float()
+                graph.x = torch.from_numpy(x_batch).float()
+                graph.y = y
 
-                    graph.input_graph_structure = x_graph
-                    graph.image_shape = image_shape
+                graph.input_graph_structure = x_graph
+                graph.image_shape = image_shape
 
-                    graph.to(self.device[j])
+                graph.to(self.device[0])
 
                 optimizer.zero_grad()
 
@@ -424,12 +424,13 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                 y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
 
-                y_true = [torch.Tensor(flatten(np.expand_dims(y_batch_img[i], 0), y_hat_graph[i]['labels'])[0])[0] for i in range(self.output_timesteps)]
+                # Transform 
+                y_true = [torch.Tensor(flatten(np.expand_dims(y[i], 0), y_hat_graph[i]['labels'])[0])[0] for i in range(self.output_timesteps)]
 
                 y_hat = torch.cat(y_hat, dim=0)
                 y_true = torch.cat(y_true, dim=0)
 
-                y_true = y_true.to(self.device[j])  # TODO: Somehow y_true has to be distributed to all GPUs....
+                y_true = y_true.to(self.device[0])  # TODO: Somehow y_true has to be distributed to all GPUs....
 
                 loss = loss_func(y_hat, y_true)
 
@@ -442,13 +443,12 @@ class NextFramePredictorS2S(NextFramePredictor):
 
             running_loss_test = 0
             step_test = 0
-            for i in range(len(x_test)):
+            for x, y in loader_test:
 
-                x_batch_test_img = x_test[[i]]  # 2D images (num_timesteps, x, y)
-                x_batch_test_img = add_positional_encoding(x_batch_test_img).squeeze(0)
-                y_batch_img = y_test[i]
+                x = np.expand_dims(x, 0)  # 2D images (num_timesteps, x, y)
+                x = add_positional_encoding(x).squeeze(0)
 
-                x_test_graph = image_to_graph(x_batch_test_img, thresh=self.thresh, mask=mask)
+                x_test_graph = image_to_graph(x, thresh=self.thresh, mask=mask)
 
                 graph = create_graph_structure(x_test_graph['graph_nodes'], x_test_graph['distances'])
 
@@ -456,7 +456,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 
                 
                 graph.x = torch.from_numpy(x_batch).float()
-                graph.y = torch.from_numpy(y_batch_img).float()
+                graph.y = torch.from_numpy(y).float()
 
                 graph.input_graph_structure = x_test_graph
                 graph.image_shape = image_shape
@@ -464,11 +464,11 @@ class NextFramePredictorS2S(NextFramePredictor):
                 skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
                 graph.skip = skip
 
-                graph.to(self.device)
+                graph.to(self.device[0])
                 
                 y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
                 
-                y_true = [torch.Tensor(flatten(np.expand_dims(y_batch_img[i], 0), y_hat_graph[i]['labels'])[0])[0] for i in range(self.output_timesteps)]
+                y_true = [torch.Tensor(flatten(np.expand_dims(y[i], 0), y_hat_graph[i]['labels'])[0])[0] for i in range(self.output_timesteps)]
                 
                 y_hat = torch.cat(y_hat, dim=0)
                 y_true = torch.cat(y_true, dim=0)
@@ -504,7 +504,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
         x = add_positional_encoding(x)
             
-        self.model.to(self.device)
+        self.model.to(self.device[0])
         
         y_pred = []
 
@@ -525,7 +525,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
             graph.input_graph_structure = x_graph
 
-            graph.to(self.device)
+            graph.to(self.device[0])
 
             y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0)
             y_hat_img = [unflatten(np.expand_dims(y_hat[i].detach(), 0), y_hat_graph[i]['graph_nodes'], y_hat_graph[i]['mappings'], image_shape=image_shape).squeeze(0) for i in range(self.output_timesteps)]

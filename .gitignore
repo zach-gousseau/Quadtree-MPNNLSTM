@@ -2,6 +2,7 @@
 __pycache__/
 results/
 ice_results*/
+test_results/
 data/
 pseudocode
 scrap.ipynb

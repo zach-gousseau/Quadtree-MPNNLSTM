@@ -11,7 +11,7 @@ from utils import add_positional_encoding
 import random
 import numpy as np
 
-from model import GConvLSTM
+from model import GConvLSTM, GConvLSTM_Cheb
 
 # class Encoder(torch.nn.Module):
 #     def __init__(self, input_features, hidden_size, dropout, n_layers=1):
