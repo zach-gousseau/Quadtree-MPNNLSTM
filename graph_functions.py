@@ -4,6 +4,8 @@ from torch_geometric.data import Data
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
+from utils import minmax
+
 def plot_contours(ax, labels):
     for i in range(labels.shape[0]):
         for j in range(labels.shape[1]):
@@ -58,7 +60,7 @@ def create_blocks(M, N, B):
 def is_power_of_two(n):
     return (n != 0) and (n & (n-1) == 0)
 
-def quadtree_decompose(img, padding=2, thresh=0.05, max_size=8, mask=None):
+def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None):
     """
     Decompose an image into a quadtree.
 
@@ -120,11 +122,12 @@ def quadtree_decompose(img, padding=2, thresh=0.05, max_size=8, mask=None):
                     
             return
         
-        is_homogeneous = (np.nanmax(
-        img[max(0, l-padding): min(r+padding, shape[1]),
-            max(0, t-padding): min(b+padding, shape[1])]
-        ) < thresh) or (size==1)
-
+        img_region = img[max(0, l-padding): min(r+padding, shape[1]),
+                         max(0, t-padding): min(b+padding, shape[1])]
+        
+        # img_region = np.abs(np.abs(img_region - 0.5) - 0.5)
+        is_homogeneous = (np.nanmax(img_region) < thresh) or (size==1)
+        
         # Check if the cell overlaps any invalid pixels 
         if mask is not None:
             overlaps_mask = np.any(
@@ -265,7 +268,7 @@ def flatten(img, labels):
 
     # Compute mean values for each graph node
     # TODO: Would be nice if we didn't have to flatten first
-    img_flat = img.reshape(n_samples, w*h, num_features, order='C')
+    img_flat = img.reshape(n_samples, w*h, num_features)#, order='C')  # Assume it flattens column-wise !
 
     # Slow version
     # data = np.ndarray((n_samples, len(graph_nodes), num_features), dtype=img.dtype)
