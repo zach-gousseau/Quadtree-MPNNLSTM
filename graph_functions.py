@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch_geometric.data import Data
 import matplotlib.pyplot as plt
 from collections import defaultdict
@@ -46,7 +47,7 @@ def create_graph_structure(graph_nodes, distances):
             edge_attrs.append(distances[node][neighbor])
 
     edge_index = torch.tensor([edge_sources, edge_targets], dtype=torch.long)
-    edge_attrs = torch.tensor(edge_attrs, dtype=torch.float)
+    edge_attrs = torch.tensor(edge_attrs, dtype=torch.float32)
     return Data(edge_index=edge_index, edge_attr=edge_attrs)
 
 def create_blocks(M, N, B):
@@ -154,7 +155,6 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None):
     # start recursive decomposition from the top left corner of the image
     for i in range(n_padded // max_size): 
         for j in range(m_padded // max_size):
-            # print(i*max_size, j*max_size)
             decompose(i*max_size, j*max_size, max_size)
 
     # return the resulting label array
@@ -254,11 +254,15 @@ def flatten(img, labels):
     # Get mappings from pixel space to graph space and vice versa
     labels_flat = labels.flatten(order='C')
     map_pixel_to_graph = {i: n for i, n in enumerate(labels_flat) if n!=-1}  # One-to-one mapping
+    
     # map_graph_to_pixel = {n: np.where(labels_flat == i)[0] for i, n in enumerate(graph_nodes)}  # One-to-many mapping
-    map_graph_to_pixel = {n: [] for n in graph_nodes}  # One-to-many mapping  or use defaultdict(list)
-    for i, n in enumerate(labels_flat):
-        if n != -1:
-            map_graph_to_pixel[n].append(i)
+    # map_graph_to_pixel = {n: [] for n in graph_nodes}  # One-to-many mapping  or use defaultdict(list)
+    # for i, n in enumerate(labels_flat):
+    #     if n != -1:
+    #         map_graph_to_pixel[n].append(i)
+            
+    values, inverse = np.unique(labels_flat, return_inverse=True)
+    map_graph_to_pixel = {value: np.where(inverse == i)[0] for i, value in enumerate(values)}
 
     # Store mappings - TODO: this can be its own class
     mappings = {
@@ -271,12 +275,13 @@ def flatten(img, labels):
     img_flat = img.reshape(n_samples, w*h, num_features)#, order='C')  # Assume it flattens column-wise !
 
     # Slow version
-    # data = np.ndarray((n_samples, len(graph_nodes), num_features), dtype=img.dtype)
+    # data = torch.empty((n_samples, len(graph_nodes), num_features), dtype=img.dtype)
     # for i, n in enumerate(graph_nodes):
     #     idx = mappings['n->p'][n]
-    #     data[:, i] = np.mean(img_flat[:, idx], 1)
+    #     data[:, i] = torch.mean(img_flat[:, idx], 1)
 
     data = grouped_mean_along_axis_2d(img_flat, labels_flat, axes=(0, 1))
+    # data = torch.Tensor(data).type(torch.float32)
     return data, mappings
 
 def grouped_mean(arr, labels):
@@ -315,8 +320,7 @@ def unflatten(img_flat, graph_nodes, mappings, image_shape=(8, 8), nan_value=0):
     # Start with an array of dimension (n, w*h, c) since spatial indexing is column-wise flattened
     img = np.full((img_flat.shape[0], np.prod(image_shape), img_flat.shape[-1]), nan_value, dtype=float)
     for n in graph_nodes:
-        for p in mappings['n->p'][n]:
-            img[:, p] = img_flat[:, n]
+        img[:, mappings['n->p'][n]] = np.expand_dims(img_flat[:, n], 1)
 
     # Reshape to (n, w, h, c)
     img = img.reshape((img_flat.shape[0], *image_shape, img_flat.shape[-1]))
@@ -375,7 +379,6 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None):
 
     TODO: Add ability to choose which channel to use in the decomposition.
     """
-
     img0 = np.max(img[..., 0], 0)  # For multi-step inputs
     image_shape = img0.shape
 
@@ -391,7 +394,7 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None):
     data, mappings = flatten(img, labels)
 
     if np.any(np.isnan(data)):
-        raise ValueError('NaNs in data!')
+        raise ValueError('NaNs in data!!')
 
     xx, yy = data[0, ..., 1]*image_shape[1], data[0, ..., 2]*image_shape[0]
     
