@@ -61,106 +61,135 @@ def create_blocks(M, N, B):
 def is_power_of_two(n):
     return (n != 0) and (n & (n-1) == 0)
 
-def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None):
+@nb.jit(nopython=True)
+def any_2d(arr):
+    for i in range(arr.shape[0]):
+        for j in range(arr.shape[1]):
+            if arr[i, j]:
+                return True
+    return False
+
+@nb.jit(nopython=True)
+def max_2d(arr):
+    max_val = arr[0, 0]
+    for i in range(arr.shape[0]):
+        for j in range(arr.shape[1]):
+            if arr[i, j] > max_val:
+                max_val = arr[i, j]
+    return max_val
+
+def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, transform_func=None):
     """
-    Decompose an image into a quadtree.
+    Perform quadtree decomposition on an image.
 
     This function decomposes the input image into a quadtree by dividing the image
     into four quadrants of equal size and repeating the process recursively until
-    each quadrant is either homogeneous (the variance within the cell is lower than
-    the specified threshold) or contains a single pixel.
+    the maximum value in each quadrant is either below some threshold or contains a 
+    single pixel. 
+    
+    Optionally, provide a mask which will ensure not cell contains any value which 
+    falls within the mask. Masked pixels are assigned a label of -1.
+    
  
     Parameters:
     img (np.ndarray): Input image with shape (height, width).
-    padding (int, optional): Padding to add around the image when checking for homogeneity. Default is 2.
-    thresh (float, optional): Threshold for determining homogeneity. Default is 0.05.
+    padding (int, optional): Padding to add around each cell when checking the splitting criteria. Default is 0.
+    thresh (float, optional): Threshold to use as splitting criteria. Default is 0.05.
+    max_size (int, optional): Maximum grid cell size. Default is 8.
+    mask (np.ndarray, optional): Boolean mask. 
+    transform_func (optional): Function to apply to the input image used for criteria evaluation
 
     Returns:
     np.ndarray: Array of shape (height, width) containing the labels for each pixel in the image.
         Note: A '-1' label means that the pixel is invalid (according to the provided mask)
     """
-
+    
+    # Ensure the base grid is a power of 2
     assert is_power_of_two(max_size)
 
-    # get image dimensions
+    # Get image dimensions
     n, m = img.shape
     
-    # initialize label array
-    labels = np.full((-(n // -max_size) * max_size, -(m // -max_size) * max_size), -1, dtype=int)#.astype(int)  #create_blocks(n, m, max_size)
-    # labels = np.ndarray((-(n // -max_size) * max_size, -(m // -max_size) * max_size)).astype(int)  #create_blocks(n, m, max_size)
-
+    # Initialize label array with the base grid (maximum grid cell size) while 
+    # Note that the initial label array may be larger than the original image since
+    # we do not want to cut off any base grid cells
+    labels = np.full((-(n // -max_size) * max_size, -(m // -max_size) * max_size), -1, dtype=int)
     shape = n_padded, m_padded = labels.shape
-
+    
+    # Pad the image to match the labels array
     img = np.pad(img, ((0, n_padded-n), (0, m_padded-m)), mode='edge')
     
-    # counter for current label
+    if transform_func is not None:
+        img_for_criteria = transform_func(img)
+    else:
+        img_for_criteria = img
+    
+    # Counter for current label
     global cur_label
     cur_label = 0
 
-    # function for recursive decomposition
+    # Function for recursive decomposition
     def decompose(x: int, y: int, size: int):
         global cur_label
+        
+        # Stop here if the region is in the padded area
+        if x>=n or y>=m:
+            return 
 
         l, r, t, b = x, x+size+1, y, y+size+1
 
         # If the current cell is a single pixel, do not continue decomposing
-        if size <= 1: 
-            if x<n and y<m:
-                # Check against mask if provided
-                invalid = False
-                if mask is not None:
-                    if mask[x, y]:
-                        invalid = True
-
-                # Assign label to single pixel
-                if not invalid:
-                    labels[x, y] = cur_label
-                    cur_label += 1
-                else:
-                    if not mask[x, y]:
-                        labels[x, y] = cur_label
-                        cur_label += 1
+        if size == 1: 
+                
+            # Check against mask if provided
+            if mask is not None and mask[x, y]:
+                return
+            
+            labels[x, y] = cur_label
+            cur_label += 1
                     
             return
         
-        img_region = img[max(0, l-padding): min(r+padding, shape[1]),
-                         max(0, t-padding): min(b+padding, shape[1])]
+        # Get cell region 
+        cell = img_for_criteria[max(0, l-padding): min(r+padding, shape[1]),
+                                max(0, t-padding): min(b+padding, shape[1])]
         
-        img_region = np.abs(np.abs(img_region - 0.5) - 0.5)
-        is_homogeneous = (np.nanmax(img_region) < thresh) or (size==1)
+        # Check against the splitting criteria 
+        split_cell = (max_2d(cell) > thresh)
         
-        # Check if the cell overlaps any invalid pixels 
+        # Check if the cell overlaps any invalid pixels
+        # If it overlaps the mask, we want to split it regardless
         if mask is not None:
-            overlaps_mask = np.any(
-            mask[max(0, l-padding): min(r+padding, shape[1]),
-                max(0, t-padding): min(b+padding, shape[1])]
-            )
-        else:
             overlaps_mask = False
+            overlaps_mask = any_2d(
+            mask[max(0, l-padding): min(r+padding, shape[1]),
+                 max(0, t-padding): min(b+padding, shape[1])]
+            )
+            
+            split_cell = split_cell or overlaps_mask
         
-        # if the cell is homogeneous, smaller than the maximum grid size 
-        # and does not overlap the mask, assign the same label to all its pixels
-        if is_homogeneous and (size < max_size) and (not overlaps_mask):
-            if (x<n and y<m):
-                labels[x:x+size, y:y+size] = cur_label
-                cur_label += 1
-        else:
-            # otherwise, decompose the cell into four quadrants of equal size
+        # Split the cell in four quadrants if all conditions are met, 
+        # otherwise assign the same label to all of its pixels
+        if split_cell:
             new_size = size // 2
             decompose(x, y, new_size)
             decompose(x + new_size, y, new_size)
             decompose(x, y + new_size, new_size)
             decompose(x + new_size, y + new_size, new_size)
+        else:
+            labels[x:x+size, y:y+size] = cur_label
+            cur_label += 1
+
     
-    # start recursive decomposition from the top left corner of the image
+    # Start recursive decomposition from the top left corner of the image
     for i in range(n_padded // max_size): 
         for j in range(m_padded // max_size):
             decompose(i*max_size, j*max_size, max_size)
 
-    # return the resulting label array
     return labels[:n, :m]
 
 
+%timeit labels = quadtree_decompose(img, padding=0, thresh=0.15, max_size=8, mask=mask, transform_func=lambda x: np.abs(x-0.5))
 
 def get_adj(labels, xx=None, yy=None, calculate_distances=True, edges_at_corners=False):
     """Get the adjacency matrix for a given label matrix (this could be more efficient)"""
