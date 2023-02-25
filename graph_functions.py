@@ -91,8 +91,7 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None):
 
     shape = n_padded, m_padded = labels.shape
 
-    # img = np.pad(img, ((0, n_padded-n), (0, m_padded-m)), mode='edge')
-    img = F.pad(img.unsqueeze(0), (0, m_padded-m, 0, n_padded-n), mode='replicate').squeeze(0)
+    img = np.pad(img, ((0, n_padded-n), (0, m_padded-m)), mode='edge')
     
     # counter for current label
     global cur_label
@@ -128,7 +127,7 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None):
                          max(0, t-padding): min(b+padding, shape[1])]
         
         # img_region = np.abs(np.abs(img_region - 0.5) - 0.5)
-        is_homogeneous = (torch.max(img_region) < thresh) or (size==1)
+        is_homogeneous = (np.nanmax(img_region) < thresh) or (size==1)
         
         # Check if the cell overlaps any invalid pixels 
         if mask is not None:
@@ -263,7 +262,7 @@ def flatten(img, labels):
     #         map_graph_to_pixel[n].append(i)
             
     values, inverse = np.unique(labels_flat, return_inverse=True)
-    map_graph_to_pixel = {value: torch.Tensor(np.where(inverse == i)[0]) for i, value in enumerate(values)}
+    map_graph_to_pixel = {value: np.where(inverse == i)[0] for i, value in enumerate(values)}
 
     # Store mappings - TODO: this can be its own class
     mappings = {
@@ -276,13 +275,13 @@ def flatten(img, labels):
     img_flat = img.reshape(n_samples, w*h, num_features)#, order='C')  # Assume it flattens column-wise !
 
     # Slow version
-    data = torch.empty((n_samples, len(graph_nodes), num_features), dtype=img.dtype)
-    for i, n in enumerate(graph_nodes):
-        idx = mappings['n->p'][n]
-        data[:, i] = torch.mean(img_flat[:, idx], 1)
+    # data = torch.empty((n_samples, len(graph_nodes), num_features), dtype=img.dtype)
+    # for i, n in enumerate(graph_nodes):
+    #     idx = mappings['n->p'][n]
+    #     data[:, i] = torch.mean(img_flat[:, idx], 1)
 
-    # data = grouped_mean_along_axis_2d(img_flat, labels_flat, axes=(0, 1))
-    data = torch.Tensor(data).type(torch.float32)
+    data = grouped_mean_along_axis_2d(img_flat, labels_flat, axes=(0, 1))
+    # data = torch.Tensor(data).type(torch.float32)
     return data, mappings
 
 def grouped_mean(arr, labels):
@@ -315,14 +314,13 @@ def grouped_mean_along_axis_2d(arr, labels, axes):
     return np.apply_along_axis(grouped_mean_along_axis, axis=axes[1], arr=arr, labels=labels) 
 
 
-def unflatten(img_flat, graph_nodes, mappings, image_shape=(8, 8), nan_value=0, device=None):
+def unflatten(img_flat, graph_nodes, mappings, image_shape=(8, 8), nan_value=0):
     """Create an image of shape (n, w, h, c) for n samples of dimensions w, h and c channels"""
     
     # Start with an array of dimension (n, w*h, c) since spatial indexing is column-wise flattened
-    img = torch.full((img_flat.shape[0], np.prod(image_shape), img_flat.shape[-1]), nan_value, dtype=torch.float32, device=device)
+    img = np.full((img_flat.shape[0], np.prod(image_shape), img_flat.shape[-1]), nan_value, dtype=float)
     for n in graph_nodes:
-        mappings['n->p'][n] = list(torch.Tensor(mappings['n->p'][n]).type(torch.int).to(device))
-        img[:, mappings['n->p'][n]] = img_flat[:, n].unsqueeze(1)
+        img[:, mappings['n->p'][n]] = np.expand_dims(img_flat[:, n], 1)
 
     # Reshape to (n, w, h, c)
     img = img.reshape((img_flat.shape[0], *image_shape, img_flat.shape[-1]))
@@ -381,10 +379,10 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None):
 
     TODO: Add ability to choose which channel to use in the decomposition.
     """
-    img0, _ = torch.max(img[..., 0], 0)  # For multi-step inputs
+    img0 = np.max(img[..., 0], 0)  # For multi-step inputs
     image_shape = img0.shape
 
-    if torch.any(torch.isnan(img0)):
+    if np.any(np.isnan(img0)):
         raise ValueError('NaNs in data!!')
 
     if thresh == -np.inf:
@@ -395,8 +393,8 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None):
 
     data, mappings = flatten(img, labels)
 
-    if torch.any(torch.isnan(data)):
-        raise ValueError('NaNs in data!')
+    if np.any(np.isnan(data)):
+        raise ValueError('NaNs in data!!')
 
     xx, yy = data[0, ..., 1]*image_shape[1], data[0, ..., 2]*image_shape[0]
     
@@ -414,10 +412,9 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None):
     assert len(node_sizes) == len(graph_nodes)
 
     # Pseudo-normalize
-    node_sizes = torch.Tensor(node_sizes) / ((max_grid_size/2)**2)
-    node_sizes = node_sizes.repeat((img.shape[0], *[1]*len(node_sizes.shape)))
-    # node_sizes = torch.zeros((img.shape[0], len(graph_nodes)), dtype=data.dtype)
-    data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
+    node_sizes = node_sizes / ((max_grid_size/2)**2)
+    node_sizes = np.tile(node_sizes, (img.shape[0], 1))
+    data = np.concatenate([data, np.expand_dims(node_sizes, -1)], -1)
 
     distances = get_adj(labels, xx=xx, yy=yy, calculate_distances=False)
 
