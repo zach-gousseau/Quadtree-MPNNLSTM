@@ -104,10 +104,8 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, trans
         Note: A '-1' label means that the pixel is invalid (according to the provided mask)
     """
     
-    # Ensure the base grid is a power of 2
-    assert is_power_of_two(max_size)
+    assert max_size & (max_size - 1) == 0
 
-    # Get image dimensions
     n, m = img.shape
     
     # Initialize label array with the base grid (maximum grid cell size) while 
@@ -119,77 +117,59 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, trans
     # Pad the image to match the labels array
     img = np.pad(img, ((0, n_padded-n), (0, m_padded-m)), mode='edge')
     
-    if transform_func is not None:
-        img_for_criteria = transform_func(img)
-    else:
-        img_for_criteria = img
-    
-    # Counter for current label
-    global cur_label
+    # Apply transformation if desired
+    img_for_criteria = transform_func(img) if transform_func else img
+
     cur_label = 0
+    
+    # Build initial stack using each of the cells in the base grid
+    stack = []
+    for i in range(n_padded // max_size): 
+        for j in range(m_padded // max_size):
+            stack.append((i*max_size, j*max_size, max_size))
 
-    # Function for recursive decomposition
-    def decompose(x: int, y: int, size: int):
-        global cur_label
+    while stack:
+        x, y, size = stack.pop()
         
-        # Stop here if the region is in the padded area
-        if x>=n or y>=m:
-            return 
+        # Skip if within the padded zone (which we ignore)
+        if x >= n or y >= m:
+            continue
 
-        l, r, t, b = x, x+size+1, y, y+size+1
-
-        # If the current cell is a single pixel, do not continue decomposing
-        if size == 1: 
-                
-            # Check against mask if provided
+        l, r, t, b = x, x + size + 1, y, y + size + 1
+        
+        # Stop if cell is singular
+        if size == 1:
             if mask is not None and mask[x, y]:
-                return
-            
+                continue
+
             labels[x, y] = cur_label
             cur_label += 1
-                    
-            return
+            continue
         
-        # Get cell region 
-        cell = img_for_criteria[max(0, l-padding): min(r+padding, shape[1]),
-                                max(0, t-padding): min(b+padding, shape[1])]
+        cell = img_for_criteria[
+            max(0, l-padding): min(r+padding, shape[1]),
+            max(0, t-padding): min(b+padding, shape[1])
+        ]
         
-        # Check against the splitting criteria 
-        split_cell = (max_2d(cell) > thresh)
+        # Split if the cell meets the specified criteria
+        split_cell = max_2d(cell) > thresh 
         
-        # Check if the cell overlaps any invalid pixels
-        # If it overlaps the mask, we want to split it regardless
-        if mask is not None:
-            overlaps_mask = False
-            overlaps_mask = any_2d(
-            mask[max(0, l-padding): min(r+padding, shape[1]),
-                 max(0, t-padding): min(b+padding, shape[1])]
-            )
-            
-            split_cell = split_cell or overlaps_mask
+        # Even if it doesn't meet the criteria, split if the cell overlaps a masked area
+        overlaps_mask = mask is not None and any_2d(mask[max(0, l-padding): min(r+padding, shape[1]), max(0, t-padding): min(b+padding, shape[1])])
+        split_cell = split_cell or (overlaps_mask)
         
-        # Split the cell in four quadrants if all conditions are met, 
-        # otherwise assign the same label to all of its pixels
+        # Perform splitting if criteria is met, otherwise set all pixels to the current label
         if split_cell:
             new_size = size // 2
-            decompose(x, y, new_size)
-            decompose(x + new_size, y, new_size)
-            decompose(x, y + new_size, new_size)
-            decompose(x + new_size, y + new_size, new_size)
+            stack.append((x, y, new_size))
+            stack.append((x + new_size, y, new_size))
+            stack.append((x, y + new_size, new_size))
+            stack.append((x + new_size, y + new_size, new_size))
         else:
             labels[x:x+size, y:y+size] = cur_label
             cur_label += 1
-
     
-    # Start recursive decomposition from the top left corner of the image
-    for i in range(n_padded // max_size): 
-        for j in range(m_padded // max_size):
-            decompose(i*max_size, j*max_size, max_size)
-
     return labels[:n, :m]
-
-
-%timeit labels = quadtree_decompose(img, padding=0, thresh=0.15, max_size=8, mask=mask, transform_func=lambda x: np.abs(x-0.5))
 
 def get_adj(labels, xx=None, yy=None, calculate_distances=True, edges_at_corners=False):
     """Get the adjacency matrix for a given label matrix (this could be more efficient)"""
