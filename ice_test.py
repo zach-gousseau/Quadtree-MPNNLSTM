@@ -42,7 +42,6 @@ class IceDataset(Dataset):
 
             # Slice dataset & normalize
             ds_year = ds.sel(time=slice(start_date, end_date))
-            # print(ds)
             ds_year = (ds_year - ds_year.min()) / (ds_year.max() - ds_year.min())
 
             num_samples = ds_year.time.size - output_timesteps - input_timesteps
@@ -61,7 +60,7 @@ class IceDataset(Dataset):
             x.append(x_year)
             y.append(y_year)
 
-        return np.concatenate(x, 0), np.concatenate(y, 0)
+        return np.concatenate(x, 0).astype('float32'), np.concatenate(y, 0).astype('float32')
 
 
 if __name__ == '__main__':
