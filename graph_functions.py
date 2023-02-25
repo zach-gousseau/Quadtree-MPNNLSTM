@@ -126,7 +126,7 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None):
         img_region = img[max(0, l-padding): min(r+padding, shape[1]),
                          max(0, t-padding): min(b+padding, shape[1])]
         
-        # img_region = np.abs(np.abs(img_region - 0.5) - 0.5)
+        img_region = np.abs(np.abs(img_region - 0.5) - 0.5)
         is_homogeneous = (np.nanmax(img_region) < thresh) or (size==1)
         
         # Check if the cell overlaps any invalid pixels 
@@ -204,10 +204,10 @@ def get_adj(labels, xx=None, yy=None, calculate_distances=True, edges_at_corners
                     neighbors.add(labels[i+1][j+1])
 
             # Remove self-loop if it exists
-            try:
-                neighbors.remove(node)
-            except KeyError:
-                pass
+            # try:
+            #     neighbors.remove(node)
+            # except KeyError:
+            #     pass
 
             # Remove links to invalid nodes (-1) if it exists
             try:
@@ -256,13 +256,13 @@ def flatten(img, labels):
     map_pixel_to_graph = {i: n for i, n in enumerate(labels_flat) if n!=-1}  # One-to-one mapping
     
     # map_graph_to_pixel = {n: np.where(labels_flat == i)[0] for i, n in enumerate(graph_nodes)}  # One-to-many mapping
-    # map_graph_to_pixel = {n: [] for n in graph_nodes}  # One-to-many mapping  or use defaultdict(list)
-    # for i, n in enumerate(labels_flat):
-    #     if n != -1:
-    #         map_graph_to_pixel[n].append(i)
+    map_graph_to_pixel = {n: [] for n in graph_nodes}  # One-to-many mapping  or use defaultdict(list)
+    for i, n in enumerate(labels_flat):
+        if n != -1:
+            map_graph_to_pixel[n].append(i)
             
-    values, inverse = np.unique(labels_flat, return_inverse=True)
-    map_graph_to_pixel = {value: np.where(inverse == i)[0] for i, value in enumerate(values)}
+    # values, inverse = np.unique(labels_flat, return_inverse=True)
+    # map_graph_to_pixel = {value: np.where(inverse == i)[0] for i, value in enumerate(values)}
 
     # Store mappings - TODO: this can be its own class
     mappings = {
