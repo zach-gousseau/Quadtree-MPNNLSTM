@@ -36,10 +36,18 @@ class NextFramePredictor(ABC):
         self.thresh = None if decompose else -np.inf
         self.decompose = decompose
 
-        self.model = model
+        self.model = model.to(device[0])
+        # self.model = model
+        
         self.thresh = thresh
         self.input_features = input_features 
-        self.device = device
+        
+        if device == 'cpu' or device is None:
+            device = [device]
+
+        n_devices = len(device)
+        
+        self.device = self.model.device = device
 
     def test_threshold(self, x, thresh, frame_index=0, mask=None):
         n_sample, input_timesteps, w, h, c = x.shape
@@ -73,10 +81,8 @@ class NextFramePredictor(ABC):
     @abstractmethod
     def train(
         self,
-        x,
-        y,
-        x_test,
-        y_test,
+        loader_train,
+        loader_test,
         n_epochs=200,
         lr=0.01,
         lr_decay=0.95,
@@ -115,10 +121,8 @@ class NextFramePredictorAR(NextFramePredictor):
 
     def train(
         self,
-        x,
-        y,
-        x_test,
-        y_test,
+        loader_train,
+        loader_test,
         n_epochs=200,
         lr=0.01,
         lr_decay=0.95,
@@ -147,7 +151,7 @@ class NextFramePredictorAR(NextFramePredictor):
         for epoch in range(n_epochs): 
             running_loss = 0
             step = 0
-            for i in tqdm(range(len(x)), leave=False):
+            for i in tqdm(range(len()), leave=False):
 
                 x_batch_img = x[[i]]  # 2D images (num_timesteps, x, y)
                 x_batch_img = add_positional_encoding(x_batch_img).squeeze(0)
@@ -164,8 +168,8 @@ class NextFramePredictorAR(NextFramePredictor):
                 y_batch, _ = flatten(y[i], x_graph['labels'])
 
                 for j in range(self.multi_step_loss):
-                    graph.x = torch.from_numpy(x_batch).float()
-                    graph.y = torch.from_numpy(y_batch).float()
+                    graph.x = torch.from_numpy(x_batch)#.float()
+                    graph.y = torch.from_numpy(y_batch)#.float()
 
                     graph.to(self.device)
 
@@ -221,8 +225,8 @@ class NextFramePredictorAR(NextFramePredictor):
                 y_batch, _ = flatten(y_test[i], x_test_graph['labels'])
 
                 for j in range(self.multi_step_loss):
-                    graph.x = torch.from_numpy(x_batch).float()
-                    graph.y = torch.from_numpy(y_batch).float()
+                    graph.x = torch.from_numpy(x_batch)#.float()
+                    graph.y = torch.from_numpy(y_batch)#.float()
 
                     graph.to(self.device)
                     y_hat = self.model(graph.x, graph.edge_index, graph.edge_attr)
@@ -292,8 +296,8 @@ class NextFramePredictorAR(NextFramePredictor):
             
             y_hat_batch = []
             for j in range(rollout):
-                graph.x = torch.from_numpy(x_batch).float()
-                # graph.y = torch.from_numpy(y_batch).float()
+                graph.x = torch.from_numpy(x_batch)#.float()
+                # graph.y = torch.from_numpy(y_batch)#.float()
 
                 graph.to(self.device)
                 y_hat = self.model(graph.x, graph.edge_index, graph.edge_attr)
@@ -370,12 +374,6 @@ class NextFramePredictorS2S(NextFramePredictor):
 
         if mask is not None:
             assert mask.shape == image_shape, f'Mask and image shapes do not match. Got {mask.shape} and {image_shape}'
-
-        if self.device == 'cpu' or self.device is None:
-            self.device = [self.device]
-            n_devices = 1
-        else:
-            n_devices = len(self.device)
             
         # self.model.to(self.device)
         self.model.train()
@@ -391,11 +389,11 @@ class NextFramePredictorS2S(NextFramePredictor):
 
         st = time.time()
         for epoch in range(n_epochs): 
+            print(epoch)
             running_loss = 0
             step = 0
             # for i in tqdm(np.arange(0, len(loader_train), n_devices), leave=False):
             for x, y in tqdm(loader_train, leave=False):
-                
                 y = y.squeeze(0)
                     
                 # for j in range(n_devices):
@@ -410,12 +408,11 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                 x_batch = x_graph['data']  # Image in graph format
 
-                graph.x = torch.from_numpy(x_batch).float()
+                graph.x = x_batch#torch.from_numpy(x_batch)#.float()
                 graph.y = y
 
                 graph.input_graph_structure = x_graph
                 graph.image_shape = image_shape
-
                 graph.to(self.device[0])
 
                 optimizer.zero_grad()
@@ -425,13 +422,13 @@ class NextFramePredictorS2S(NextFramePredictor):
                 y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
 
                 # Transform 
-                y_true = [torch.Tensor(flatten(np.expand_dims(y[i], 0), y_hat_graph[i]['labels'])[0])[0] for i in range(self.output_timesteps)]
+                y_true = [flatten(torch.Tensor(y[i]).unsqueeze(0), y_hat_graph[i]['labels'])[0].squeeze(0) for i in range(self.output_timesteps)]
 
                 y_hat = torch.cat(y_hat, dim=0)
                 y_true = torch.cat(y_true, dim=0)
 
                 y_true = y_true.to(self.device[0])  # TODO: Somehow y_true has to be distributed to all GPUs....
-
+                
                 loss = loss_func(y_hat, y_true)
 
                 loss.backward()
@@ -455,8 +452,8 @@ class NextFramePredictorS2S(NextFramePredictor):
                 x_batch = x_test_graph['data']
                 
                 
-                graph.x = torch.from_numpy(x_batch).float()
-                graph.y = torch.from_numpy(y).float()
+                graph.x = torch.from_numpy(x_batch)#.float()
+                graph.y = torch.from_numpy(y)#.float()
 
                 graph.input_graph_structure = x_test_graph
                 graph.image_shape = image_shape
@@ -520,7 +517,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
             x_batch = x_graph['data']  # Image in graph format
 
-            graph.x = torch.from_numpy(x_batch).float()
+            graph.x = torch.from_numpy(x_batch)#.float()
             graph.skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
 
             graph.input_graph_structure = x_graph

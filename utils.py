@@ -1,5 +1,6 @@
 import numpy as np
 import numba
+import torch
 
 
 @numba.jit
@@ -40,8 +41,12 @@ def add_positional_encoding(x):
     jj = jj / image_shape[0]
 
     pos_encoding = np.moveaxis(np.array([[ii, jj]]*n_timesteps), 1, -1)
-
-    x = np.concatenate((x, np.array([pos_encoding]*len(x))), axis=-1)
+    if isinstance(x, torch.Tensor):
+        pos_encoding = torch.Tensor(pos_encoding).type(x.dtype)
+        x = torch.cat((x, pos_encoding.repeat(len(x), *[1]*len(pos_encoding.shape))), axis=-1)
+    else:
+        pos_encoding = pos_encoding.astype(x.dtype)
+        x = np.concatenate((x, np.tile(pos_encoding, (len(x), *[1]*len(pos_encoding.shape)))), axis=-1)
     return x
 
 
