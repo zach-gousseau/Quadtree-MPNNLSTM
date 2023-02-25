@@ -168,8 +168,8 @@ class NextFramePredictorAR(NextFramePredictor):
                 y_batch, _ = flatten(y[i], x_graph['labels'])
 
                 for j in range(self.multi_step_loss):
-                    graph.x = torch.from_numpy(x_batch)#.float()
-                    graph.y = torch.from_numpy(y_batch)#.float()
+                    graph.x = torch.from_numpy(x_batch).float()
+                    graph.y = torch.from_numpy(y_batch).float()
 
                     graph.to(self.device)
 
@@ -225,8 +225,8 @@ class NextFramePredictorAR(NextFramePredictor):
                 y_batch, _ = flatten(y_test[i], x_test_graph['labels'])
 
                 for j in range(self.multi_step_loss):
-                    graph.x = torch.from_numpy(x_batch)#.float()
-                    graph.y = torch.from_numpy(y_batch)#.float()
+                    graph.x = torch.from_numpy(x_batch).float()
+                    graph.y = torch.from_numpy(y_batch).float()
 
                     graph.to(self.device)
                     y_hat = self.model(graph.x, graph.edge_index, graph.edge_attr)
@@ -296,8 +296,8 @@ class NextFramePredictorAR(NextFramePredictor):
             
             y_hat_batch = []
             for j in range(rollout):
-                graph.x = torch.from_numpy(x_batch)#.float()
-                # graph.y = torch.from_numpy(y_batch)#.float()
+                graph.x = torch.from_numpy(x_batch).float()
+                # graph.y = torch.from_numpy(y_batch).float()
 
                 graph.to(self.device)
                 y_hat = self.model(graph.x, graph.edge_index, graph.edge_attr)
@@ -389,16 +389,14 @@ class NextFramePredictorS2S(NextFramePredictor):
 
         st = time.time()
         for epoch in range(n_epochs): 
-            print(epoch)
             running_loss = 0
             step = 0
-            # for i in tqdm(np.arange(0, len(loader_train), n_devices), leave=False):
+            
             for x, y in tqdm(loader_train, leave=False):
-                y = y.squeeze(0)
                     
                 # for j in range(n_devices):
 
-                # x = np.expand_dims(x, 0)  # 2D images (num_timesteps, x, y)
+                x = np.expand_dims(x, 0)  # 2D images (num_timesteps, x, y)
                 x = add_positional_encoding(x).squeeze(0)
 
                 x_graph = image_to_graph(x, thresh=self.thresh, mask=mask)
@@ -408,7 +406,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                 x_batch = x_graph['data']  # Image in graph format
 
-                graph.x = x_batch#torch.from_numpy(x_batch)#.float()
+                graph.x = torch.from_numpy(x_batch).float()
                 graph.y = y
 
                 graph.input_graph_structure = x_graph
@@ -422,7 +420,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
 
                 # Transform 
-                y_true = [flatten(torch.Tensor(y[i]).unsqueeze(0), y_hat_graph[i]['labels'])[0].squeeze(0) for i in range(self.output_timesteps)]
+                y_true = [torch.Tensor(flatten(np.expand_dims(y[i], 0), y_hat_graph[i]['labels'])[0])[0] for i in range(self.output_timesteps)]
 
                 y_hat = torch.cat(y_hat, dim=0)
                 y_true = torch.cat(y_true, dim=0)
@@ -452,8 +450,8 @@ class NextFramePredictorS2S(NextFramePredictor):
                 x_batch = x_test_graph['data']
                 
                 
-                graph.x = torch.from_numpy(x_batch)#.float()
-                graph.y = torch.from_numpy(y)#.float()
+                graph.x = torch.from_numpy(x_batch).float()
+                graph.y = torch.from_numpy(y).float()
 
                 graph.input_graph_structure = x_test_graph
                 graph.image_shape = image_shape
@@ -517,7 +515,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
             x_batch = x_graph['data']  # Image in graph format
 
-            graph.x = torch.from_numpy(x_batch)#.float()
+            graph.x = torch.from_numpy(x_batch).float()
             graph.skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
 
             graph.input_graph_structure = x_graph

@@ -15,11 +15,15 @@ class ModMovingMNISTDataset(Dataset):
                  canvas_size=(32, 32),
                  digit_size=(12, 12),
                  pixel_noise=0.05,
-                 velocity_noise=0.25):
+                 velocity_noise=0.25,
+                 as_torch=False):
         self.mmmnist = ModMovingMNIST(canvas_size, digit_size, pixel_noise, velocity_noise)
         
         x, y = self.mmmnist.create_dataset(n_samples, input_timesteps, output_timesteps, n_digits, gap)
-        self.x, self.y = torch.from_numpy(x).type(torch.float32), torch.from_numpy(y).type(torch.float32)
+        if as_torch:
+            self.x, self.y = torch.from_numpy(x).type(torch.float32), torch.from_numpy(y).type(torch.float32)
+        else:
+            self.x, self.y = x.astype(np.float32), y.astype(np.float32)
         
         self.image_shape = x.shape[2:4]
         
