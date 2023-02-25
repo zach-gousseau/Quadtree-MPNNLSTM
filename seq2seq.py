@@ -259,7 +259,13 @@ class Seq2Seq(torch.nn.Module):
                 # Now we decide whether to use the prediction or ground truth for the input to the next rollout step
                 teacher_force = random.random() < teacher_forcing_ratio
                 if teacher_force:
-                    input_img = graph.y[t]#.cpu()
+                    input_img = graph.y[t]
+
+                    try:
+                        input_img = input_img.cpu()
+                    except AttributeError:
+                        pass
+                    
                     input_img = np.expand_dims(input_img, (0, 1))
                     input_img = add_positional_encoding(input_img)
                     curr_graph_structure = image_to_graph(input_img[0], thresh=self.thresh, mask=mask)

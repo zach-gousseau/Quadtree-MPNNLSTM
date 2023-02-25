@@ -181,12 +181,14 @@ class GConvLSTM(nn.Module):
 
         self.conv_x_i = GCNConv(
             in_channels=self.in_channels,
-            out_channels=self.out_channels
+            out_channels=self.out_channels,
+            add_self_loops=False
         )
 
         self.conv_h_i = GCNConv(
             in_channels=self.out_channels,
-            out_channels=self.out_channels
+            out_channels=self.out_channels,
+            add_self_loops=False
         )
 
         self.w_c_i = Parameter(torch.Tensor(1, self.out_channels))
@@ -196,12 +198,14 @@ class GConvLSTM(nn.Module):
 
         self.conv_x_f = GCNConv(
             in_channels=self.in_channels,
-            out_channels=self.out_channels
+            out_channels=self.out_channels,
+            add_self_loops=False
         )
 
         self.conv_h_f = GCNConv(
             in_channels=self.out_channels,
-            out_channels=self.out_channels
+            out_channels=self.out_channels,
+            add_self_loops=False
         )
 
         self.w_c_f = Parameter(torch.Tensor(1, self.out_channels))
@@ -211,12 +215,14 @@ class GConvLSTM(nn.Module):
 
         self.conv_x_c = GCNConv(
             in_channels=self.in_channels,
-            out_channels=self.out_channels
+            out_channels=self.out_channels,
+            add_self_loops=False
         )
 
         self.conv_h_c = GCNConv(
             in_channels=self.out_channels,
-            out_channels=self.out_channels
+            out_channels=self.out_channels,
+            add_self_loops=False
         )
 
         self.b_c = Parameter(torch.Tensor(1, self.out_channels))
@@ -225,12 +231,14 @@ class GConvLSTM(nn.Module):
 
         self.conv_x_o = GCNConv(
             in_channels=self.in_channels,
-            out_channels=self.out_channels
+            out_channels=self.out_channels,
+            add_self_loops=False
         )
 
         self.conv_h_o = GCNConv(
             in_channels=self.out_channels,
-            out_channels=self.out_channels
+            out_channels=self.out_channels,
+            add_self_loops=False
         )
 
         self.w_c_o = Parameter(torch.Tensor(1, self.out_channels))
