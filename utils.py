@@ -27,8 +27,9 @@ def get_n_params(model):
 
 
 def add_positional_encoding(x):
-    """(n_samples, n_timesteps, w, h, c)"""
-    n_samples, n_timesteps, w, h, c = x.shape
+    """(n_samples, w, h, c)"""
+    assert len(x.shape) == 4, 'array should be 4-dimensional (n_samples, w, h, c)'
+    n_samples, w, h, c = x.shape
 
     image_shape = (w, h, c)
 
@@ -40,13 +41,13 @@ def add_positional_encoding(x):
     ii = ii / image_shape[1]
     jj = jj / image_shape[0]
 
-    pos_encoding = np.moveaxis(np.array([[ii, jj]]*n_timesteps), 1, -1)
+    pos_encoding = np.moveaxis(np.array([[ii, jj]]*n_samples), 1, -1)
     if isinstance(x, torch.Tensor):
         pos_encoding = torch.Tensor(pos_encoding).type(x.dtype)
         x = torch.cat((x, pos_encoding.repeat(len(x), *[1]*len(pos_encoding.shape))), axis=-1)
     else:
         pos_encoding = pos_encoding.astype(x.dtype)
-        x = np.concatenate((x, np.tile(pos_encoding, (len(x), *[1]*len(pos_encoding.shape)))), axis=-1)
+        x = np.concatenate((x, pos_encoding), axis=-1)
     return x
 
 
