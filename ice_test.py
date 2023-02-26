@@ -94,7 +94,7 @@ if __name__ == '__main__':
 
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
-    training_years = range(2010, 2016)
+    training_years = range(2015, 2016)
 
     input_features = len(x_vars)
     
@@ -123,7 +123,7 @@ if __name__ == '__main__':
     )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    device = torch.device('mps')
+    # device = torch.device('mps')
     print('device:', device)
 
 
@@ -142,7 +142,7 @@ if __name__ == '__main__':
     lr = 0.05
 
     model.model.train()
-    model.train(loader_train, loader_test, lr=lr, n_epochs=15, mask=mask)  # Train for 20 epochs
+    model.train(loader_train, loader_test, lr=lr, n_epochs=1, mask=mask)  # Train for 20 epochs
 
     # model.model.eval()
     # model.score(x_val, y_val[:, :1])  # Check the MSE on the validation set
