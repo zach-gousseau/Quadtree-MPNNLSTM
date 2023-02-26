@@ -330,7 +330,7 @@ def unflatten(img_flat, graph_nodes, mappings, image_shape=(8, 8), nan_value=0):
     # Start with an array of dimension (n, w*h, c) since spatial indexing is column-wise flattened
     img = np.full((img_flat.shape[0], np.prod(image_shape), img_flat.shape[-1]), nan_value, dtype=float)
     for n in graph_nodes:
-        img[:, mappings['n->p'][n]] = np.expand_dims(img_flat[:, n], 1)
+        img[:, mappings['n->p'][n]] = img_flat[:, [n]]
 
     # Reshape to (n, w, h, c)
     img = img.reshape((img_flat.shape[0], *image_shape, img_flat.shape[-1]))

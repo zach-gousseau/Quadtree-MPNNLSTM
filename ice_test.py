@@ -66,11 +66,11 @@ class IceDataset(Dataset):
 if __name__ == '__main__':
     
 
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument("--month")  # Month number
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--month")  # Month number
 
-    # args = vars(parser.parse_args())
-    # month = int(args['month'])
+    args = vars(parser.parse_args())
+    month = int(args['month'])
 
     ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
 
@@ -98,51 +98,57 @@ if __name__ == '__main__':
 
     input_features = len(x_vars)
     
-    months = range(1, 13)
-    for month in months:
 
-        data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars)
-        data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
-        data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
-        
-        loader_train = DataLoader(data_train, batch_size=1, shuffle=True)
-        loader_test = DataLoader(data_test, batch_size=1, shuffle=True)
-        loader_val = DataLoader(data_val, batch_size=1, shuffle=True)
+    data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars)
+    data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
+    data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
 
-        # Add 3 to the number of input features since we add positional encoding (x, y) and node size (s)
-        nn = Seq2Seq(
-            hidden_size=64,
-            dropout=0.1,
-            thresh=0.15,
-            input_features=input_features+3,
-            output_timesteps=output_timesteps,
-            n_layers=3).float()
+    loader_train = DataLoader(data_train, batch_size=1, shuffle=True, collate_fn=lambda x: x[0])
+    loader_test = DataLoader(data_test, batch_size=1, shuffle=True, collate_fn=lambda x: x[0])
+    loader_val = DataLoader(data_val, batch_size=1, shuffle=True, collate_fn=lambda x: x[0])
 
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        print('device:', device)
-        
-        experiment_name = str(month) + '_test'
+    thresh = 0.35
+    def dist_from_05(arr):
+        return abs(abs(arr - 0.5) - 0.5)
 
-        model = NextFramePredictorS2S(
-            nn,
-            thresh=0.15,
-            experiment_name=experiment_name,
-            input_features=input_features,
-            output_timesteps=output_timesteps)
+    # Add 3 to the number of input features since we add positional encoding (x, y) and node size (s)
+    nn = Seq2Seq(
+        hidden_size=64,
+        dropout=0.1,
+        thresh=thresh,
+        input_features=input_features+3,
+        output_timesteps=output_timesteps,
+        n_layers=3,
+        transform_func=dist_from_05
+    )
 
-        print('Num. parameters:', model.get_n_params())
-        print('Model:\n', model.model)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device('mps')
+    print('device:', device)
 
-        lr = 0.05
 
-        model.model.train()
-        model.train(loader_train, loader_test, lr=lr, n_epochs=15, mask=mask)  # Train for 20 epochs
+    model = NextFramePredictorS2S(
+        nn,
+        thresh=thresh,
+        experiment_name=str(month)+'test',
+        input_features=input_features,
+        output_timesteps=output_timesteps,
+        transform_func=dist_from_05,
+        device=[device])
 
-        # model.model.eval()
-        # model.score(x_val, y_val[:, :1])  # Check the MSE on the validation set
-        # Unfinished
+    print('Num. parameters:', model.get_n_params())
+    print('Model:\n', model.model)
 
-        model.loss.to_csv(f'ice_results/loss_{experiment_name}.csv')
-        model.save('ice_results')
+    lr = 0.05
 
-        print(f'Finished model {month} in {time.time() - start}')
+    model.model.train()
+    model.train(loader_train, loader_test, lr=lr, n_epochs=15, mask=mask)  # Train for 20 epochs
+
+    # model.model.eval()
+    # model.score(x_val, y_val[:, :1])  # Check the MSE on the validation set
+    # Unfinished
+
+    model.loss.to_csv(f'ice_results/loss_{experiment_name}.csv')
+    model.save('ice_results')
+
+    print(f'Finished model {month} in {time.time() - start}')
