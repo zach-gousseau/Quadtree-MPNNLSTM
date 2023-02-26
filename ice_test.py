@@ -125,12 +125,14 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # device = torch.device('mps')
     print('device:', device)
+    
+    experiment_name = str(month)+'_test'
 
 
     model = NextFramePredictorS2S(
         nn,
         thresh=thresh,
-        experiment_name=str(month)+'test',
+        experiment_name=experiment_name,
         input_features=input_features,
         output_timesteps=output_timesteps,
         transform_func=dist_from_05,
