@@ -44,7 +44,7 @@ def add_positional_encoding(x):
     pos_encoding = np.moveaxis(np.array([[ii, jj]]*n_samples), 1, -1)
     if isinstance(x, torch.Tensor):
         pos_encoding = torch.Tensor(pos_encoding).type(x.dtype)
-        x = torch.cat((x, pos_encoding.repeat(len(x), *[1]*len(pos_encoding.shape))), axis=-1)
+        x = torch.cat((x, pos_encoding), axis=-1)
     else:
         pos_encoding = pos_encoding.astype(x.dtype)
         x = np.concatenate((x, pos_encoding), axis=-1)
