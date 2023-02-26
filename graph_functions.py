@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch_geometric.data import Data
 import matplotlib.pyplot as plt
 from collections import defaultdict
+import numba as nb
 
 from utils import minmax
 
@@ -366,7 +367,7 @@ def image_to_graph_pixelwise(img, mask=None):
     return out
 
 
-def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None):
+def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=None):
     """
     Decomposes an image into a quadtree and then generates a graph representation of the image
     using quadtree decomposition. The graph nodes are the centroids of the quadtree cells and the
@@ -389,6 +390,7 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None):
     TODO: Add ability to choose which channel to use in the decomposition.
     """
     img0 = np.max(img[..., 0], 0)  # For multi-step inputs
+
     image_shape = img0.shape
 
     if np.any(np.isnan(img0)):
@@ -396,15 +398,15 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None):
 
     if thresh == -np.inf:
         return image_to_graph_pixelwise(img, mask)
-
-    labels = quadtree_decompose(img0, thresh=thresh, max_size=max_grid_size, mask=mask)
+    
+    labels = quadtree_decompose(img0, thresh=thresh, max_size=max_grid_size, mask=mask, transform_func=transform_func)
     graph_nodes = get_graph_nodes(labels)
-
+    
     data, mappings = flatten(img, labels)
 
     if np.any(np.isnan(data)):
         raise ValueError('NaNs in data!!')
-
+    
     xx, yy = data[0, ..., 1]*image_shape[1], data[0, ..., 2]*image_shape[0]
     
     # Get sizes for each graph node

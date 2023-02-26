@@ -104,7 +104,7 @@ class Encoder(torch.nn.Module):
         # _ = _.detach().numpy()
         # _ = np.expand_dims(_, 0)
 
-        # d = image_to_graph(np.zeros((1, 32, 32, 8), dtype=float), thresh=-np.inf, max_grid_size=8, mask=None)
+        # d = image_to_graph(np.zeros((1, 32, 32, 8), dtype=float), thresh=-np.inf, max_grid_size=8, mask=None, transform_func=self.transform_func)
         # import matplotlib.pyplot as plt
         # img = unflatten(_, d['graph_nodes'], d['mappings'], image_shape=(32, 32), nan_value=np.nan)
         # fig, axs = plt.subplots(1, 8, figsize=(20, 4))
@@ -184,7 +184,16 @@ class Decoder(torch.nn.Module):
         
 
 class Seq2Seq(torch.nn.Module):
-    def __init__(self, hidden_size, dropout, thresh, input_timesteps=3, input_features=4, output_timesteps=5, n_layers=4, device=None):
+    def __init__(self,
+                 hidden_size,
+                 dropout,
+                 thresh,
+                 input_timesteps=3,
+                 input_features=4,
+                 output_timesteps=5,
+                 n_layers=4,
+                 transform_func=None,
+                 device=None):
         super().__init__()
         
         self.encoder = Encoder(input_features, hidden_size, dropout, n_layers=n_layers)
@@ -195,6 +204,7 @@ class Seq2Seq(torch.nn.Module):
         self.n_layers = n_layers
 
         self.thresh = thresh
+        self.transform_func = transform_func
 
         self.device = device
         
@@ -246,9 +256,8 @@ class Seq2Seq(torch.nn.Module):
                 
                 # Then we convert it back to a graph representation where the graph is determined by
                 # its own values (rather than the one created by the input images / previous step)
-                y_hat_img = np.expand_dims(y_hat_img, (0))
                 y_hat_img = add_positional_encoding(y_hat_img)  # Add pos. embedding
-                graph_structure = image_to_graph(y_hat_img[0], thresh=self.thresh, mask=mask)  # Generate new graph using the new X
+                graph_structure = image_to_graph(y_hat_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func)  # Generate new graph using the new X
 
                 hidden, cell = hidden.cpu().detach().numpy(), cell.cpu().detach().numpy()
 
@@ -259,16 +268,15 @@ class Seq2Seq(torch.nn.Module):
                 # Now we decide whether to use the prediction or ground truth for the input to the next rollout step
                 teacher_force = random.random() < teacher_forcing_ratio
                 if teacher_force:
-                    input_img = graph.y[t]
+                    input_img = graph.y[[t]]
 
                     try:
                         input_img = input_img.cpu()
                     except AttributeError:
                         pass
                     
-                    input_img = np.expand_dims(input_img, (0, 1))
                     input_img = add_positional_encoding(input_img)
-                    curr_graph_structure = image_to_graph(input_img[0], thresh=self.thresh, mask=mask)
+                    curr_graph_structure = image_to_graph(input_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func)
 
                     skip = curr_graph_structure['data'][0, :, :1]
 
@@ -300,9 +308,8 @@ class Seq2Seq(torch.nn.Module):
                 teacher_force = random.random() < teacher_forcing_ratio
                 teacher_force = False
                 if teacher_force:
-                    input_img = graph.y[t]
-                    input_img = np.expand_dims(input_img, (0, 1))
-                    input_img = add_positional_encoding(input_img).squeeze(0)
+                    input_img = graph.y[[t]]
+                    input_img = add_positional_encoding(input_img)
                     input_x, _ = flatten(input_img, curr_graph_structure['labels'])
 
                     curr_graph.x = torch.cat((curr_graph.x[..., 1:], torch.from_numpy(input_x[..., [0]])), -1)#.float()
