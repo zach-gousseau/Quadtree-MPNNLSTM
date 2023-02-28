@@ -490,22 +490,19 @@ class NextFramePredictorS2S(NextFramePredictor):
 
         })
         
-    def predict(self, x, mask=None):
-
-        image_shape = x[0].shape[1:-1]
-
-        x = add_positional_encoding(x)
+    def predict(self, loader, mask=None):
+        
+        image_shape = loader.dataset.image_shape
             
         self.model.to(self.device[0])
         
         y_pred = []
+        for x, y in tqdm(loader, leave=False):
 
+            # for j in range(n_devices):
+            x = add_positional_encoding(x)
 
-        for i in tqdm(range(len(x)), leave=False):
-
-            x_batch_img = x[i]  # 2D images (num_timesteps, x, y)
-
-            x_graph = image_to_graph(x_batch_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func)
+            x_graph = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func)
 
             # Create a PyG graph object
             graph = create_graph_structure(x_graph['graph_nodes'], x_graph['distances'])
@@ -513,18 +510,26 @@ class NextFramePredictorS2S(NextFramePredictor):
             x_batch = x_graph['data']  # Image in graph format
 
             graph.x = torch.from_numpy(x_batch).float()
-            graph.skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
+            graph.y = y
 
             graph.input_graph_structure = x_graph
-
+            graph.image_shape = image_shape
             graph.to(self.device[0])
 
-            y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0)
-            y_hat_img = [unflatten(np.expand_dims(y_hat[i].detach(), 0), y_hat_graph[i]['graph_nodes'], y_hat_graph[i]['mappings'], image_shape=image_shape).squeeze(0) for i in range(self.output_timesteps)]
+            skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
+
+            y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
             
-            y_pred.append(y_hat_img)
+            y_hat = [
+                unflatten(np.expand_dims(y_hat[i].detach(), 0), y_hat_graph[i]['graph_nodes'], y_hat_graph[i]['mappings'], image_shape=image_shape) 
+                for i in range(self.output_timesteps)
+            ]
             
-        return np.array(y_pred)
+            y_hat = np.stack(y_hat).squeeze(1)
+            
+            y_pred.append(y_hat)
+            
+        return np.stack(y_pred, 0)
 
     def score(self, x, y, rollout=None):
         pass

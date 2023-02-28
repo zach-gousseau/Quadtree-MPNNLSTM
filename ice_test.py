@@ -5,6 +5,7 @@ import random
 import datetime
 import os
 import time
+import pandas as pd
 import xarray as xr
 from dateutil.relativedelta import relativedelta
 
@@ -18,8 +19,10 @@ from seq2seq import Seq2Seq
 from torch.utils.data import Dataset, DataLoader
 
 class IceDataset(Dataset):
-    def __init__(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None):
-        self.x, self.y = self.get_xy(ds, years, month, input_timesteps, output_timesteps, x_vars=x_vars, y_vars=y_vars)
+    def __init__(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None, train=False):
+        self.train = train
+        
+        self.x, self.y, self.launch_dates = self.get_xy(ds, years, month, input_timesteps, output_timesteps, x_vars=x_vars, y_vars=y_vars)
         self.image_shape = self.x[0].shape[1:-1]
 
     def __len__(self):
@@ -31,10 +34,16 @@ class IceDataset(Dataset):
     def get_xy(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None):
 
         x, y = [], []
+        launch_dates = []
         for year in years:
-            # 3 months around the month of interest
-            start_date = datetime.datetime(year, month, 1) - relativedelta(months=1)
-            end_date = datetime.datetime(year, month, 1) + relativedelta(months=2)
+            if self.train:
+                # 3 months around the month of interest
+                start_date = datetime.datetime(year, month, 1) - relativedelta(months=1)
+                end_date = datetime.datetime(year, month, 1) + relativedelta(months=2)
+            else:
+                start_date = datetime.datetime(year, month, 1)
+                end_date = datetime.datetime(year, month, 1) + relativedelta(months=1)
+                
 
             # Add buffer for input timesteps and output timesteps 
             start_date -= relativedelta(days=input_timesteps)
@@ -59,8 +68,11 @@ class IceDataset(Dataset):
 
             x.append(x_year)
             y.append(y_year)
+            launch_dates.append(ds_year.time[input_timesteps:-output_timesteps])
 
-        return np.concatenate(x, 0).astype('float32'), np.concatenate(y, 0).astype('float32')
+        x, y, launch_dates = np.concatenate(x, 0), np.concatenate(y, 0), np.concatenate(launch_dates, 0)
+        
+        return x.astype('float32'), y.astype('float32'), launch_dates
 
 
 if __name__ == '__main__':
@@ -94,12 +106,12 @@ if __name__ == '__main__':
 
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
-    training_years = range(2015, 2016)
+    training_years = range(2014, 2016)
 
     input_features = len(x_vars)
     
 
-    data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars)
+    data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
     data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
 
@@ -126,7 +138,7 @@ if __name__ == '__main__':
     # device = torch.device('mps')
     print('device:', device)
     
-    experiment_name = str(month)+'_test'
+    experiment_name = f'M{month}_Y{training_years[0]}_Y{training_years[1]}_I{input_timesteps}O{output_timesteps}'
 
 
     model = NextFramePredictorS2S(
@@ -149,8 +161,28 @@ if __name__ == '__main__':
     # model.model.eval()
     # model.score(x_val, y_val[:, :1])  # Check the MSE on the validation set
     # Unfinished
+    
+    model.model.eval()
+    val_preds = model.predict(loader_val)
+    
+    launch_dates = loader_val.dataset.launch_dates
+    
+    ds = xr.Dataset(
+        data_vars=dict(
+            y_hat=(["launch_date", "timestep", "latitude", "longitude"], val_preds.squeeze(-1)),
+            y_true=(["launch_date", "timestep", "latitude", "longitude"], loader_val.dataset.y.squeeze(-1)),
+        ),
+        coords=dict(
+            longitude=ds.longitude,
+            latitude=ds.latitude,
+            launch_date=launch_dates,
+            timestep=np.arange(1, output_timesteps+1),
+        ),
+    )
+    
+    ds.to_netcdf(f'ice_results/valpredictions_{experiment_name}.nc')
 
-    model.loss.to_csv(f'ice_results/loss_{experiment_name}.csv')
+    # model.loss.to_csv(f'ice_results/loss_{experiment_name}.csv')
     model.save('ice_results')
 
     print(f'Finished model {month} in {time.time() - start}')
