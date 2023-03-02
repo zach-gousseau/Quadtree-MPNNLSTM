@@ -51,20 +51,19 @@ class NextFramePredictor(ABC):
         
         self.device = self.model.device = device
 
-    def test_threshold(self, x, thresh, frame_index=0, mask=None):
-        n_sample, input_timesteps, w, h, c = x.shape
+    def test_threshold(self, x, thresh, mask=None):
+        n_sample, w, h, c = x.shape
         image_shape = (w, h)
 
         x_with_pos_encoding = add_positional_encoding(x)
-        frames = x_with_pos_encoding[frame_index]
 
-        graph = image_to_graph(frames, thresh=thresh, mask=mask, transform_func=self.transform_func)
-        img_reconstructed = unflatten(graph['data'][..., [0]], graph['graph_nodes'], graph['mappings'], image_shape=image_shape)
+        graph = image_to_graph(x_with_pos_encoding, thresh=thresh, mask=mask, transform_func=self.transform_func)
+        img_reconstructed = unflatten(graph['data'][..., [0]], graph['mapping'], image_shape)
 
         num_nodes = len(np.unique(graph['labels']))
-        fig, axs = plt.subplots(1, input_timesteps, figsize=(5*input_timesteps, 4))
+        fig, axs = plt.subplots(1, n_sample, figsize=(5*n_sample, 4))
 
-        for i in range(input_timesteps):
+        for i in range(n_sample):
             axs[i].imshow(img_reconstructed[i, ..., 0])
             plot_contours(axs[i], graph['labels'])
 
@@ -393,6 +392,8 @@ class NextFramePredictorS2S(NextFramePredictor):
             step = 0
             
             for x, y in tqdm(loader_train, leave=False):
+
+                x, y = x.squeeze(0), y.squeeze(0)
                     
                 # for j in range(n_devices):
                 x = add_positional_encoding(x)
@@ -404,7 +405,8 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                 x_batch = x_graph['data']  # Image in graph format
 
-                graph.x = torch.from_numpy(x_batch).float()
+                # graph.x = torch.from_numpy(x_batch).float()
+                graph.x = x_batch
                 graph.y = y
 
                 graph.input_graph_structure = x_graph
@@ -418,7 +420,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
 
                 # Transform 
-                y_true = [torch.Tensor(flatten(y[[i]], y_hat_graph[i]['labels'])[0])[0] for i in range(self.output_timesteps)]
+                y_true = [torch.Tensor(flatten(graph.y[[i]], y_hat_graph[i]['mapping'], y_hat_graph[i]['n_pixels_per_node']))[0] for i in range(self.output_timesteps)]
 
                 y_hat = torch.cat(y_hat, dim=0)
                 y_true = torch.cat(y_true, dim=0)
@@ -432,7 +434,6 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                 step += 1
                 running_loss += loss
-
 
             running_loss_test = 0
             step_test = 0
@@ -460,7 +461,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 
                 y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
                 
-                y_true = [torch.Tensor(flatten(y[[i]], y_hat_graph[i]['labels'])[0])[0] for i in range(self.output_timesteps)]
+                y_true = [torch.Tensor(flatten(graph.y[[i]], y_hat_graph[i]['mapping'],  y_hat_graph[i]['n_pixels_per_node']))[0] for i in range(self.output_timesteps)]
                 
                 y_hat = torch.cat(y_hat, dim=0).to(self.device[0])
                 y_true = torch.cat(y_true, dim=0).to(self.device[0])
@@ -510,7 +511,6 @@ class NextFramePredictorS2S(NextFramePredictor):
             x_batch = x_graph['data']  # Image in graph format
 
             graph.x = torch.from_numpy(x_batch).float()
-            graph.y = y
 
             graph.input_graph_structure = x_graph
             graph.image_shape = image_shape
@@ -518,12 +518,9 @@ class NextFramePredictorS2S(NextFramePredictor):
 
             skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
 
-            y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
+            y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0, mask=mask)
             
-            y_hat = [
-                unflatten(np.expand_dims(y_hat[i].detach(), 0), y_hat_graph[i]['graph_nodes'], y_hat_graph[i]['mappings'], image_shape=image_shape) 
-                for i in range(self.output_timesteps)
-            ]
+            y_hat = [unflatten(np.expand_dims(y_hat[i].detach(), 0), y_hat_graph[i]['mapping'], image_shape) for i in range(self.output_timesteps)]
             
             y_hat = np.stack(y_hat).squeeze(1)
             
