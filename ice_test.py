@@ -115,9 +115,9 @@ if __name__ == '__main__':
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
     data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
 
-    loader_train = DataLoader(data_train, batch_size=1, shuffle=True, collate_fn=lambda x: x[0])
-    loader_test = DataLoader(data_test, batch_size=1, shuffle=True, collate_fn=lambda x: x[0])
-    loader_val = DataLoader(data_val, batch_size=1, shuffle=True, collate_fn=lambda x: x[0])
+    loader_train = DataLoader(data_train, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
+    loader_test = DataLoader(data_test, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
+    loader_val = DataLoader(data_val, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
 
     thresh = 0.35
     def dist_from_05(arr):
@@ -125,17 +125,17 @@ if __name__ == '__main__':
 
     # Add 3 to the number of input features since we add positional encoding (x, y) and node size (s)
     nn = Seq2Seq(
-        hidden_size=64,
+        hidden_size=32,
         dropout=0.1,
         thresh=thresh,
         input_features=input_features+3,
         output_timesteps=output_timesteps,
-        n_layers=3,
+        n_layers=1,
         transform_func=dist_from_05
     )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    # device = torch.device('mps')
+    device = torch.device('mps')
     print('device:', device)
     
     experiment_name = f'M{month}_Y{training_years[0]}_Y{training_years[1]}_I{input_timesteps}O{output_timesteps}'
@@ -156,7 +156,7 @@ if __name__ == '__main__':
     lr = 0.05
 
     model.model.train()
-    model.train(loader_train, loader_test, lr=lr, n_epochs=1, mask=mask)  # Train for 20 epochs
+    model.train(loader_train, loader_test, lr=lr, n_epochs=15, mask=mask)  # Train for 20 epochs
 
     # model.model.eval()
     # model.score(x_val, y_val[:, :1])  # Check the MSE on the validation set
