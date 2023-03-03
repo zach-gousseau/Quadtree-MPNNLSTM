@@ -438,6 +438,7 @@ class NextFramePredictorS2S(NextFramePredictor):
             running_loss_test = 0
             step_test = 0
             for x, y in loader_test:
+                print('got here')
 
                 x = add_positional_encoding(x)
 
