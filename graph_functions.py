@@ -13,13 +13,13 @@ def plot_contours(ax, labels):
         for j in range(labels.shape[1]):
             try:
                 if labels[i][j] != labels[i][j+1]:
-                    ax.plot([j+0.5, j+0.5], [i-0.5, i+0.5], c='k', lw=1)
+                    ax.plot([j+0.5, j+0.5], [i-0.5, i+0.5], c='k', lw=0.5)
             except IndexError:
                 pass
 
             try:
                 if labels[i][j] != labels[i+1][j]:
-                    ax.plot([j-0.5, j+0.5], [i+0.5, i+0.5], c='k', lw=1)
+                    ax.plot([j-0.5, j+0.5], [i+0.5, i+0.5], c='k', lw=0.5)
             except IndexError:
                 pass
 
@@ -112,11 +112,12 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, trans
     # Initialize label array with the base grid (maximum grid cell size) while 
     # Note that the initial label array may be larger than the original image since
     # we do not want to cut off any base grid cells
-    labels = np.full((-(n // -max_size) * max_size, -(m // -max_size) * max_size), -1, dtype=int)
+    labels = torch.full((-(n // -max_size) * max_size, -(m // -max_size) * max_size), -1, dtype=int)
     shape = n_padded, m_padded = labels.shape
     
     # Pad the image to match the labels array
     img = np.pad(img, ((0, n_padded-n), (0, m_padded-m)), mode='edge')
+    # img = F.pad(img.unsqueeze(0), (0, m_padded-m, 0, n_padded-n), mode='replicate').squeeze(0)
     
     # Apply transformation if desired
     img_for_criteria = transform_func(img) if transform_func else img
@@ -154,9 +155,12 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, trans
         
         # Split if the cell meets the specified criteria
         split_cell = max_2d(cell) > thresh 
+        # split_cell = torch.max(cell) > thresh 
+
         
         # Even if it doesn't meet the criteria, split if the cell overlaps a masked area
         overlaps_mask = mask is not None and any_2d(mask[max(0, l-padding): min(r+padding, shape[1]), max(0, t-padding): min(b+padding, shape[1])])
+        # overlaps_mask = mask is not None and torch.any(mask[max(0, l-padding): min(r+padding, shape[1]), max(0, t-padding): min(b+padding, shape[1])])
         split_cell = split_cell or (overlaps_mask)
         
         # Perform splitting if criteria is met, otherwise set all pixels to the current label
@@ -242,6 +246,8 @@ def dist_xy(node0, node1, xx, yy):
     return np.array((xx[node0] - xx[node1], yy[node0] - yy[node1]))
 
 def get_graph_nodes(labels):
+    graph_nodes = np.arange(torch.max(labels)+1)
+    return graph_nodes
     graph_nodes = np.unique(labels)
 
     # Remove -1 from the list of graph nodes if it exists (ie if a mask was provided)
@@ -251,48 +257,25 @@ def get_graph_nodes(labels):
         return graph_nodes
     
 
-def flatten(img, labels):
+def flatten(img, mapping, n_pixels_per_node):
     """
     Given an input image of dimension (n_samples, w, h, channels) and a labels array of dimension (w, h)
     which correspond to the mesh node to which each pixel in the original image belong, convert the image to 
     its mesh representation.
     img: (n_samples, w, h, c)"""
-
-    n_samples, w, h, num_features = img.shape
-    graph_nodes = get_graph_nodes(labels)
-
-    # Get mappings from pixel space to graph space and vice versa
-    labels_flat = labels.flatten(order='C')
-    map_pixel_to_graph = {i: n for i, n in enumerate(labels_flat) if n!=-1}  # One-to-one mapping
     
-    # map_graph_to_pixel = {n: np.where(labels_flat == i)[0] for i, n in enumerate(graph_nodes)}  # One-to-many mapping
-    map_graph_to_pixel = {n: [] for n in graph_nodes}  # One-to-many mapping  or use defaultdict(list)
-    for i, n in enumerate(labels_flat):
-        if n != -1:
-            map_graph_to_pixel[n].append(i)
-            
-    # values, inverse = np.unique(labels_flat, return_inverse=True)
-    # map_graph_to_pixel = {value: np.where(inverse == i)[0] for i, value in enumerate(values)}
-
-    # Store mappings - TODO: this can be its own class
-    mappings = {
-        'p->n': map_pixel_to_graph,
-        'n->p': map_graph_to_pixel
-    }
-
+    n_samples, w, h, c = img.shape
+    
+    # (n_samples, w, h, c) -> (c, n_samples, w*h)
+    img_flattened = torch.moveaxis(img, -1, 0).reshape(c, n_samples, w*h)
+    
     # Compute mean values for each graph node
-    # TODO: Would be nice if we didn't have to flatten first
-    img_flat = img.reshape(n_samples, w*h, num_features)#, order='C')  # Assume it flattens column-wise !
+    data = img_flattened @ mapping.T.to_dense() / n_pixels_per_node
 
-    # Slow version
-    # data = torch.empty((n_samples, len(graph_nodes), num_features), dtype=img.dtype)
-    # for i, n in enumerate(graph_nodes):
-    #     idx = mappings['n->p'][n]
-    #     data[:, i] = torch.mean(img_flat[:, idx], 1)
+    # (c, n_samples, w*h) -> (n_samples, w*h, c)
+    data = torch.moveaxis(data, 0, -1)
 
-    data = grouped_mean_along_axis_2d(img_flat, labels_flat, axes=(0, 1))
-    # data = torch.Tensor(data).type(torch.float32)
-    return data, mappings
+    return data
 
 def grouped_mean(arr, labels):
     """
@@ -324,17 +307,12 @@ def grouped_mean_along_axis_2d(arr, labels, axes):
     return np.apply_along_axis(grouped_mean_along_axis, axis=axes[1], arr=arr, labels=labels) 
 
 
-def unflatten(img_flat, graph_nodes, mappings, image_shape=(8, 8), nan_value=0):
+def unflatten(data, mapping, image_shape):
     """Create an image of shape (n, w, h, c) for n samples of dimensions w, h and c channels"""
+    data = torch.moveaxis(data, -1, 0)
+    img = (data @ mapping.to_dense()).reshape(*data.shape[:-1], *image_shape)
+    return torch.moveaxis(img, 0, -1)
     
-    # Start with an array of dimension (n, w*h, c) since spatial indexing is column-wise flattened
-    img = np.full((img_flat.shape[0], np.prod(image_shape), img_flat.shape[-1]), nan_value, dtype=float)
-    for n in graph_nodes:
-        img[:, mappings['n->p'][n]] = img_flat[:, [n]]
-
-    # Reshape to (n, w, h, c)
-    img = img.reshape((img_flat.shape[0], *image_shape, img_flat.shape[-1]))
-    return img
 
 def image_to_graph_pixelwise(img, mask=None):
     """TODO: implement masking"""
@@ -366,6 +344,33 @@ def image_to_graph_pixelwise(img, mask=None):
 
     return out
 
+def get_mapping_(labels):
+    graph_nodes = get_graph_nodes(labels)
+    labels_flat = labels.flatten()
+    mapping = torch.zeros((graph_nodes[-1]+1, len(labels_flat)))
+
+    for i, n in enumerate(labels_flat):
+        if n != -1:
+            mapping[n][i] = 1
+    
+    n_pixels_per_node = torch.sum(mapping, 1)
+    mapping = mapping
+    return mapping, graph_nodes, n_pixels_per_node
+
+def get_mapping(labels):
+    graph_nodes = get_graph_nodes(labels)
+    labels_flat = labels.flatten()
+    mask = (labels_flat != -1)
+    row = labels_flat[mask].tolist()
+    col = torch.arange(len(labels_flat))[mask]
+    data = torch.ones(len(row), dtype=torch.float32)
+    
+    mapping = torch.sparse_coo_tensor((row, col), data, size=(graph_nodes[-1]+1, len(labels_flat)))
+    
+    n_pixels_per_node = torch.Tensor(np.ones(len(graph_nodes)))#torch.Tensor(np.sum(mapping, 1))
+    # mapping = torch.Tensor(mapping)
+    return mapping, graph_nodes, n_pixels_per_node
+
 
 def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=None):
     """
@@ -389,55 +394,52 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=
 
     TODO: Add ability to choose which channel to use in the decomposition.
     """
-    img0 = np.max(img[..., 0], 0)  # For multi-step inputs
+    img0, _ = torch.max(img[..., 0], 0)  # For multi-step inputs
 
     image_shape = img0.shape
 
-    if np.any(np.isnan(img0)):
+    if torch.any(torch.isnan(img0)):
         raise ValueError('NaNs in data!!')
 
     if thresh == -np.inf:
         return image_to_graph_pixelwise(img, mask)
     
-    labels = quadtree_decompose(img0, thresh=thresh, max_size=max_grid_size, mask=mask, transform_func=transform_func)
-    graph_nodes = get_graph_nodes(labels)
-    
-    data, mappings = flatten(img, labels)
+    labels = quadtree_decompose(img0.cpu().detach().numpy(), thresh=thresh, max_size=max_grid_size, mask=mask, transform_func=transform_func)
+    # labels = labels.to(img.device)
+    mapping, graph_nodes, n_pixels_per_node = get_mapping(labels)
 
-    if np.any(np.isnan(data)):
+    mapping, n_pixels_per_node = mapping.to(img.device), n_pixels_per_node.to(img.device)
+    
+    data = flatten(img, mapping, n_pixels_per_node)
+
+    if torch.any(torch.isnan(data)):
         raise ValueError('NaNs in data!!')
     
     xx, yy = data[0, ..., 1]*image_shape[1], data[0, ..., 2]*image_shape[0]
     
-    # Get sizes for each graph node
-    # node_sizes = np.array([np.sum(labels == label) for label in graph_nodes]).astype(float)
-    node_sizes = np.unique(labels, return_counts=True)[1]
-
-    # Remove first item if invalid pixels exist 
-    # Note that np.unique() provides a sorted output, so this removes the count
-    # of '-1' elements.
-    if -1 in labels:
-        node_sizes = node_sizes[1:]
+    # Get sizes for each graph node (TODO: scale by latitude)
+    node_sizes = n_pixels_per_node
 
     # Make sure nothing has gone wrong 
     assert len(node_sizes) == len(graph_nodes)
 
-    # Pseudo-normalize
-    node_sizes = node_sizes / ((max_grid_size/2)**2)
-    node_sizes = np.tile(node_sizes, (img.shape[0], 1))
-    data = np.concatenate([data, np.expand_dims(node_sizes, -1)], -1)
+    # Pseudo-normalize and add node sizes as feature 
+    node_sizes = torch.Tensor(node_sizes) / ((max_grid_size/2)**2)
+    node_sizes = node_sizes.repeat((img.shape[0], *[1]*len(node_sizes.shape)))
+    # node_sizes = np.tile(node_sizes, (img.shape[0], 1))
 
-    distances = get_adj(labels, xx=xx, yy=yy, calculate_distances=False)
+    # data = np.concatenate([data, np.expand_dims(node_sizes, -1)], -1)
+    data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
 
-    # Normalize data to (0, 1)
-    # data = data / np.max(data, 1)[:, None, :]
+    distances = get_adj(labels.cpu().numpy(), xx=xx, yy=yy, calculate_distances=False)
 
     out = dict(
         labels=labels,
         distances=distances,
         data=data,
         graph_nodes=graph_nodes,
-        mappings=mappings,
+        mapping=mapping,
+        n_pixels_per_node=n_pixels_per_node,
     )
 
     return out

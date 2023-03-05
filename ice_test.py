@@ -106,7 +106,7 @@ if __name__ == '__main__':
 
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
-    training_years = range(2014, 2016)
+    training_years = range(2010, 2016)
 
     input_features = len(x_vars)
     
@@ -115,9 +115,9 @@ if __name__ == '__main__':
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
     data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
 
-    loader_train = DataLoader(data_train, batch_size=1, shuffle=True, collate_fn=lambda x: x[0])
-    loader_test = DataLoader(data_test, batch_size=1, shuffle=True, collate_fn=lambda x: x[0])
-    loader_val = DataLoader(data_val, batch_size=1, shuffle=True, collate_fn=lambda x: x[0])
+    loader_train = DataLoader(data_train, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
+    loader_test = DataLoader(data_test, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
+    loader_val = DataLoader(data_val, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
 
     thresh = 0.35
     def dist_from_05(arr):
@@ -125,16 +125,17 @@ if __name__ == '__main__':
 
     # Add 3 to the number of input features since we add positional encoding (x, y) and node size (s)
     nn = Seq2Seq(
-        hidden_size=64,
+        hidden_size=32,
         dropout=0.1,
         thresh=thresh,
         input_features=input_features+3,
         output_timesteps=output_timesteps,
-        n_layers=3,
+        n_layers=1,
         transform_func=dist_from_05
     )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    # device = 'cpu'
     # device = torch.device('mps')
     print('device:', device)
     
@@ -153,10 +154,10 @@ if __name__ == '__main__':
     print('Num. parameters:', model.get_n_params())
     print('Model:\n', model.model)
 
-    lr = 0.05
+    lr = 0.01
 
     model.model.train()
-    model.train(loader_train, loader_test, lr=lr, n_epochs=1, mask=mask)  # Train for 20 epochs
+    model.train(loader_train, loader_test, lr=lr, n_epochs=20, mask=mask)  # Train for 20 epochs
 
     # model.model.eval()
     # model.score(x_val, y_val[:, :1])  # Check the MSE on the validation set
@@ -182,7 +183,7 @@ if __name__ == '__main__':
     
     ds.to_netcdf(f'ice_results/valpredictions_{experiment_name}.nc')
 
-    # model.loss.to_csv(f'ice_results/loss_{experiment_name}.csv')
+    model.loss.to_csv(f'ice_results/loss_{experiment_name}.csv')
     model.save('ice_results')
 
-    print(f'Finished model {month} in {time.time() - start}')
+    print(f'Finished model {month} in {(time.time() - start / 60)} minutes')
