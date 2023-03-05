@@ -13,13 +13,13 @@ def plot_contours(ax, labels):
         for j in range(labels.shape[1]):
             try:
                 if labels[i][j] != labels[i][j+1]:
-                    ax.plot([j+0.5, j+0.5], [i-0.5, i+0.5], c='k', lw=1)
+                    ax.plot([j+0.5, j+0.5], [i-0.5, i+0.5], c='k', lw=0.5)
             except IndexError:
                 pass
 
             try:
                 if labels[i][j] != labels[i+1][j]:
-                    ax.plot([j-0.5, j+0.5], [i+0.5, i+0.5], c='k', lw=1)
+                    ax.plot([j-0.5, j+0.5], [i+0.5, i+0.5], c='k', lw=0.5)
             except IndexError:
                 pass
 
@@ -270,7 +270,7 @@ def flatten(img, mapping, n_pixels_per_node):
     img_flattened = torch.moveaxis(img, -1, 0).reshape(c, n_samples, w*h)
     
     # Compute mean values for each graph node
-    data = img_flattened @ mapping.T / n_pixels_per_node
+    data = img_flattened @ mapping.T.to_dense() / n_pixels_per_node
 
     # (c, n_samples, w*h) -> (n_samples, w*h, c)
     data = torch.moveaxis(data, 0, -1)
@@ -310,7 +310,7 @@ def grouped_mean_along_axis_2d(arr, labels, axes):
 def unflatten(data, mapping, image_shape):
     """Create an image of shape (n, w, h, c) for n samples of dimensions w, h and c channels"""
     data = torch.moveaxis(data, -1, 0)
-    img = (data @ mapping).reshape(*data.shape[:-1], *image_shape)
+    img = (data @ mapping.to_dense()).reshape(*data.shape[:-1], *image_shape)
     return torch.moveaxis(img, 0, -1)
     
 
@@ -344,7 +344,7 @@ def image_to_graph_pixelwise(img, mask=None):
 
     return out
 
-def get_mapping(labels):
+def get_mapping_(labels):
     graph_nodes = get_graph_nodes(labels)
     labels_flat = labels.flatten()
     mapping = torch.zeros((graph_nodes[-1]+1, len(labels_flat)))
@@ -355,6 +355,20 @@ def get_mapping(labels):
     
     n_pixels_per_node = torch.sum(mapping, 1)
     mapping = mapping
+    return mapping, graph_nodes, n_pixels_per_node
+
+def get_mapping(labels):
+    graph_nodes = get_graph_nodes(labels)
+    labels_flat = labels.flatten()
+    mask = (labels_flat != -1)
+    row = labels_flat[mask].tolist()
+    col = torch.arange(len(labels_flat))[mask]
+    data = torch.ones(len(row), dtype=torch.float32)
+    
+    mapping = torch.sparse_coo_tensor((row, col), data, size=(graph_nodes[-1]+1, len(labels_flat)))
+    
+    n_pixels_per_node = torch.Tensor(np.ones(len(graph_nodes)))#torch.Tensor(np.sum(mapping, 1))
+    # mapping = torch.Tensor(mapping)
     return mapping, graph_nodes, n_pixels_per_node
 
 

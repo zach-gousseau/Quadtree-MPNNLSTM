@@ -8,6 +8,7 @@ from torch_geometric.nn.inits import glorot, zeros
 from graph_functions import image_to_graph, flatten, create_graph_structure, unflatten
 from utils import add_positional_encoding
 
+import gc 
 import random
 import numpy as np
 
@@ -251,8 +252,7 @@ class Seq2Seq(torch.nn.Module):
                 # First convert it back to its grid representation
                 output_detached = output#.cpu().detach().numpy()
                 output_detached = output_detached.unsqueeze(0)  #np.expand_dims(output_detached, 0)
-
-
+                # print(t)
                 y_hat_img = unflatten(output_detached, curr_graph_structure['mapping'], image_shape)
                 
                 # Then we convert it back to a graph representation where the graph is determined by
@@ -297,6 +297,8 @@ class Seq2Seq(torch.nn.Module):
 
                 # hidden = torch.Tensor(hidden).to(self.device[0])
                 # cell = torch.Tensor(cell).to(self.device[0])
+
+                del curr_graph
 
                 # Create a PyG graph object for input into next rollout
                 curr_graph = create_graph_structure(curr_graph_structure['graph_nodes'], curr_graph_structure['distances'])
