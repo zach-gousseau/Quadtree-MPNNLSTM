@@ -358,17 +358,17 @@ def get_mapping_(labels):
     return mapping, graph_nodes, n_pixels_per_node
 
 def get_mapping(labels):
-    graph_nodes = get_graph_nodes(labels)
+    # graph_nodes = get_graph_nodes(labels)
     labels_flat = labels.flatten()
     mask = (labels_flat != -1)
     row = labels_flat[mask].tolist()
     col = torch.arange(len(labels_flat))[mask]
     data = torch.ones(len(row), dtype=torch.float32)
     
-    mapping = torch.sparse_coo_tensor((row, col), data, size=(graph_nodes[-1]+1, len(labels_flat)))
+    graph_nodes, n_pixels_per_node = np.unique(row, return_counts=True)
+    n_pixels_per_node = torch.Tensor(n_pixels_per_node)
     
-    n_pixels_per_node = torch.Tensor(np.ones(len(graph_nodes)))#torch.Tensor(np.sum(mapping, 1))
-    # mapping = torch.Tensor(mapping)
+    mapping = torch.sparse_coo_tensor((row, col), data, size=(graph_nodes[-1]+1, len(labels_flat)))
     return mapping, graph_nodes, n_pixels_per_node
 
 
