@@ -51,7 +51,7 @@ class NextFramePredictor(ABC):
         
         self.device = self.model.device = device
 
-    def test_threshold(self, x, thresh, mask=None):
+    def test_threshold(self, x, thresh, mask=None, contours=True):
         n_sample, w, h, c = x.shape
         image_shape = (w, h)
 
@@ -65,7 +65,8 @@ class NextFramePredictor(ABC):
 
         for i in range(n_sample):
             axs[i].imshow(img_reconstructed[i, ..., 0])
-            # plot_contours(axs[i], graph['labels'])
+            if contours:
+                plot_contours(axs[i], graph['labels'])
 
         plt.suptitle(f'Threshold: {thresh} | Num. nodes: {num_nodes}')
         return fig, axs
