@@ -32,6 +32,7 @@ class NextFramePredictor(ABC):
                  decompose=True, 
                  input_features=1,
                  transform_func=None,
+                 condition='max_larger_than'
                  device=None):
 
         self.experiment_name = experiment_name
@@ -44,6 +45,7 @@ class NextFramePredictor(ABC):
         
         self.thresh = thresh
         self.transform_func = transform_func
+        self.condition = condition
         self.input_features = input_features 
         
         if device == 'cpu' or device is None:
@@ -357,7 +359,8 @@ class NextFramePredictorS2S(NextFramePredictor):
                  decompose=decompose, 
                  input_features=input_features,
                  device=device,
-                 transform_func=transform_func)
+                 transform_func=transform_func,
+                 condition=condition)
         
         self.output_timesteps = output_timesteps
         
@@ -405,7 +408,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                     
                 x = add_positional_encoding(x)
 
-                x_data = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func)
+                x_data = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
 
                 # Create a PyG graph object
                 graph = create_graph_structure(x_data['graph_nodes'], x_data['distances'])
@@ -471,7 +474,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                 x = add_positional_encoding(x)
 
-                x_data = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func)
+                x_data = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
 
                 graph = create_graph_structure(x_data['graph_nodes'], x_data['distances'])
 
@@ -543,7 +546,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
             x = add_positional_encoding(x)
 
-            x_data = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func)
+            x_data = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
 
             # Create a PyG graph object
             graph = create_graph_structure(x_data['graph_nodes'], x_data['distances'])
