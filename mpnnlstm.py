@@ -1,9 +1,11 @@
 import numpy as np
 import time
 import pandas as pd
+import pickle
 import matplotlib.pyplot as plt
 import os 
 from tqdm import tqdm
+import warnings
 
 import torch
 import torch.nn.functional as F
@@ -11,11 +13,13 @@ import torch.nn as nn
 from torch_geometric.nn import MessagePassing
 from torch_geometric.utils import add_self_loops, degree
 from torch_geometric.nn import GCNConv, ChebConv, GraphConv, TransformerConv
+from torch.utils.tensorboard import SummaryWriter
 
 from torch.optim.lr_scheduler import StepLR
 
 from graph_functions import image_to_graph, flatten, create_graph_structure, unflatten, plot_contours
 from model import MPNNLSTMI, MPNNLSTM
+from seq2seq import Seq2Seq
 from utils import get_n_params, add_positional_encoding
 
 from abc import ABC, abstractmethod
@@ -23,7 +27,6 @@ from abc import ABC, abstractmethod
 
 class NextFramePredictor(ABC):
     def __init__(self, 
-                 model,
                  thresh,
                  experiment_name='experiment', 
                  decompose=True, 
@@ -36,9 +39,8 @@ class NextFramePredictor(ABC):
         # Set the threshold to negative infinity if we want to keep the full basis (i.e. split all the way down)
         self.thresh = None if decompose else -np.inf
         self.decompose = decompose
-
-        self.model = model.to(device[0])
-        # self.model = model
+        
+        self.model = None
         
         self.thresh = thresh
         self.transform_func = transform_func
@@ -46,10 +48,8 @@ class NextFramePredictor(ABC):
         
         if device == 'cpu' or device is None:
             device = [device]
-
-        n_devices = len(device)
         
-        self.device = self.model.device = device
+        self.device = device
 
     def test_threshold(self, x, thresh, mask=None, contours=True):
         n_sample, w, h, c = x.shape
@@ -330,8 +330,8 @@ class NextFramePredictorAR(NextFramePredictor):
 
     def score(self, x, y, rollout=1):
 
-        # metric = torch.nn.MSELoss()
-        metric = torch.nn.BCELoss()
+        metric = torch.nn.MSELoss()
+        # metric = torch.nn.BCELoss()
 
         y_hat = self.predict(x, rollout=rollout)
 
@@ -341,7 +341,6 @@ class NextFramePredictorAR(NextFramePredictor):
 
 class NextFramePredictorS2S(NextFramePredictor):
     def __init__(self,
-                 model,
                  thresh,
                  experiment_name='experiment', 
                  decompose=True, 
@@ -349,19 +348,25 @@ class NextFramePredictorS2S(NextFramePredictor):
                  output_timesteps=3,
                  device=None,
                  transform_func=None,
-                 **model_kwargs):
+                 condition='max_larger_than',
+                 model_kwargs={}):
         
         super().__init__(
-                 model=model,
                  thresh=thresh,
                  experiment_name=experiment_name, 
                  decompose=decompose, 
                  input_features=input_features,
                  device=device,
-                 transform_func=transform_func,
-                 **model_kwargs)
+                 transform_func=transform_func)
         
         self.output_timesteps = output_timesteps
+        
+        self.model = Seq2Seq(
+            input_features=input_features + 3,
+            output_timesteps=output_timesteps,
+            thresh=thresh,
+            **model_kwargs
+        ).to(device)
 
     def train(
         self,
@@ -383,6 +388,8 @@ class NextFramePredictorS2S(NextFramePredictor):
         loss_func = torch.nn.BCELoss()  # torch.nn.MSELoss()
         optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9)
         scheduler = StepLR(optimizer, step_size=3, gamma=lr_decay)
+        
+        writer = SummaryWriter()
 
         test_loss = []
         train_loss = []
@@ -408,7 +415,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                 graph.input_graph_structure = x_data
                 graph.image_shape = image_shape
-                graph.to(self.device[0])
+                graph.to(self.device)
 
                 optimizer.zero_grad()
 
@@ -416,18 +423,35 @@ class NextFramePredictorS2S(NextFramePredictor):
                 
                 y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
 
-                # Transform 
-                y_true = [flatten(graph.y[[i]], y_hat_graph[i]['mapping'], y_hat_graph[i]['n_pixels_per_node']).squeeze(0) for i in range(self.output_timesteps)]
+                has_nans = True
+                while has_nans:
+                    y_true = [flatten(graph.y[[i]], y_hat_graph[i]['mapping'], y_hat_graph[i]['n_pixels_per_node']).squeeze(0) for i in range(self.output_timesteps)]
+                    y_true = torch.cat(y_true, dim=0)
+                    has_nans = y_true.isnan().any()
+
+                    if has_nans:
+                        warnings.warn('Matrix multiplication in flatten() failed, trying again.')
 
                 y_hat = torch.cat(y_hat, dim=0)
-                y_true = torch.cat(y_true, dim=0)
-
-                # y_true = y_true.to(self.device[0])  # TODO: Somehow y_true has to be distributed to all GPUs....
                 
                 loss = loss_func(y_hat, y_true)
-
                 loss.backward()
+
+                decoder_params = [p for p in self.model.decoder.parameters()]
+                decoder_grads = [p.grad.mean() for p in decoder_params if p.grad is not None]
+                decoder_param_means = [p.mean().abs().detach().cpu() for p in decoder_params]
+                writer.add_scalar("Grad/decoder/mean", np.mean(np.abs(decoder_grads)), epoch)
+                writer.add_scalar("Param/decoder/mean", np.mean(decoder_param_means), epoch)
+
+                encoder_params = [p for p in self.model.encoder.parameters()]
+                encoder_grads = [p.grad.mean() for p in encoder_params if p.grad is not None]
+                encoder_param_means = [p.mean().abs().detach().cpu() for p in encoder_params]
+                writer.add_scalar("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), epoch)
+                writer.add_scalar("Param/encoder/mean", np.mean(encoder_param_means), epoch)
+
                 optimizer.step()
+
+                writer.add_scalar("Loss/train", loss, epoch)
 
                 step += 1
                 running_loss += loss
@@ -450,7 +474,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 x_data = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func)
 
                 graph = create_graph_structure(x_data['graph_nodes'], x_data['distances'])
-                
+
                 graph.x = x_data['data']
                 graph.y = y
 
@@ -460,17 +484,19 @@ class NextFramePredictorS2S(NextFramePredictor):
                 skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
                 graph.skip = skip
 
-                graph.to(self.device[0])
-                
-                y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
-                
-                y_true = [flatten(graph.y[[i]], y_hat_graph[i]['mapping'],  y_hat_graph[i]['n_pixels_per_node']).squeeze(0) for i in range(self.output_timesteps)]
-                
-                y_hat = torch.cat(y_hat, dim=0)
-                y_true = torch.cat(y_true, dim=0)
-                
+                graph.to(self.device)
+
                 with torch.no_grad():
+                    y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
+
+                    y_true = [flatten(graph.y[[i]], y_hat_graph[i]['mapping'],  y_hat_graph[i]['n_pixels_per_node']).squeeze(0) for i in range(self.output_timesteps)]
+
+                    y_hat = torch.cat(y_hat, dim=0)
+                    y_true = torch.cat(y_true, dim=0)
+                
                     loss = loss_func(y_hat, y_true)
+                    
+                    writer.add_scalar("Loss/test", loss, epoch)
 
                 step_test += 1
                 running_loss_test += loss
@@ -495,6 +521,8 @@ class NextFramePredictorS2S(NextFramePredictor):
                 f"test MSE: {running_loss_test.item():.4f}, lr: {scheduler.get_last_lr()[0]:.4f}, time_per_epoch: {(time.time() - st) / (epoch+1):.1f}")
         
         print(f'Finished in {(time.time() - st)/60} minutes')
+        
+        writer.flush()
 
         self.loss = pd.DataFrame({
             'train_loss': train_loss,
@@ -506,14 +534,13 @@ class NextFramePredictorS2S(NextFramePredictor):
         
         image_shape = loader.dataset.image_shape
             
-        self.model.to(self.device[0])
+        self.model.to(self.device)
         
         y_pred = []
         for x, y in tqdm(loader, leave=False):
 
             x = x.squeeze(0)
 
-            # for j in range(n_devices):
             x = add_positional_encoding(x)
 
             x_data = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func)
@@ -525,7 +552,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
             graph.input_graph_structure = x_data
             graph.image_shape = image_shape
-            graph.to(self.device[0])
+            graph.to(self.device)
 
             skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
 

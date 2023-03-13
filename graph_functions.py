@@ -8,6 +8,13 @@ import numba as nb
 
 from utils import minmax
 
+CONDITIONS = [
+    'max_larger_than',
+    'max_smaller_than',
+    'min_larger_than',
+    'min_smaller_than',
+]
+
 def plot_contours(ax, labels):
     for i in range(labels.shape[0]):
         for j in range(labels.shape[1]):
@@ -79,7 +86,16 @@ def max_2d(arr):
                 max_val = arr[i, j]
     return max_val
 
-def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, transform_func=None):
+@nb.jit(nopython=True)
+def min_2d(arr):
+    min_val = arr[0, 0]
+    for i in range(arr.shape[0]):
+        for j in range(arr.shape[1]):
+            if arr[i, j] < min_val:
+                min_val = arr[i, j]
+    return min_val
+
+def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, transform_func=None, condition='max_larger_than'):
     """
     Perform quadtree decomposition on an image.
 
@@ -106,6 +122,8 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, trans
     """
     
     assert max_size & (max_size - 1) == 0
+    
+    assert condition in CONDITIONS
 
     n, m = img.shape
     
@@ -154,8 +172,14 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, trans
         ]
         
         # Split if the cell meets the specified criteria
-        split_cell = max_2d(cell) > thresh 
-        # split_cell = torch.max(cell) > thresh 
+        if condition == 'max_larger_than':
+            split_cell = max_2d(cell) > thresh 
+        elif condition == 'max_smaller_than':
+            split_cell = max_2d(cell) < thresh 
+        elif condition == 'min_larger_than':
+            split_cell = min_2d(cell) > thresh 
+        elif condition == 'min_smaller_than':
+            split_cell = min_2d(cell) < thresh
 
         
         # Even if it doesn't meet the criteria, split if the cell overlaps a masked area
@@ -372,7 +396,7 @@ def get_mapping(labels):
     return mapping, graph_nodes, n_pixels_per_node
 
 
-def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=None):
+def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=None, condition='max_larger_than'):
     """
     Decomposes an image into a quadtree and then generates a graph representation of the image
     using quadtree decomposition. The graph nodes are the centroids of the quadtree cells and the
@@ -399,13 +423,20 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=
     image_shape = img0.shape
 
     if torch.any(torch.isnan(img0)):
-        raise ValueError('NaNs in data!!')
+        raise ValueError(f'Found NaNs in image data {torch.sum(torch.isnan(img0))} / {np.prod(img0.shape)}')
 
     if thresh == -np.inf:
         return image_to_graph_pixelwise(img, mask)
     
-    labels = quadtree_decompose(img0.cpu().detach().numpy(), thresh=thresh, max_size=max_grid_size, mask=mask, transform_func=transform_func)
-    # labels = labels.to(img.device)
+    labels = quadtree_decompose(
+        img0.cpu().detach().numpy(),
+        thresh=thresh, 
+        max_size=max_grid_size,
+        mask=mask,
+        transform_func=transform_func,
+        condition=condition
+        )
+
     mapping, graph_nodes, n_pixels_per_node = get_mapping(labels)
 
     mapping, n_pixels_per_node = mapping.to(img.device), n_pixels_per_node.to(img.device)
@@ -413,7 +444,7 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=
     data = flatten(img, mapping, n_pixels_per_node)
 
     if torch.any(torch.isnan(data)):
-        raise ValueError('NaNs in data!!')
+        raise ValueError(f'Found NaNs in graph data {torch.sum(torch.isnan(data))} / {np.prod(data.shape)}')
     
     xx, yy = data[0, ..., 1]*image_shape[1], data[0, ..., 2]*image_shape[0]
     

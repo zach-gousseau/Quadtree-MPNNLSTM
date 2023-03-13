@@ -142,8 +142,7 @@ class Decoder(torch.nn.Module):
         self.rnns = nn.ModuleList([GConvLSTM(input_features, hidden_size)] + [GConvLSTM(hidden_size, hidden_size) for _ in range(n_layers-1)])
         
         self.fc_out1 = torch.nn.Linear(hidden_size, hidden_size)
-        self.fc_out2 = torch.nn.Linear(hidden_size, 1)  # Assuming output has 1 dimension
-        # self.bn1 = nn.BatchNorm1d(hidden_size, track_running_stats=False)
+        self.fc_out2 = torch.nn.Linear(hidden_size, 1)
         self.norm_o = nn.LayerNorm(hidden_size)
         self.norm_h = nn.LayerNorm(hidden_size)
         self.norm_c = nn.LayerNorm(hidden_size)
@@ -236,7 +235,7 @@ class Seq2Seq(torch.nn.Module):
         
         for t in range(self.output_timesteps):
             
-            curr_graph.to(self.device[0])
+            curr_graph.to(self.device)
 
             # Perform decoding step
             output, hidden, cell = self.decoder(curr_graph.x, curr_graph.edge_index, curr_graph.edge_weight, curr_graph.skip, hidden, cell)
@@ -252,7 +251,7 @@ class Seq2Seq(torch.nn.Module):
                 # First convert it back to its grid representation
                 output_detached = output#.cpu().detach().numpy()
                 output_detached = output_detached.unsqueeze(0)  #np.expand_dims(output_detached, 0)
-                # print(t)
+
                 y_hat_img = unflatten(output_detached, curr_graph_structure['mapping'], image_shape)
                 
                 # Then we convert it back to a graph representation where the graph is determined by
@@ -295,8 +294,8 @@ class Seq2Seq(torch.nn.Module):
 
                 hidden, cell = torch.swapaxes(hidden, 0, -1), torch.swapaxes(cell, 0, -1)
 
-                # hidden = torch.Tensor(hidden).to(self.device[0])
-                # cell = torch.Tensor(cell).to(self.device[0])
+                # hidden = torch.Tensor(hidden).to(self.device)
+                # cell = torch.Tensor(cell).to(self.device)
 
                 del curr_graph
 
