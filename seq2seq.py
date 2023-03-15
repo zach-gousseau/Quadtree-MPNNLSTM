@@ -219,6 +219,8 @@ class Seq2Seq(torch.nn.Module):
         curr_graph = graph
         curr_graph_structure = graph.input_graph_structure
         image_shape = graph.image_shape
+
+        curr_graph.to(self.device)
         
         #last hidden state of the encoder is used as the initial hidden state of the decoder
         hidden, cell = [None], [None]
