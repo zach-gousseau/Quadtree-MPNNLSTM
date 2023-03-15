@@ -287,7 +287,7 @@ def flatten(img, mapping, n_pixels_per_node):
     which correspond to the mesh node to which each pixel in the original image belong, convert the image to 
     its mesh representation.
     img: (n_samples, w, h, c)"""
-    
+    assert len(img.shape) == 4, f'array should be 4-dimensional (n_samples, w, h, c); got {x.shape}'
     n_samples, w, h, c = img.shape
     
     # (n_samples, w, h, c) -> (c, n_samples, w*h)
@@ -418,18 +418,23 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=
 
     TODO: Add ability to choose which channel to use in the decomposition.
     """
-    img0, _ = torch.max(img[..., 0], 0)  # For multi-step inputs
 
-    image_shape = img0.shape
+    assert len(img.shape) == 4, f'array should be 4-dimensional (n_samples, w, h, c); got {img.shape}'
 
-    if torch.any(torch.isnan(img0)):
-        raise ValueError(f'Found NaNs in image data {torch.sum(torch.isnan(img0))} / {np.prod(img0.shape)}')
+    if torch.any(torch.isnan(img)):
+        raise ValueError(f'Found NaNs in image data {torch.sum(torch.isnan(img))} / {np.prod(img.shape)}')
+
+    img_for_decompose, _ = torch.max(img[..., 0], 0)  # For multi-step inputs
+    n_samples, h, w, c = img.shape
+
+    image_shape = img_for_decompose.shape
+    img_for_decompose = img_for_decompose.cpu().detach().numpy()
 
     if thresh == -np.inf:
         return image_to_graph_pixelwise(img, mask)
     
     labels = quadtree_decompose(
-        img0.cpu().detach().numpy(),
+        img_for_decompose,
         thresh=thresh, 
         max_size=max_grid_size,
         mask=mask,
@@ -456,10 +461,8 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=
 
     # Pseudo-normalize and add node sizes as feature 
     node_sizes = torch.Tensor(node_sizes) / ((max_grid_size/2)**2)
-    node_sizes = node_sizes.repeat((img.shape[0], *[1]*len(node_sizes.shape)))
-    # node_sizes = np.tile(node_sizes, (img.shape[0], 1))
+    node_sizes = node_sizes.repeat((n_samples, *[1]*len(node_sizes.shape)))
 
-    # data = np.concatenate([data, np.expand_dims(node_sizes, -1)], -1)
     data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
 
     distances = get_adj(labels.cpu().numpy(), xx=xx, yy=yy, calculate_distances=False)
