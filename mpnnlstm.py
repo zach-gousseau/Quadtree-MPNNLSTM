@@ -406,7 +406,6 @@ class NextFramePredictorS2S(NextFramePredictor):
             for x, y in tqdm(loader_train, leave=True):
 
                 x, y = x.squeeze(0), y.squeeze(0)
-                    
                 x = add_positional_encoding(x)
 
                 x_data = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
@@ -417,7 +416,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 graph.x = x_data['data']
                 graph.y = y
 
-                graph.input_graph_structure = x_data
+                graph.graph_structure = x_data
                 graph.image_shape = image_shape
                 graph.to(self.device)
 
@@ -425,7 +424,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                 skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
                 
-                y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
+                y_hat, y_hat_graph = self.model(graph, teacher_forcing_ratio=0.5, mask=mask)
 
                 has_nans = True
                 while has_nans:
@@ -482,7 +481,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 graph.x = x_data['data']
                 graph.y = y
 
-                graph.input_graph_structure = x_data
+                graph.graph_structure = x_data
                 graph.image_shape = image_shape
 
                 skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
@@ -491,7 +490,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 graph.to(self.device)
 
                 with torch.no_grad():
-                    y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
+                    y_hat, y_hat_graph = self.model(graph, teacher_forcing_ratio=0.5, mask=mask)
 
                     y_true = [flatten(graph.y[[i]], y_hat_graph[i]['mapping'],  y_hat_graph[i]['n_pixels_per_node']).squeeze(0) for i in range(self.output_timesteps)]
 
@@ -554,14 +553,14 @@ class NextFramePredictorS2S(NextFramePredictor):
 
             graph.x = x_data['data']
 
-            graph.input_graph_structure = x_data
+            graph.graph_structure = x_data
             graph.image_shape = image_shape
             graph.to(self.device)
 
             skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
 
             with torch.no_grad():
-                y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0, mask=mask)
+                y_hat, y_hat_graph = self.model(graph, teacher_forcing_ratio=0, mask=mask)
                 
                 y_hat = [unflatten(y_hat[i].unsqueeze(0), y_hat_graph[i]['mapping'], image_shape).detach().cpu() for i in range(self.output_timesteps)]
                 
