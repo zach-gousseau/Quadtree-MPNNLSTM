@@ -32,7 +32,7 @@ class NextFramePredictor(ABC):
                  decompose=True, 
                  input_features=1,
                  transform_func=None,
-                 condition='max_larger_than'
+                 condition='max_larger_than',
                  device=None):
 
         self.experiment_name = experiment_name
@@ -368,6 +368,7 @@ class NextFramePredictorS2S(NextFramePredictor):
             input_features=input_features + 3,
             output_timesteps=output_timesteps,
             thresh=thresh,
+            device=device,
             **model_kwargs
         ).to(device)
 
@@ -439,15 +440,15 @@ class NextFramePredictorS2S(NextFramePredictor):
                 
                 loss = loss_func(y_hat, y_true)
                 loss.backward()
-
+                
                 decoder_params = [p for p in self.model.decoder.parameters()]
-                decoder_grads = [p.grad.mean() for p in decoder_params if p.grad is not None]
+                decoder_grads = [p.grad.mean().cpu() for p in decoder_params if p.grad is not None]
                 decoder_param_means = [p.mean().abs().detach().cpu() for p in decoder_params]
                 writer.add_scalar("Grad/decoder/mean", np.mean(np.abs(decoder_grads)), epoch)
                 writer.add_scalar("Param/decoder/mean", np.mean(decoder_param_means), epoch)
 
                 encoder_params = [p for p in self.model.encoder.parameters()]
-                encoder_grads = [p.grad.mean() for p in encoder_params if p.grad is not None]
+                encoder_grads = [p.grad.mean().cpu() for p in encoder_params if p.grad is not None]
                 encoder_param_means = [p.mean().abs().detach().cpu() for p in encoder_params]
                 writer.add_scalar("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), epoch)
                 writer.add_scalar("Param/encoder/mean", np.mean(encoder_param_means), epoch)

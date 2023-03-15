@@ -79,7 +79,7 @@ if __name__ == '__main__':
     
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--month")  # Month number
+    parser.add_argument('-m', '--month')  # Month number
 
     args = vars(parser.parse_args())
     month = int(args['month'])
@@ -117,39 +117,35 @@ if __name__ == '__main__':
 
     loader_train = DataLoader(data_train, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
-    loader_val = DataLoader(data_val, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
+    loader_val = DataLoader(data_val, batch_size=1, shuffle=False)#, collate_fn=lambda x: x[0])
 
     thresh = 0.35
+
     def dist_from_05(arr):
         return abs(abs(arr - 0.5) - 0.5)
 
     # Add 3 to the number of input features since we add positional encoding (x, y) and node size (s)
-    nn = Seq2Seq(
-        hidden_size=32,
+    model_kwargs = dict(
+        hidden_size=64,
         dropout=0.1,
-        thresh=thresh,
-        input_features=input_features+3,
-        output_timesteps=output_timesteps,
-        n_layers=1,
+        n_layers=3,
         transform_func=dist_from_05
     )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    # device = 'cpu'
     # device = torch.device('mps')
     print('device:', device)
-    
-    experiment_name = f'M{month}_Y{training_years[0]}_Y{training_years[1]}_I{input_timesteps}O{output_timesteps}'
 
+    experiment_name = str(month)+'test'
 
     model = NextFramePredictorS2S(
-        nn,
         thresh=thresh,
         experiment_name=experiment_name,
         input_features=input_features,
         output_timesteps=output_timesteps,
         transform_func=dist_from_05,
-        device=[device])
+        device=device,
+        model_kwargs=model_kwargs)
 
     print('Num. parameters:', model.get_n_params())
     print('Model:\n', model.model)
