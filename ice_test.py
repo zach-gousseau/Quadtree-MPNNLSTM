@@ -106,7 +106,7 @@ if __name__ == '__main__':
 
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
-    training_years = range(2010, 2016)
+    training_years = range(2011, 2016)
 
     input_features = len(x_vars)
     
@@ -136,7 +136,7 @@ if __name__ == '__main__':
     # device = torch.device('mps')
     print('device:', device)
 
-    experiment_name = str(month)+'test'
+    experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
 
     model = NextFramePredictorS2S(
         thresh=thresh,
@@ -182,4 +182,4 @@ if __name__ == '__main__':
     model.loss.to_csv(f'ice_results/loss_{experiment_name}.csv')
     model.save('ice_results')
 
-    print(f'Finished model {month} in {(time.time() - start / 60)} minutes')
+    print(f'Finished model {month} in {((time.time() - start) / 60)} minutes')
