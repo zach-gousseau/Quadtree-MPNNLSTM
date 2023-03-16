@@ -287,7 +287,7 @@ def flatten(img, mapping, n_pixels_per_node):
     which correspond to the mesh node to which each pixel in the original image belong, convert the image to 
     its mesh representation.
     img: (n_samples, w, h, c)"""
-    assert len(img.shape) == 4, f'array should be 4-dimensional (n_samples, w, h, c); got {x.shape}'
+    assert len(img.shape) == 4, f'array should be 4-dimensional (n_samples, w, h, c); got {img.shape}'
     n_samples, w, h, c = img.shape
     
     # (n_samples, w, h, c) -> (c, n_samples, w*h)
