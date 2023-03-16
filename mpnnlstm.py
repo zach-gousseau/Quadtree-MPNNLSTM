@@ -351,6 +351,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                  device=None,
                  transform_func=None,
                  condition='max_larger_than',
+                 remesh_input=False,
                  model_kwargs={}):
         
         super().__init__(
@@ -369,6 +370,7 @@ class NextFramePredictorS2S(NextFramePredictor):
             output_timesteps=output_timesteps,
             thresh=thresh,
             device=device,
+            remesh_input=remesh_input,
             **model_kwargs
         ).to(device)
 
@@ -406,30 +408,14 @@ class NextFramePredictorS2S(NextFramePredictor):
             for x, y in tqdm(loader_train, leave=True):
 
                 x, y = x.squeeze(0), y.squeeze(0)
-                    
-                x = add_positional_encoding(x)
-
-                x_data = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
-
-                # Create a PyG graph object
-                graph = create_graph_structure(x_data['graph_nodes'], x_data['distances'])
-
-                graph.x = x_data['data']
-                graph.y = y
-
-                graph.input_graph_structure = x_data
-                graph.image_shape = image_shape
-                graph.to(self.device)
 
                 optimizer.zero_grad()
-
-                skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
                 
-                y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
+                y_hat, y_hat_graph = self.model(x, y, teacher_forcing_ratio=0.5, mask=mask)
 
                 has_nans = True
                 while has_nans:
-                    y_true = [flatten(graph.y[[i]], y_hat_graph[i]['mapping'], y_hat_graph[i]['n_pixels_per_node']).squeeze(0) for i in range(self.output_timesteps)]
+                    y_true = [flatten(y[[i]], y_hat_graph[i]['mapping'], y_hat_graph[i]['n_pixels_per_node']).squeeze(0) for i in range(self.output_timesteps)]
                     y_true = torch.cat(y_true, dim=0)
                     has_nans = y_true.isnan().any()
 
@@ -460,11 +446,9 @@ class NextFramePredictorS2S(NextFramePredictor):
                 step += 1
                 running_loss += loss
 
-                del graph
                 del y_true
                 del y_hat
                 del y_hat_graph
-                del x_data
                 torch.cuda.empty_cache()
 
             running_loss_test = 0
@@ -473,27 +457,10 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                 x, y = x.squeeze(0), y.squeeze(0)
 
-                x = add_positional_encoding(x)
-
-                x_data = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
-
-                graph = create_graph_structure(x_data['graph_nodes'], x_data['distances'])
-
-                graph.x = x_data['data']
-                graph.y = y
-
-                graph.input_graph_structure = x_data
-                graph.image_shape = image_shape
-
-                skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
-                graph.skip = skip
-
-                graph.to(self.device)
-
                 with torch.no_grad():
-                    y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0.5, mask=mask)
+                    y_hat, y_hat_graph = self.model(x, y, teacher_forcing_ratio=0.5, mask=mask)
 
-                    y_true = [flatten(graph.y[[i]], y_hat_graph[i]['mapping'],  y_hat_graph[i]['n_pixels_per_node']).squeeze(0) for i in range(self.output_timesteps)]
+                    y_true = [flatten(y[[i]], y_hat_graph[i]['mapping'],  y_hat_graph[i]['n_pixels_per_node']).squeeze(0) for i in range(self.output_timesteps)]
 
                     y_hat = torch.cat(y_hat, dim=0)
                     y_true = torch.cat(y_true, dim=0)
@@ -505,11 +472,9 @@ class NextFramePredictorS2S(NextFramePredictor):
                 step_test += 1
                 running_loss_test += loss
 
-                del graph
                 del y_true
                 del y_hat
                 del y_hat_graph
-                del x_data
                 torch.cuda.empty_cache()
 
 
@@ -545,23 +510,8 @@ class NextFramePredictorS2S(NextFramePredictor):
 
             x = x.squeeze(0)
 
-            x = add_positional_encoding(x)
-
-            x_data = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
-
-            # Create a PyG graph object
-            graph = create_graph_structure(x_data['graph_nodes'], x_data['distances'])
-
-            graph.x = x_data['data']
-
-            graph.input_graph_structure = x_data
-            graph.image_shape = image_shape
-            graph.to(self.device)
-
-            skip = graph.x[-1, :, [0]]  # 0th index variable is the variable of interest
-
             with torch.no_grad():
-                y_hat, y_hat_graph = self.model(graph, image_shape=image_shape, teacher_forcing_ratio=0, mask=mask)
+                y_hat, y_hat_graph = self.model(x, teacher_forcing_ratio=0, mask=mask)
                 
                 y_hat = [unflatten(y_hat[i].unsqueeze(0), y_hat_graph[i]['mapping'], image_shape).detach().cpu() for i in range(self.output_timesteps)]
                 
@@ -569,10 +519,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 
                 y_pred.append(y_hat)
 
-                del graph
-                # del y_hat
                 del y_hat_graph
-                del x_data
                 torch.cuda.empty_cache()
             
         return np.stack(y_pred, 0)

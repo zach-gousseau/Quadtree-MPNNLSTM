@@ -96,22 +96,12 @@ class Encoder(torch.nn.Module):
         self.norm_c = nn.LayerNorm(hidden_size)
         
     def forward(self, X, edge_index, edge_weight, H=None, C=None):
+        X = X.squeeze(0)
         
         _, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H, C=C)
         hidden_layer, cell_layer = hidden_layer.squeeze(0), cell_layer.squeeze(0)
         hidden_layer = self.norm_h(hidden_layer)
         cell_layer = self.norm_c(cell_layer)
-
-        # _ = _.detach().numpy()
-        # _ = np.expand_dims(_, 0)
-
-        # d = image_to_graph(np.zeros((1, 32, 32, 8), dtype=float), thresh=-np.inf, max_grid_size=8, mask=None, transform_func=self.transform_func)
-        # import matplotlib.pyplot as plt
-        # img = unflatten(_, d['graph_nodes'], d['mappings'], image_shape=(32, 32), nan_value=np.nan)
-        # fig, axs = plt.subplots(1, 8, figsize=(20, 4))
-        # for i in range(8):
-        #     axs[i].imshow(img[0, ..., i])
-
 
         hidden, cell = [hidden_layer], [cell_layer]
         for i in range(1, self.n_layers):
@@ -120,8 +110,6 @@ class Encoder(torch.nn.Module):
             # hidden_layer = self.bn1(hidden_layer)
             hidden_layer = self.norm_h(hidden_layer)
             cell_layer = self.norm_c(cell_layer)
-
-            # hidden_layer, cell_layer = hidden_layer.squeeze(0), cell_layer.squeeze(0)
 
             hidden.append(hidden_layer)
             cell.append(cell_layer)
@@ -179,7 +167,6 @@ class Decoder(torch.nn.Module):
         output = F.relu(output)
         prediction = self.fc_out2(output)
         prediction = torch.sigmoid(prediction)
-
         return prediction, hidden, cell
         
 
@@ -193,6 +180,8 @@ class Seq2Seq(torch.nn.Module):
                  output_timesteps=5,
                  n_layers=4,
                  transform_func=None,
+                 condition='max_larger_than',
+                 remesh_input=False,
                  device=None):
         super().__init__()
         
@@ -202,130 +191,176 @@ class Seq2Seq(torch.nn.Module):
         self.input_timesteps = input_timesteps
         self.output_timesteps = output_timesteps
         self.n_layers = n_layers
+        self.condition = condition
+        self.remesh_input = remesh_input
 
         self.thresh = thresh
         self.transform_func = transform_func
 
+        self.graph = None
+
         self.device = device
         
-    def forward(self, graph, image_shape, teacher_forcing_ratio=0.5, mask=None):
+    def forward(self, x, y=None, teacher_forcing_ratio=0.5, mask=None):
+        num_samples, w, h, c = x.shape
+        image_shape = (w, h)
         
-        #tensor to store decoder outputs
+        if self.remesh_input:
+            x0 = add_positional_encoding(x[[0]])
+            graph_structure = image_to_graph(x0, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
+        else:
+            x = add_positional_encoding(x)
+            graph_structure = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
+
+        self.graph = create_graph_structure(graph_structure['graph_nodes'], graph_structure['distances'])
+
+        self.graph.x = graph_structure['data']
+
+        self.graph.graph_structure = graph_structure
+        self.graph.image_shape = image_shape
+        self.graph.to(self.device)
+        
+        # Lists to store decoder outputs
         outputs = []
         outputs_graph_structures = []
-
-        # Input graph structure
-        # curr_graph = create_graph_structure(input_graph_structure['graph_nodes'], input_graph_structure['distances']).to(device)
-        curr_graph = graph
-        curr_graph_structure = graph.input_graph_structure
-        image_shape = graph.image_shape
-
-        curr_graph.to(self.device)
         
-        #last hidden state of the encoder is used as the initial hidden state of the decoder
-        hidden, cell = [None], [None]
+        # Encoder ------------------------------------------------------------------------------------------------------------
+        self.graph.hidden, self.graph.cell = None, None
         for t in range(self.input_timesteps):
-            hidden, cell = self.encoder(graph.x[t], curr_graph.edge_index, curr_graph.edge_weight, H=hidden[-1], C=hidden[-1])
-        
-        #first input to the decoder is the <sos> tokens
-        # curr_graph.x = torch.zeros_like(X[:1])
-        curr_graph.x = graph.x[[-1]][..., [0, -1, -2, -3]]
-        curr_graph.skip = graph.x[[-1]][..., [0, -1, -2, -3]]  # TODO: Check that this is the right skip connection !!
 
-        # hidden = hidden.squeeze(0)
-        # cell = cell.squeeze(0)
+            # Perform encoding step
+            hidden, cell = self.encoder(
+                X=self.graph.x if self.remesh_input else self.graph.x, 
+                edge_index=self.graph.edge_index, 
+                edge_weight=self.graph.edge_weight, 
+                H=self.graph.hidden[-1] if hasattr(self.graph, 'hidden') else None, 
+                C=self.graph.cell[-1] if hasattr(self.graph, 'cell') else None
+                )
+
+            if t < self.input_timesteps:
+                if self.thresh != -np.inf:
+                    if self.graph.remesh_input:
+                        self.remesh_input(x[[t+1]], hidden, cell, mask)
+                    else:
+                        self.graph.hidden = hidden
+                        self.graph.cell = cell
+
         
+        # Decoder ------------------------------------------------------------------------------------------------------------
+        # First input to the decoder is the last input to the encoder 
+        self.graph.x = self.graph.x[[-1]][..., [0, -1, -2, -3]]
+
+        # Skip connection is also the last input to the encoder
+        self.graph.skip = self.graph.x[[-1]][..., [0, -1, -2, -3]]
+
+        self.graph.to(self.device)
+
         for t in range(self.output_timesteps):
-            
-            curr_graph.to(self.device)
 
             # Perform decoding step
-            output, hidden, cell = self.decoder(curr_graph.x, curr_graph.edge_index, curr_graph.edge_weight, curr_graph.skip, hidden, cell)
+            output, hidden, cell = self.decoder(
+                X=self.graph.x,
+                edge_index=self.graph.edge_index,
+                edge_weight=self.graph.edge_weight, 
+                skip = self.graph.skip, 
+                H=self.graph.hidden, 
+                C=self.graph.cell
+                )
 
             # This is the prediction we are outputting. 
             outputs.append(output)
-            outputs_graph_structures.append(curr_graph_structure)
+            outputs_graph_structures.append(self.graph.graph_structure)
+
+            output = output.unsqueeze(0)
+
+            # Ddecide whether to use the prediction or ground truth for the input to the next rollout step
+            teacher_force = random.random() < teacher_forcing_ratio
+            teacher_input = y[[t]] if teacher_force else None
 
             if self.thresh != -np.inf:
-
-
-                # Output is a prediction on the original graph structure
-                # First convert it back to its grid representation
-                output_detached = output#.cpu().detach().numpy()
-                output_detached = output_detached.unsqueeze(0)  #np.expand_dims(output_detached, 0)
-
-                y_hat_img = unflatten(output_detached, curr_graph_structure['mapping'], image_shape)
-                
-                # Then we convert it back to a graph representation where the graph is determined by
-                # its own values (rather than the one created by the input images / previous step)
-                y_hat_img = add_positional_encoding(y_hat_img)  # Add pos. embedding
-                graph_structure = image_to_graph(y_hat_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func)  # Generate new graph using the new X
-
-                # hidden, cell = hidden.cpu().detach().numpy(), cell.cpu().detach().numpy()
-
-                hidden_img = unflatten(hidden, curr_graph_structure['mapping'], image_shape=image_shape)
-                cell_img = unflatten(cell, curr_graph_structure['mapping'], image_shape=image_shape)
-
-
-                # Now we decide whether to use the prediction or ground truth for the input to the next rollout step
-                teacher_force = random.random() < teacher_forcing_ratio
-                if teacher_force:
-                    input_img = graph.y[[t]]
-
-                    # try:
-                    #     input_img = input_img.cpu()
-                    # except AttributeError:
-                    #     pass
-                    
-                    input_img = add_positional_encoding(input_img)
-                    curr_graph_structure = image_to_graph(input_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func)
-
-                    skip = curr_graph_structure['data'][0, :, :1]
-
-                else:
-                    curr_graph_structure = graph_structure  # Use the prediction graph structure (which includes the predicted data)
-                    
-                    skip = curr_graph_structure['data'][0, :, :1]
-
-                hidden_img = torch.swapaxes(hidden_img, 0, -1)
-
-                hidden = flatten(hidden_img, curr_graph_structure['mapping'], curr_graph_structure['n_pixels_per_node'])
-
-                cell_img = torch.swapaxes(cell_img, 0, -1)
-                cell = flatten(cell_img, curr_graph_structure['mapping'], curr_graph_structure['n_pixels_per_node'])
-
-                hidden, cell = torch.swapaxes(hidden, 0, -1), torch.swapaxes(cell, 0, -1)
-
-                # hidden = torch.Tensor(hidden).to(self.device)
-                # cell = torch.Tensor(cell).to(self.device)
-
-                del curr_graph
-
-                # Create a PyG graph object for input into next rollout
-                curr_graph = create_graph_structure(curr_graph_structure['graph_nodes'], curr_graph_structure['distances'])
-                curr_graph.x = torch.Tensor(curr_graph_structure['data'])
-                # curr_graph.skip = torch.from_numpy(skip).type(torch.float32)
-                curr_graph.skip = skip
-
+                self.remesh(output, hidden, cell, mask, teacher_force=teacher_force, teacher_input=teacher_input)
             else:
-                # curr_graph_structure does not change
-                # but the input (curr_graph.x) does change
-                teacher_force = random.random() < teacher_forcing_ratio
-                teacher_force = False
-                if teacher_force:
-                    input_img = graph.y[[t]]
-                    input_img = add_positional_encoding(input_img)
-                    input_x = flatten(input_img, curr_graph_structure['mapping'], curr_graph_structure['n_pixels_per_node'])
+                self.update_without_remesh(output, teacher_force=teacher_force, teacher_input=teacher_input)
 
-                    curr_graph.x = torch.cat((curr_graph.x[..., 1:], torch.from_numpy(input_x[..., [0]])), -1)#.float()
-
-                    curr_graph.skip = torch.from_numpy(input_x[0, :, :1])#.float()
-                    
-                else:
-                    # TODO the input and skip are the same thing... that's silly
-                    output_detached = torch.from_numpy(np.expand_dims(output.detach().numpy(), 0))
-                    # output_detached = output.detach()
-                    curr_graph.x = torch.cat((curr_graph.x[..., 1:], output_detached), -1)#.float()
-                    curr_graph.skip = output
             
         return outputs, outputs_graph_structures
+
+    def update_without_remesh(self, output, teacher_force=False, teacher_input=None):
+        # curr_graph_structure does not change but the input (curr_graph.x) does change
+        if teacher_force:
+            teacher_input = add_positional_encoding(teacher_input)
+            input_x = flatten(teacher_input, self.graph.graph_structure['mapping'], self.graph.graph_structure['n_pixels_per_node'])
+
+            self.graph.x = torch.cat((self.graph.x[..., 1:], torch.from_numpy(input_x[..., [0]])), -1)
+            self.graph.skip = torch.from_numpy(input_x[0, :, :1])
+            
+        else:
+            self.graph.x = torch.cat((self.graph.x[..., 1:], output), -1)
+            self.graph.skip = output
+
+
+    def remesh(self, data, hidden, cell, mask=None, teacher_force=False, teacher_input=None):
+        image_shape = self.graph.image_shape
+
+        # Output is a prediction on the original graph structure
+        # First convert it back to its grid representation
+        # We also convert the hidden and cell state in the same way 
+        data_img = unflatten(data, self.graph.graph_structure['mapping'], image_shape)
+        hidden_img = unflatten(hidden, self.graph.graph_structure['mapping'], image_shape)
+        cell_img = unflatten(cell, self.graph.graph_structure['mapping'], image_shape)
+
+        # Then we convert it back to a graph representation where the graph is determined by
+        # its own values (rather than the one created by the input images / previous step)
+        if teacher_force:
+            teacher_input = add_positional_encoding(teacher_input)
+            graph_structure = image_to_graph(teacher_input, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
+        else:
+            data_img = add_positional_encoding(data_img)  # Add pos. embedding
+            graph_structure = image_to_graph(data_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
+
+        skip = graph_structure['data'][:, :, [0]]
+
+        # Use the graph structure to convert the hidden and cell states to their graph representations
+        hidden_img, cell_img = torch.swapaxes(hidden_img, 0, -1), torch.swapaxes(cell_img, 0, -1)
+        hidden = flatten(hidden_img, graph_structure['mapping'], graph_structure['n_pixels_per_node'])
+        cell = flatten(cell_img, graph_structure['mapping'], graph_structure['n_pixels_per_node'])
+        hidden, cell = torch.swapaxes(hidden, 0, -1), torch.swapaxes(cell, 0, -1)
+
+        # Create a graph object for input into next rollout
+        self.graph = create_graph_structure(graph_structure['graph_nodes'], graph_structure['distances'])
+        self.graph.x = graph_structure['data']
+        self.graph.skip = skip
+        self.graph.graph_structure = graph_structure
+
+        self.graph.hidden = hidden
+        self.graph.cell = cell
+
+        self.graph.image_shape = image_shape
+
+    def remesh_input(self, data_img, hidden, cell, mask=None):
+        image_shape = self.graph.image_shape
+
+        # Convert H and C to their image represenation using the old graph
+        hidden_img = unflatten(hidden, self.graph.graph_structure['mapping'], image_shape)
+        cell_img = unflatten(cell, self.graph.graph_structure['mapping'], image_shape)
+
+        # Create graph using the current input
+        data_img = add_positional_encoding(data_img)  # Add pos. embedding
+        graph_structure = image_to_graph(data_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
+
+        # Use the graph structure to convert the hidden and cell states to their graph representations
+        hidden_img, cell_img = torch.swapaxes(hidden_img, 0, -1), torch.swapaxes(cell_img, 0, -1)
+        hidden = flatten(hidden_img, graph_structure['mapping'], graph_structure['n_pixels_per_node'])
+        cell = flatten(cell_img, graph_structure['mapping'], graph_structure['n_pixels_per_node'])
+        hidden, cell = torch.swapaxes(hidden, 0, -1), torch.swapaxes(cell, 0, -1)
+
+        # Create a graph object for input into next rollout
+        self.graph = create_graph_structure(graph_structure['graph_nodes'], graph_structure['distances'])
+        self.graph.x = graph_structure['data']
+        self.graph.graph_structure = graph_structure
+
+        self.graph.hidden = hidden
+        self.graph.cell = cell
+
+        self.graph.image_shape = image_shape
+        
