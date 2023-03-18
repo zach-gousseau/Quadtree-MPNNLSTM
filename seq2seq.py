@@ -97,7 +97,7 @@ class Encoder(torch.nn.Module):
         
     def forward(self, X, edge_index, edge_weight, H=None, C=None):
         X = X.squeeze(0)
-        
+
         _, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H, C=C)
         hidden_layer, cell_layer = hidden_layer.squeeze(0), cell_layer.squeeze(0)
         hidden_layer = self.norm_h(hidden_layer)
@@ -230,7 +230,7 @@ class Seq2Seq(torch.nn.Module):
 
             # Perform encoding step
             hidden, cell = self.encoder(
-                X=self.graph.x if self.remesh_input else self.graph.x, 
+                X=self.graph.x if self.remesh_input else self.graph.x[[t]], 
                 edge_index=self.graph.edge_index, 
                 edge_weight=self.graph.edge_weight, 
                 H=self.graph.hidden[-1] if hasattr(self.graph, 'hidden') else None, 
@@ -239,8 +239,8 @@ class Seq2Seq(torch.nn.Module):
 
             if t < self.input_timesteps:
                 if self.thresh != -np.inf:
-                    if self.graph.remesh_input:
-                        self.remesh_input(x[[t+1]], hidden, cell, mask)
+                    if self.remesh_input:
+                        self.do_remesh_input(x[[t+1]], hidden, cell, mask)
                     else:
                         self.graph.hidden = hidden
                         self.graph.cell = cell
@@ -278,7 +278,7 @@ class Seq2Seq(torch.nn.Module):
             teacher_input = y[[t]] if teacher_force else None
 
             if self.thresh != -np.inf:
-                self.remesh(output, hidden, cell, mask, teacher_force=teacher_force, teacher_input=teacher_input)
+                self.do_remesh(output, hidden, cell, mask, teacher_force=teacher_force, teacher_input=teacher_input)
             else:
                 self.update_without_remesh(output, teacher_force=teacher_force, teacher_input=teacher_input)
 
@@ -299,7 +299,7 @@ class Seq2Seq(torch.nn.Module):
             self.graph.skip = output
 
 
-    def remesh(self, data, hidden, cell, mask=None, teacher_force=False, teacher_input=None):
+    def do_remesh(self, data, hidden, cell, mask=None, teacher_force=False, teacher_input=None):
         image_shape = self.graph.image_shape
 
         # Output is a prediction on the original graph structure
@@ -337,7 +337,7 @@ class Seq2Seq(torch.nn.Module):
 
         self.graph.image_shape = image_shape
 
-    def remesh_input(self, data_img, hidden, cell, mask=None):
+    def do_remesh_input(self, data_img, hidden, cell, mask=None):
         image_shape = self.graph.image_shape
 
         # Convert H and C to their image represenation using the old graph
