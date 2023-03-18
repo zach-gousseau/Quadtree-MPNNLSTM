@@ -36,6 +36,10 @@ class IceDataset(Dataset):
         x, y = [], []
         launch_dates = []
         for year in years:
+            
+            x_vars = list(ds.data_vars) if x_vars is None else x_vars
+            y_vars = list(ds.data_vars) if y_vars is None else y_vars
+            
             if self.train:
                 # 3 months around the month of interest
                 start_date = datetime.datetime(year, month, 1) - relativedelta(months=1)
@@ -51,12 +55,13 @@ class IceDataset(Dataset):
 
             # Slice dataset & normalize
             ds_year = ds.sel(time=slice(start_date, end_date))
+            
+            # Add DOY
+            ds_year['doy'] = (('time', 'lat', 'lon'), ds_year.time.dt.dayofyear.values.reshape(-1, 1, 1) * np.ones(shape=(ds_year[x_vars[0]].shape)))
+            
             ds_year = (ds_year - ds_year.min()) / (ds_year.max() - ds_year.min())
 
             num_samples = ds_year.time.size - output_timesteps - input_timesteps
-
-            x_vars = list(ds.data_vars) if x_vars is None else x_vars
-            y_vars = list(ds.data_vars) if y_vars is None else y_vars
 
             i = 0
             x_year = np.ndarray((num_samples, input_timesteps, ds.latitude.size, ds.longitude.size, len(x_vars)))
@@ -77,6 +82,7 @@ class IceDataset(Dataset):
 
 if __name__ == '__main__':
     
+
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--month')  # Month number
@@ -101,7 +107,6 @@ if __name__ == '__main__':
     input_timesteps = 5
     output_timesteps= 30
 
-
     start = time.time()
 
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
@@ -110,7 +115,6 @@ if __name__ == '__main__':
 
     input_features = len(x_vars)
     
-
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
     data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
@@ -119,12 +123,13 @@ if __name__ == '__main__':
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
     loader_val = DataLoader(data_val, batch_size=1, shuffle=False)#, collate_fn=lambda x: x[0])
 
-    thresh = 0.35
+    thresh = 0.15
+    print(f'threshold is {thresh}')
 
     def dist_from_05(arr):
         return abs(abs(arr - 0.5) - 0.5)
 
-    # Add 3 to the number of input features since we add positional encoding (x, y) and node size (s)
+    # Add 3 to the number of input features since weadd positional encoding (x, y) and node size (s)
     model_kwargs = dict(
         hidden_size=64,
         dropout=0.1,
@@ -153,7 +158,7 @@ if __name__ == '__main__':
     lr = 0.01
 
     model.model.train()
-    model.train(loader_train, loader_test, lr=lr, n_epochs=20, mask=mask)  # Train for 20 epochs
+    model.train(loader_train, loader_test, lr=lr, n_epochs=15, mask=mask)  # Train for 20 epochs
 
     # model.model.eval()
     # model.score(x_val, y_val[:, :1])  # Check the MSE on the validation set
@@ -182,4 +187,4 @@ if __name__ == '__main__':
     model.loss.to_csv(f'ice_results/loss_{experiment_name}.csv')
     model.save('ice_results')
 
-    print(f'Finished model {month} in {((time.time() - start) / 60)} minutes')
+    print(f'Finished model {month} in {(time.time() - start / 60)} minutes')
