@@ -47,6 +47,9 @@ class NextFramePredictor(ABC):
         self.transform_func = transform_func
         self.condition = condition
         self.input_features = input_features 
+
+        self.train_loss = []
+        self.test_loss = []
         
         if device == 'cpu' or device is None:
             device = [device]
@@ -397,9 +400,6 @@ class NextFramePredictorS2S(NextFramePredictor):
         
         writer = SummaryWriter()
 
-        test_loss = []
-        train_loss = []
-
         st = time.time()
         for epoch in range(n_epochs): 
             running_loss = 0
@@ -483,8 +483,8 @@ class NextFramePredictorS2S(NextFramePredictor):
 
             scheduler.step()
 
-            train_loss.append(running_loss.item())
-            test_loss.append(running_loss_test.item())
+            self.train_loss.append(running_loss.item())
+            self.test_loss.append(running_loss_test.item())
             
             print(f"Epoch {epoch} train MSE: {running_loss.item():.4f}, "+ \
                 f"test MSE: {running_loss_test.item():.4f}, lr: {scheduler.get_last_lr()[0]:.4f}, time_per_epoch: {(time.time() - st) / (epoch+1):.1f}")
@@ -494,9 +494,8 @@ class NextFramePredictorS2S(NextFramePredictor):
         writer.flush()
 
         self.loss = pd.DataFrame({
-            'train_loss': train_loss,
-            'test_loss': test_loss,
-
+            'train_loss': self.train_loss,
+            'test_loss': self.test_loss,
         })
         
     def predict(self, loader, mask=None):
