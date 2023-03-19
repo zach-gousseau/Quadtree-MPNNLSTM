@@ -253,16 +253,16 @@ class Seq2Seq(torch.nn.Module):
         # Skip connection is also the last input to the encoder
         self.graph.skip = self.graph.x[[-1]][..., [0, -1, -2, -3]]
 
-        self.graph.to(self.device)
-
         for t in range(self.output_timesteps):
+
+            self.graph.to(self.device)
 
             # Perform decoding step
             output, hidden, cell = self.decoder(
                 X=self.graph.x,
                 edge_index=self.graph.edge_index,
                 edge_weight=self.graph.edge_weight, 
-                skip = self.graph.skip, 
+                skip = self.graph.skip,
                 H=self.graph.hidden, 
                 C=self.graph.cell
                 )
@@ -319,6 +319,10 @@ class Seq2Seq(torch.nn.Module):
             graph_structure = image_to_graph(data_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
 
         skip = graph_structure['data'][:, :, [0]]
+
+        # TODO: Why do I need to do this..?
+        hidden_img, cell_img = hidden_img.to(self.device), cell_img.to(self.device)
+        graph_structure['mapping'] = graph_structure['mapping'].to(self.device)
 
         # Use the graph structure to convert the hidden and cell states to their graph representations
         hidden_img, cell_img = torch.swapaxes(hidden_img, 0, -1), torch.swapaxes(cell_img, 0, -1)
