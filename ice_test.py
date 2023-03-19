@@ -39,6 +39,8 @@ class IceDataset(Dataset):
             
             x_vars = list(ds.data_vars) if x_vars is None else x_vars
             y_vars = list(ds.data_vars) if y_vars is None else y_vars
+
+            self.climatology = ds[x_vars].groupby('time.month').mean('time').values
             
             if self.train:
                 # 3 months around the month of interest
@@ -57,7 +59,7 @@ class IceDataset(Dataset):
             ds_year = ds.sel(time=slice(start_date, end_date))
             
             # Add DOY
-            ds_year['doy'] = (('time', 'lat', 'lon'), ds_year.time.dt.dayofyear.values.reshape(-1, 1, 1) * np.ones(shape=(ds_year[x_vars[0]].shape)))
+            ds_year['doy'] = (('time', 'latitude', 'longitude'), ds_year.time.dt.dayofyear.values.reshape(-1, 1, 1) * np.ones(shape=(ds_year[x_vars[0]].shape)))
             
             ds_year = (ds_year - ds_year.min()) / (ds_year.max() - ds_year.min())
 
@@ -81,8 +83,6 @@ class IceDataset(Dataset):
 
 
 if __name__ == '__main__':
-    
-
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--month')  # Month number

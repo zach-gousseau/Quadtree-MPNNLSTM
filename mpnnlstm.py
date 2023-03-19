@@ -48,9 +48,6 @@ class NextFramePredictor(ABC):
         self.condition = condition
         self.input_features = input_features 
         
-        if device == 'cpu' or device is None:
-            device = [device]
-        
         self.device = device
 
     def test_threshold(self, x, thresh, mask=None, contours=True):
@@ -391,7 +388,7 @@ class NextFramePredictorS2S(NextFramePredictor):
             
         # model = nn.DataParallel(self.model)
 
-        loss_func = torch.nn.BCELoss()  # torch.nn.MSELoss()
+        loss_func = torch.nn.MSELoss()  # torch.nn.BCELoss()
         optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9)
         scheduler = StepLR(optimizer, step_size=3, gamma=lr_decay)
         
