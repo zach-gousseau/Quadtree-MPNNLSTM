@@ -271,7 +271,7 @@ class Seq2Seq(torch.nn.Module):
             outputs.append(output)
             outputs_graph_structures.append(self.graph.graph_structure)
 
-            output = output.unsqueeze(0)
+            output = output.unsqueeze(0)#.to(self.device)
 
             # Ddecide whether to use the prediction or ground truth for the input to the next rollout step
             teacher_force = random.random() < teacher_forcing_ratio
@@ -281,7 +281,6 @@ class Seq2Seq(torch.nn.Module):
                 self.do_remesh(output, hidden, cell, mask, teacher_force=teacher_force, teacher_input=teacher_input)
             else:
                 self.update_without_remesh(output, teacher_force=teacher_force, teacher_input=teacher_input)
-
             
         return outputs, outputs_graph_structures
 
@@ -321,8 +320,9 @@ class Seq2Seq(torch.nn.Module):
         skip = graph_structure['data'][:, :, [0]]
 
         # TODO: Why do I need to do this..?
-        hidden_img, cell_img = hidden_img.to(self.device), cell_img.to(self.device)
-        graph_structure['mapping'] = graph_structure['mapping'].to(self.device)
+        # hidden_img, cell_img = hidden_img.to(self.device), cell_img.to(self.device)
+        # graph_structure['mapping'] = graph_structure['mapping'].to(self.device)
+        # graph_structure['n_pixels_per_node'] = graph_structure['n_pixels_per_node'].to(self.device)
 
         # Use the graph structure to convert the hidden and cell states to their graph representations
         hidden_img, cell_img = torch.swapaxes(hidden_img, 0, -1), torch.swapaxes(cell_img, 0, -1)

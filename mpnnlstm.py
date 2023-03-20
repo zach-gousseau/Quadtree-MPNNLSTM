@@ -404,7 +404,7 @@ class NextFramePredictorS2S(NextFramePredictor):
             
             for x, y in tqdm(loader_train, leave=True):
 
-                x, y = x.squeeze(0), y.squeeze(0)
+                x, y = x.squeeze(0).to(self.device), y.squeeze(0).to(self.device)
 
                 optimizer.zero_grad()
                 
@@ -452,7 +452,7 @@ class NextFramePredictorS2S(NextFramePredictor):
             step_test = 0
             for x, y in tqdm(loader_test, leave=True):
 
-                x, y = x.squeeze(0), y.squeeze(0)
+                x, y = x.squeeze(0).to(self.device), y.squeeze(0).to(self.device)
 
                 with torch.no_grad():
                     y_hat, y_hat_graph = self.model(x, y, teacher_forcing_ratio=0.5, mask=mask)
