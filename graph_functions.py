@@ -294,7 +294,15 @@ def flatten(img, mapping, n_pixels_per_node):
     img_flattened = torch.moveaxis(img, -1, 0).reshape(c, n_samples, w*h)
     
     # Compute mean values for each graph node
-    data = img_flattened @ mapping.T.to_dense() / n_pixels_per_node
+
+
+    while True:
+        data = img_flattened @ mapping.T.to_dense() / n_pixels_per_node
+
+        if data.isnan().any():
+            warnings.warn('Matrix multiplication in flatten() failed, trying again.')
+        else:
+            break
 
     # (c, n_samples, w*h) -> (n_samples, w*h, c)
     data = torch.moveaxis(data, 0, -1)
