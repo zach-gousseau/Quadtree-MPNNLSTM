@@ -410,6 +410,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 if climatology is not None:
                     months = [int_to_datetime(launch_date.numpy()[0] + 8.640e13 * t).month for t in range(1, self.output_timesteps + 1)]
                     skip = torch.Tensor(np.array([climatology[:, m] for m in months])).squeeze(1)
+                    skip = skip.to(self.device)
                 else:
                     skip = None
 
