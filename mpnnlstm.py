@@ -20,7 +20,7 @@ from torch.optim.lr_scheduler import StepLR
 from graph_functions import image_to_graph, flatten, create_graph_structure, unflatten, plot_contours
 from model import MPNNLSTMI, MPNNLSTM
 from seq2seq import Seq2Seq
-from utils import get_n_params, add_positional_encoding
+from utils import get_n_params, add_positional_encoding, int_to_datetime
 
 from abc import ABC, abstractmethod
 
@@ -375,6 +375,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         self,
         loader_train,
         loader_test,
+        climatology=None,
         n_epochs=200,
         lr=0.01,
         lr_decay=0.95,
@@ -402,13 +403,19 @@ class NextFramePredictorS2S(NextFramePredictor):
             running_loss = 0
             step = 0
             
-            for x, y in tqdm(loader_train, leave=True):
+            for x, y, launch_date in tqdm(loader_train, leave=True):
 
                 x, y = x.squeeze(0).to(self.device), y.squeeze(0).to(self.device)
 
+                if climatology is not None:
+                    months = [int_to_datetime(launch_date.numpy()[0] + 8.640e13 * t).month for t in range(1, self.output_timesteps + 1)]
+                    skip = torch.Tensor(np.array([climatology[:, m] for m in months])).squeeze(1)
+                else:
+                    skip = None
+
                 optimizer.zero_grad()
                 
-                y_hat, y_hat_graph = self.model(x, y, teacher_forcing_ratio=0.5, mask=mask)
+                y_hat, y_hat_graph = self.model(x, y, skip, teacher_forcing_ratio=0.5, mask=mask)
 
                 has_nans = True
                 while has_nans:
@@ -421,7 +428,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                 y_hat = torch.cat(y_hat, dim=0)
                 
-                loss = loss_func(y_hat, y_true)
+                loss = loss_func(y_hat, y_true)  # HERE: Model params go to NaN despite loss not being nan... WTF
                 loss.backward()
                 
                 decoder_params = [p for p in self.model.decoder.parameters()]
@@ -450,12 +457,12 @@ class NextFramePredictorS2S(NextFramePredictor):
 
             running_loss_test = 0
             step_test = 0
-            for x, y in tqdm(loader_test, leave=True):
+            for x, y, launch_date in tqdm(loader_test, leave=True):
 
                 x, y = x.squeeze(0).to(self.device), y.squeeze(0).to(self.device)
 
                 with torch.no_grad():
-                    y_hat, y_hat_graph = self.model(x, y, teacher_forcing_ratio=0.5, mask=mask)
+                    y_hat, y_hat_graph = self.model(x, y, skip, teacher_forcing_ratio=0.5, mask=mask)
 
                     y_true = [flatten(y[[i]], y_hat_graph[i]['mapping'],  y_hat_graph[i]['n_pixels_per_node']).squeeze(0) for i in range(self.output_timesteps)]
 

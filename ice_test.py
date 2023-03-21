@@ -18,6 +18,8 @@ from seq2seq import Seq2Seq
 
 from torch.utils.data import Dataset, DataLoader
 
+torch.autograd.set_detect_anomaly(True)
+
 class IceDataset(Dataset):
     def __init__(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None, train=False):
         self.train = train
@@ -29,7 +31,7 @@ class IceDataset(Dataset):
         return len(self.y)
 
     def __getitem__(self, idx):
-        return self.x[idx], self.y[idx]
+        return self.x[idx], self.y[idx], self.launch_dates[idx]
 
     def get_xy(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None):
 
@@ -39,8 +41,6 @@ class IceDataset(Dataset):
             
             x_vars = list(ds.data_vars) if x_vars is None else x_vars
             y_vars = list(ds.data_vars) if y_vars is None else y_vars
-
-            self.climatology = ds[x_vars].groupby('time.month').mean('time').values
             
             if self.train:
                 # 3 months around the month of interest
@@ -75,11 +75,11 @@ class IceDataset(Dataset):
 
             x.append(x_year)
             y.append(y_year)
-            launch_dates.append(ds_year.time[input_timesteps:-output_timesteps])
+            launch_dates.append(ds_year.time[input_timesteps:-output_timesteps].values)
 
         x, y, launch_dates = np.concatenate(x, 0), np.concatenate(y, 0), np.concatenate(launch_dates, 0)
         
-        return x.astype('float32'), y.astype('float32'), launch_dates
+        return x.astype('float32'), y.astype('float32'), launch_dates.astype(int)
 
 
 if __name__ == '__main__':
@@ -112,6 +112,9 @@ if __name__ == '__main__':
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
     training_years = range(2011, 2016)
+
+    climatology = ds[y_vars].groupby('time.month').mean('time', skipna=True).to_array().values
+    climatology = np.nan_to_num(climatology)
 
     input_features = len(x_vars)
     
@@ -158,7 +161,7 @@ if __name__ == '__main__':
     lr = 0.01
 
     model.model.train()
-    model.train(loader_train, loader_test, lr=lr, n_epochs=15, mask=mask)  # Train for 20 epochs
+    model.train(loader_train, loader_test, climatology, lr=lr, n_epochs=15, mask=mask)  # Train for 20 epochs
 
     # model.model.eval()
     # model.score(x_val, y_val[:, :1])  # Check the MSE on the validation set

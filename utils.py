@@ -1,6 +1,7 @@
 import numpy as np
 import numba
 import torch
+import datetime
 
 
 @numba.jit
@@ -70,3 +71,6 @@ def normalize(arr):
     min_ = np.min(arr, (0, 2, 3, 4))[:, None, None, None]
     max_ = np.max(arr, (0, 2, 3, 4))[:, None, None, None]
     return (arr - min_) / (max_ - min_)
+
+def int_to_datetime(x):
+    return datetime.datetime.fromtimestamp(x / 1e9)
