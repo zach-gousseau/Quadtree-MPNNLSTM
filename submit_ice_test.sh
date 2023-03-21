@@ -1,5 +1,6 @@
 #!/bin/bash
 #SBATCH --account=def-ka3scott
+#SBATCH --gres=gpu:v100l
 #SBATCH --array=1-12
 #SBATCH --mem=187G
 #SBATCH --time=00-12:00            # time (DD-HH:MM)

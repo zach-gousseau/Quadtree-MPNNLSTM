@@ -295,8 +295,6 @@ def flatten(img, mapping, n_pixels_per_node):
     img_flattened = torch.moveaxis(img, -1, 0).reshape(c, n_samples, w*h)
     
     # Compute mean values for each graph node
-
-
     while True:
         data = img_flattened @ mapping.T.to_dense() / n_pixels_per_node
 
@@ -452,7 +450,6 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=
         )
 
     mapping, graph_nodes, n_pixels_per_node = get_mapping(labels)
-
     mapping, n_pixels_per_node = mapping.to(img.device), n_pixels_per_node.to(img.device)
     
     data = flatten(img, mapping, n_pixels_per_node)
