@@ -116,11 +116,14 @@ class Encoder(torch.nn.Module):
 
         hidden = torch.stack(hidden)
         cell = torch.stack(cell)
+
+        if hidden.isnan().any():
+            raise ValueError
         
         return hidden, cell
 
 class Decoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, add_skip=True):
         super().__init__()
         
         self.input_features = input_features
@@ -128,8 +131,10 @@ class Decoder(torch.nn.Module):
         self.n_layers = n_layers
 
         self.rnns = nn.ModuleList([GConvLSTM(input_features, hidden_size)] + [GConvLSTM(hidden_size, hidden_size) for _ in range(n_layers-1)])
+
+        hidden_size_in = hidden_size + 1 if add_skip else hidden_size
         
-        self.fc_out1 = torch.nn.Linear(hidden_size, hidden_size)
+        self.fc_out1 = torch.nn.Linear(hidden_size_in, hidden_size)
         self.fc_out2 = torch.nn.Linear(hidden_size, 1)
         self.norm_o = nn.LayerNorm(hidden_size)
         self.norm_h = nn.LayerNorm(hidden_size)
@@ -157,17 +162,16 @@ class Decoder(torch.nn.Module):
         cell = torch.cat(cell)
         
         output = output.squeeze(0)  # Use top layer's output
-
-        output = F.relu(output)
         output = self.norm_o(output)
-
-        # skip connection
-        # output = torch.cat([output, skip], dim=-1)
-        prediction = self.fc_out1(output)
         output = F.relu(output)
-        prediction = self.fc_out2(output)
-        prediction = torch.sigmoid(prediction)
-        return prediction, hidden, cell
+        if skip is not None:
+            output = torch.cat([output, skip], dim=-1)
+        output = self.fc_out1(output)
+        output = F.relu(output)
+        output = self.fc_out2(output)
+        output = torch.sigmoid(output)
+        return output, hidden, cell
+        # return output, hidden, cell
         
 
 class Seq2Seq(torch.nn.Module):
@@ -201,7 +205,7 @@ class Seq2Seq(torch.nn.Module):
 
         self.device = device
         
-    def forward(self, x, y=None, teacher_forcing_ratio=0.5, mask=None):
+    def forward(self, x, y=None, skip=None, teacher_forcing_ratio=0.5, mask=None):
         num_samples, w, h, c = x.shape
         image_shape = (w, h)
         
@@ -242,6 +246,8 @@ class Seq2Seq(torch.nn.Module):
                     if self.remesh_input:
                         self.do_remesh_input(x[[t+1]], hidden, cell, mask)
                     else:
+                        if hidden.isnan().any():
+                            raise ValueError
                         self.graph.hidden = hidden
                         self.graph.cell = cell
 
@@ -251,9 +257,12 @@ class Seq2Seq(torch.nn.Module):
         self.graph.x = self.graph.x[[-1]][..., [0, -1, -2, -3]]
 
         # Skip connection is also the last input to the encoder
-        self.graph.skip = self.graph.x[[-1]][..., [0, -1, -2, -3]]
+        # self.graph.skip = self.graph.x[[-1]][..., [0, -1, -2, -3]]
 
         for t in range(self.output_timesteps):
+            
+            if skip is not None:
+                self.graph.skip = flatten(skip[[t]].unsqueeze(-1), self.graph.graph_structure['mapping'], self.graph.graph_structure['n_pixels_per_node']).squeeze(0)
 
             self.graph.to(self.device)
 
@@ -262,7 +271,7 @@ class Seq2Seq(torch.nn.Module):
                 X=self.graph.x,
                 edge_index=self.graph.edge_index,
                 edge_weight=self.graph.edge_weight, 
-                skip = self.graph.skip,
+                skip=self.graph.skip if hasattr(self.graph, 'skip') else None,
                 H=self.graph.hidden, 
                 C=self.graph.cell
                 )
@@ -291,11 +300,11 @@ class Seq2Seq(torch.nn.Module):
             input_x = flatten(teacher_input, self.graph.graph_structure['mapping'], self.graph.graph_structure['n_pixels_per_node'])
 
             self.graph.x = torch.cat((self.graph.x[..., 1:], torch.from_numpy(input_x[..., [0]])), -1)
-            self.graph.skip = torch.from_numpy(input_x[0, :, :1])
+            # self.graph.skip = torch.from_numpy(input_x[0, :, :1])
             
         else:
             self.graph.x = torch.cat((self.graph.x[..., 1:], output), -1)
-            self.graph.skip = output
+            # self.graph.skip = output
 
 
     def do_remesh(self, data, hidden, cell, mask=None, teacher_force=False, teacher_input=None):
@@ -310,6 +319,7 @@ class Seq2Seq(torch.nn.Module):
 
         # Then we convert it back to a graph representation where the graph is determined by
         # its own values (rather than the one created by the input images / previous step)
+        teacher_force = False
         if teacher_force:
             teacher_input = add_positional_encoding(teacher_input)
             graph_structure = image_to_graph(teacher_input, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
@@ -317,7 +327,7 @@ class Seq2Seq(torch.nn.Module):
             data_img = add_positional_encoding(data_img)  # Add pos. embedding
             graph_structure = image_to_graph(data_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
 
-        skip = graph_structure['data'][:, :, [0]]
+        # skip = graph_structure['data'][:, :, [0]]
 
         # TODO: Why do I need to do this..?
         # hidden_img, cell_img = hidden_img.to(self.device), cell_img.to(self.device)
@@ -330,10 +340,13 @@ class Seq2Seq(torch.nn.Module):
         cell = flatten(cell_img, graph_structure['mapping'], graph_structure['n_pixels_per_node'])
         hidden, cell = torch.swapaxes(hidden, 0, -1), torch.swapaxes(cell, 0, -1)
 
+        if hidden.isnan().any():
+            raise ValueError
+
         # Create a graph object for input into next rollout
         self.graph = create_graph_structure(graph_structure['graph_nodes'], graph_structure['distances'])
         self.graph.x = graph_structure['data']
-        self.graph.skip = skip
+        # self.graph.skip = skip
         self.graph.graph_structure = graph_structure
 
         self.graph.hidden = hidden
@@ -362,6 +375,9 @@ class Seq2Seq(torch.nn.Module):
         self.graph = create_graph_structure(graph_structure['graph_nodes'], graph_structure['distances'])
         self.graph.x = graph_structure['data']
         self.graph.graph_structure = graph_structure
+
+        if hidden.isnan().any():
+            raise ValueError
 
         self.graph.hidden = hidden
         self.graph.cell = cell
