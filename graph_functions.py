@@ -363,7 +363,7 @@ def image_to_graph_pixelwise(img, mask=None):
     mappings['p->n'] = {n: n for n in graph_nodes}
 
     # Distances are all the same so don't bother calculating them. Uses '1' as the distance for each edge.
-    distances = get_adj(labels, calculate_distances=False)
+    distances = get_adj(labels, calculate_distances=True)
 
     out = dict(
         labels=labels,

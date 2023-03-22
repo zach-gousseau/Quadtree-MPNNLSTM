@@ -236,7 +236,7 @@ class Seq2Seq(torch.nn.Module):
             hidden, cell = self.encoder(
                 X=self.graph.x if self.remesh_input else self.graph.x[[t]], 
                 edge_index=self.graph.edge_index, 
-                edge_weight=self.graph.edge_weight, 
+                edge_weight=self.graph.edge_attr, 
                 H=self.graph.hidden[-1] if hasattr(self.graph, 'hidden') else None, 
                 C=self.graph.cell[-1] if hasattr(self.graph, 'cell') else None
                 )
@@ -270,7 +270,7 @@ class Seq2Seq(torch.nn.Module):
             output, hidden, cell = self.decoder(
                 X=self.graph.x,
                 edge_index=self.graph.edge_index,
-                edge_weight=self.graph.edge_weight, 
+                edge_weight=self.graph.edge_attr, 
                 skip=self.graph.skip if hasattr(self.graph, 'skip') else None,
                 H=self.graph.hidden, 
                 C=self.graph.cell
