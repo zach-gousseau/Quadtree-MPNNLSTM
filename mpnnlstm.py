@@ -406,26 +406,17 @@ class NextFramePredictorS2S(NextFramePredictor):
             for x, y, launch_date in tqdm(loader_train, leave=True):
 
                 x, y = x.squeeze(0).to(self.device), y.squeeze(0).to(self.device)
-
+                
                 if climatology is not None:
-                    months = [int_to_datetime(launch_date.numpy()[0] + 8.640e13 * t).month for t in range(1, self.output_timesteps + 1)]
-                    skip = torch.Tensor(np.array([climatology[:, m] for m in months])).squeeze(1)
-                    skip = skip.to(self.device)
+                    skip = self.get_climatology_array(climatology, launch_date)
                 else:
                     skip = None
 
                 optimizer.zero_grad()
                 
                 y_hat, y_hat_graph = self.model(x, y, skip, teacher_forcing_ratio=0.5, mask=mask)
-
-                has_nans = True
-                while has_nans:
-                    y_true = [flatten(y[[i]], y_hat_graph[i]['mapping'], y_hat_graph[i]['n_pixels_per_node']).squeeze(0) for i in range(self.output_timesteps)]
-                    y_true = torch.cat(y_true, dim=0)
-                    has_nans = y_true.isnan().any()
-
-                    if has_nans:
-                        warnings.warn('Matrix multiplication in flatten() failed, trying again.')
+                y_true = [flatten(y[[i]], y_hat_graph[i]['mapping'], y_hat_graph[i]['n_pixels_per_node']).squeeze(0) for i in range(self.output_timesteps)]
+                y_true = torch.cat(y_true, dim=0)
 
                 y_hat = torch.cat(y_hat, dim=0)
                 
@@ -461,6 +452,11 @@ class NextFramePredictorS2S(NextFramePredictor):
             for x, y, launch_date in tqdm(loader_test, leave=True):
 
                 x, y = x.squeeze(0).to(self.device), y.squeeze(0).to(self.device)
+
+                if climatology is not None:
+                    skip = self.get_climatology_array(climatology, launch_date)
+                else:
+                    skip = None
 
                 with torch.no_grad():
                     y_hat, y_hat_graph = self.model(x, y, skip, teacher_forcing_ratio=0.5, mask=mask)
@@ -503,20 +499,31 @@ class NextFramePredictorS2S(NextFramePredictor):
             'test_loss': test_loss,
 
         })
+
+    def get_climatology_array(self, climatology, launch_date):
+        months = [int_to_datetime(launch_date.numpy()[0] + 8.640e13 * t).month for t in range(1, self.output_timesteps + 1)]
+        skip = torch.Tensor(np.array([climatology[:, m] for m in months])).squeeze(1)
+        skip = skip.to(self.device)
+        return skip
         
-    def predict(self, loader, mask=None):
+    def predict(self, loader, climatology=None, mask=None):
         
         image_shape = loader.dataset.image_shape
             
         self.model.to(self.device)
         
         y_pred = []
-        for x, y in tqdm(loader, leave=False):
+        for x, y, launch_date in tqdm(loader, leave=False):
 
             x = x.squeeze(0)
 
+            if climatology is not None:
+                skip = self.get_climatology_array(climatology, launch_date)
+            else:
+                skip = None
+
             with torch.no_grad():
-                y_hat, y_hat_graph = self.model(x, teacher_forcing_ratio=0, mask=mask)
+                y_hat, y_hat_graph = self.model(x, skip=skip, teacher_forcing_ratio=0, mask=mask)
                 
                 y_hat = [unflatten(y_hat[i].unsqueeze(0), y_hat_graph[i]['mapping'], image_shape).detach().cpu() for i in range(self.output_timesteps)]
                 
