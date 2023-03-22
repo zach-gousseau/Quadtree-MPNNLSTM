@@ -123,7 +123,7 @@ class Encoder(torch.nn.Module):
         return hidden, cell
 
 class Decoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1, add_skip=True):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=2):
         super().__init__()
         
         self.input_features = input_features
@@ -131,10 +131,8 @@ class Decoder(torch.nn.Module):
         self.n_layers = n_layers
 
         self.rnns = nn.ModuleList([GConvLSTM(input_features, hidden_size)] + [GConvLSTM(hidden_size, hidden_size) for _ in range(n_layers-1)])
-
-        hidden_size_in = hidden_size + 1 if add_skip else hidden_size
         
-        self.fc_out1 = torch.nn.Linear(hidden_size_in, hidden_size)
+        self.fc_out1 = torch.nn.Linear(hidden_size + skip_dim, hidden_size)
         self.fc_out2 = torch.nn.Linear(hidden_size, 1)
         self.norm_o = nn.LayerNorm(hidden_size)
         self.norm_h = nn.LayerNorm(hidden_size)
@@ -253,17 +251,26 @@ class Seq2Seq(torch.nn.Module):
 
         
         # Decoder ------------------------------------------------------------------------------------------------------------
+        
+        # Persistance
+        persistence = x[[-1]][:, :, :, [0]]
+        
         # First input to the decoder is the last input to the encoder 
-        self.graph.x = self.graph.x[[-1]][..., [0, -1, -2, -3]]
+        # self.graph.x = self.graph.x[[-1]][:, [0, -3, -2, -1]]
+        self.graph.x = self.graph.x[-1, :, [0, -3, -2, -1]]
 
-        # Skip connection is also the last input to the encoder
-        # self.graph.skip = self.graph.x[[-1]][..., [0, -1, -2, -3]]
+
 
         for t in range(self.output_timesteps):
             
             if skip is not None:
-                self.graph.skip = flatten(skip[[t]].unsqueeze(-1), self.graph.graph_structure['mapping'], self.graph.graph_structure['n_pixels_per_node']).squeeze(0)
+                skip_t = torch.cat([skip[[t]].unsqueeze(-1), persistence], dim=-1)
+            else:
+                skip_t = persistence
 
+            skip_t = flatten(skip_t, self.graph.graph_structure['mapping'], self.graph.graph_structure['n_pixels_per_node']).squeeze(0)
+
+            self.graph.skip = skip_t
             self.graph.to(self.device)
 
             # Perform decoding step
