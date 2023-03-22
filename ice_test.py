@@ -111,7 +111,7 @@ if __name__ == '__main__':
 
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
-    training_years = range(2011, 2016)
+    training_years = range(2011, 2012)
 
     climatology = ds[y_vars].groupby('time.month').mean('time', skipna=True).to_array().values
     climatology = np.nan_to_num(climatology)
