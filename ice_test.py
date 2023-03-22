@@ -18,8 +18,6 @@ from seq2seq import Seq2Seq
 
 from torch.utils.data import Dataset, DataLoader
 
-torch.autograd.set_detect_anomaly(True)
-
 class IceDataset(Dataset):
     def __init__(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None, train=False):
         self.train = train
@@ -168,7 +166,7 @@ if __name__ == '__main__':
     # Unfinished
     
     model.model.eval()
-    val_preds = model.predict(loader_val)
+    val_preds = model.predict(loader_val, climatology, mask=mask)
     
     launch_dates = loader_val.dataset.launch_dates
     

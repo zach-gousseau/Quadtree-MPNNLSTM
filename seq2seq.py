@@ -319,7 +319,6 @@ class Seq2Seq(torch.nn.Module):
 
         # Then we convert it back to a graph representation where the graph is determined by
         # its own values (rather than the one created by the input images / previous step)
-        teacher_force = False
         if teacher_force:
             teacher_input = add_positional_encoding(teacher_input)
             graph_structure = image_to_graph(teacher_input, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
@@ -339,9 +338,6 @@ class Seq2Seq(torch.nn.Module):
         hidden = flatten(hidden_img, graph_structure['mapping'], graph_structure['n_pixels_per_node'])
         cell = flatten(cell_img, graph_structure['mapping'], graph_structure['n_pixels_per_node'])
         hidden, cell = torch.swapaxes(hidden, 0, -1), torch.swapaxes(cell, 0, -1)
-
-        if hidden.isnan().any():
-            raise ValueError
 
         # Create a graph object for input into next rollout
         self.graph = create_graph_structure(graph_structure['graph_nodes'], graph_structure['distances'])
@@ -375,9 +371,6 @@ class Seq2Seq(torch.nn.Module):
         self.graph = create_graph_structure(graph_structure['graph_nodes'], graph_structure['distances'])
         self.graph.x = graph_structure['data']
         self.graph.graph_structure = graph_structure
-
-        if hidden.isnan().any():
-            raise ValueError
 
         self.graph.hidden = hidden
         self.graph.cell = cell
