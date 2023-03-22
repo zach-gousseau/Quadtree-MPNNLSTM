@@ -253,7 +253,7 @@ def get_adj(labels, xx=None, yy=None, calculate_distances=True, edges_at_corners
                 neighbors.remove(-1)
             except KeyError:
                 pass
-
+    
             for neighbor in neighbors:
                 if neighbor not in adj_dict[node]:
                     if calculate_distances:
@@ -461,6 +461,7 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=
         raise ValueError(f'Found NaNs in graph data {torch.sum(torch.isnan(data))} / {np.prod(data.shape)}')
     
     xx, yy = data[0, ..., 1]*image_shape[1], data[0, ..., 2]*image_shape[0]
+    xx, yy = xx.detach(), yy.detach()
     
     # Get sizes for each graph node (TODO: scale by latitude)
     node_sizes = n_pixels_per_node
@@ -474,7 +475,7 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=
 
     data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
 
-    distances = get_adj(labels.cpu().numpy(), xx=xx, yy=yy, calculate_distances=False)
+    distances = get_adj(labels.cpu().numpy(), xx=xx, yy=yy, calculate_distances=True)
 
     out = dict(
         labels=labels,
