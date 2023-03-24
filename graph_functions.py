@@ -458,7 +458,7 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=
         raise ValueError(f'Found NaNs in graph data {torch.sum(torch.isnan(data))} / {np.prod(data.shape)}')
     
     xx, yy = data[0, ..., 1]*image_shape[1], data[0, ..., 2]*image_shape[0]
-    xx, yy = xx.detach(), yy.detach()
+    xx, yy = xx.detach().cpu(), yy.detach().cpu()
     
     # Get sizes for each graph node (TODO: scale by latitude)
     node_sizes = n_pixels_per_node

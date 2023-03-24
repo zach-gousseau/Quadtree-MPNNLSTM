@@ -182,10 +182,12 @@ if __name__ == '__main__':
             timestep=np.arange(1, output_timesteps+1),
         ),
     )
-    
-    ds.to_netcdf(f'ice_results/valpredictions_{experiment_name}.nc')
 
-    model.loss.to_csv(f'ice_results/loss_{experiment_name}.csv')
-    model.save('ice_results')
+    results_dir = 'ice_results_clim_pers'
+    
+    ds.to_netcdf(f'{results_dir}/valpredictions_{experiment_name}.nc')
+
+    model.loss.to_csv(f'{results_dir}/loss_{experiment_name}.csv')
+    model.save(results_dir)
 
     print(f'Finished model {month} in {(time.time() - start / 60)} minutes')
