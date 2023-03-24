@@ -415,25 +415,23 @@ class NextFramePredictorS2S(NextFramePredictor):
                 optimizer.zero_grad()
                 
                 y_hat, y_hat_graph = self.model(x, y, skip, teacher_forcing_ratio=0.5, mask=mask)
-                y_true = [flatten(y[[i]], y_hat_graph[i]['mapping'], y_hat_graph[i]['n_pixels_per_node']).squeeze(0) for i in range(self.output_timesteps)]
-                y_true = torch.cat(y_true, dim=0)
-
-                y_hat = torch.cat(y_hat, dim=0)
+                y_hat = [unflatten(y_hat[i], y_hat_graph[i]['mapping'], image_shape) for i in range(self.output_timesteps)]
+                y_hat = torch.stack(y_hat, dim=0)
                 
-                loss = loss_func(y_hat, y_true)  # HERE: Model params go to NaN despite loss not being nan... WTF
+                loss = loss_func(y_hat, y)  
                 loss.backward()
                 
-                decoder_params = [p for p in self.model.decoder.parameters()]
-                decoder_grads = [p.grad.mean().cpu() for p in decoder_params if p.grad is not None]
-                decoder_param_means = [p.mean().abs().detach().cpu() for p in decoder_params]
-                writer.add_scalar("Grad/decoder/mean", np.mean(np.abs(decoder_grads)), epoch)
-                writer.add_scalar("Param/decoder/mean", np.mean(decoder_param_means), epoch)
+                # decoder_params = [p for p in self.model.decoder.parameters()]
+                # decoder_grads = [p.grad.mean().cpu() for p in decoder_params if p.grad is not None]
+                # decoder_param_means = [p.mean().abs().detach().cpu() for p in decoder_params]
+                # writer.add_scalar("Grad/decoder/mean", np.mean(np.abs(decoder_grads)), epoch)
+                # writer.add_scalar("Param/decoder/mean", np.mean(decoder_param_means), epoch)
 
-                encoder_params = [p for p in self.model.encoder.parameters()]
-                encoder_grads = [p.grad.mean().cpu() for p in encoder_params if p.grad is not None]
-                encoder_param_means = [p.mean().abs().detach().cpu() for p in encoder_params]
-                writer.add_scalar("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), epoch)
-                writer.add_scalar("Param/encoder/mean", np.mean(encoder_param_means), epoch)
+                # encoder_params = [p for p in self.model.encoder.parameters()]
+                # encoder_grads = [p.grad.mean().cpu() for p in encoder_params if p.grad is not None]
+                # encoder_param_means = [p.mean().abs().detach().cpu() for p in encoder_params]
+                # writer.add_scalar("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), epoch)
+                # writer.add_scalar("Param/encoder/mean", np.mean(encoder_param_means), epoch)
 
                 optimizer.step()
 
@@ -442,7 +440,6 @@ class NextFramePredictorS2S(NextFramePredictor):
                 step += 1
                 running_loss += loss
 
-                del y_true
                 del y_hat
                 del y_hat_graph
                 torch.cuda.empty_cache()
@@ -461,19 +458,16 @@ class NextFramePredictorS2S(NextFramePredictor):
                 with torch.no_grad():
                     y_hat, y_hat_graph = self.model(x, y, skip, teacher_forcing_ratio=0.5, mask=mask)
 
-                    y_true = [flatten(y[[i]], y_hat_graph[i]['mapping'],  y_hat_graph[i]['n_pixels_per_node']).squeeze(0) for i in range(self.output_timesteps)]
-
-                    y_hat = torch.cat(y_hat, dim=0)
-                    y_true = torch.cat(y_true, dim=0)
+                    y_hat = [unflatten(y_hat[i], y_hat_graph[i]['mapping'], image_shape) for i in range(self.output_timesteps)]
+                    y_hat = torch.stack(y_hat, dim=0)
                 
-                    loss = loss_func(y_hat, y_true)
+                    loss = loss_func(y_hat, y)
                     
                     writer.add_scalar("Loss/test", loss, epoch)
 
                 step_test += 1
                 running_loss_test += loss
 
-                del y_true
                 del y_hat
                 del y_hat_graph
                 torch.cuda.empty_cache()
