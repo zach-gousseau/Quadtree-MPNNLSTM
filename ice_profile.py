@@ -113,8 +113,8 @@ if __name__ == '__main__':
     y_vars = ['siconc']  # ['siconc', 't2m']
     training_years = range(2011, 2012)
 
-    # climatology = ds[y_vars].groupby('time.month').mean('time', skipna=True).to_array().values
-    # climatology = np.nan_to_num(climatology)
+    climatology = ds[y_vars].groupby('time.month').mean('time', skipna=True).to_array().values
+    climatology = np.nan_to_num(climatology)
 
     input_features = len(x_vars)
     
@@ -163,7 +163,7 @@ if __name__ == '__main__':
     import cProfile, pstats, io
     pr = cProfile.Profile()
     pr.enable()
-    model.train(loader_profile, loader_test, None, lr=lr, n_epochs=1, mask=mask)  # Train for 20 epochs
+    model.train(loader_profile, loader_test, climatology, lr=lr, n_epochs=1, mask=mask)  # Train for 20 epochs
     pr.disable()
     stats = pstats.Stats(pr).sort_stats('time')
     stats.print_stats(10)
