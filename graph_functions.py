@@ -96,7 +96,7 @@ def min_2d(arr):
                 min_val = arr[i, j]
     return min_val
 
-def quadtree_decompose_(img, padding=0, thresh=0.05, max_size=8, mask=None, transform_func=None, condition='max_larger_than'):
+def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, transform_func=None, condition='max_larger_than'):
     """
     Perform quadtree decomposition on an image.
 
@@ -201,7 +201,7 @@ def quadtree_decompose_(img, padding=0, thresh=0.05, max_size=8, mask=None, tran
     
     return labels[:n, :m]
 
-def get_adj(labels, xx=None, yy=None, calculate_distances=True, edges_at_corners=False):
+def get_adj(labels, xx=None, yy=None, calculate_distances=False, edges_at_corners=False):
     """Get the adjacency matrix for a given label matrix (this could be more efficient)"""
     w, h = labels.shape
     adj_dict = {}
@@ -363,7 +363,7 @@ def image_to_graph_pixelwise(img, mask=None):
     mappings['p->n'] = {n: n for n in graph_nodes}
 
     # Distances are all the same so don't bother calculating them. Uses '1' as the distance for each edge.
-    distances = get_adj(labels, calculate_distances=True)
+    distances = get_adj(labels, calculate_distances=False)
 
     out = dict(
         labels=labels,
@@ -472,7 +472,7 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=
 
     data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
 
-    distances = get_adj(labels.cpu().numpy(), xx=xx, yy=yy, calculate_distances=True)
+    distances = get_adj(labels.cpu().numpy(), xx=xx, yy=yy, calculate_distances=False)
 
     out = dict(
         labels=labels,
