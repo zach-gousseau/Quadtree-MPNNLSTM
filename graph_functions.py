@@ -96,7 +96,7 @@ def min_2d(arr):
                 min_val = arr[i, j]
     return min_val
 
-def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, transform_func=None, condition='max_larger_than'):
+def quadtree_decompose_(img, padding=0, thresh=0.05, max_size=8, mask=None, transform_func=None, condition='max_larger_than'):
     """
     Perform quadtree decomposition on an image.
 
