@@ -214,7 +214,8 @@ class Seq2Seq(torch.nn.Module):
             x = add_positional_encoding(x)
             graph_structure = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
 
-        self.graph = create_graph_structure(graph_structure['graph_nodes'], graph_structure['distances'])
+        xx, yy = graph_structure['data'][0, ..., 1]*image_shape[1], graph_structure['data'][0, ..., 2]*image_shape[0]
+        self.graph = create_graph_structure(graph_structure['mapping'], image_shape, xx, yy, calculate_distances=False)
 
         self.graph.x = graph_structure['data']
 
@@ -347,7 +348,8 @@ class Seq2Seq(torch.nn.Module):
         hidden, cell = torch.swapaxes(hidden, 0, -1), torch.swapaxes(cell, 0, -1)
 
         # Create a graph object for input into next rollout
-        self.graph = create_graph_structure(graph_structure['graph_nodes'], graph_structure['distances'])
+        xx, yy = graph_structure['data'][0, ..., 1]*image_shape[1], graph_structure['data'][0, ..., 2]*image_shape[0]
+        self.graph = create_graph_structure(graph_structure['mapping'], image_shape, xx, yy, calculate_distances=False)
         self.graph.x = graph_structure['data']
         # self.graph.skip = skip
         self.graph.graph_structure = graph_structure
@@ -375,7 +377,8 @@ class Seq2Seq(torch.nn.Module):
         hidden, cell = torch.swapaxes(hidden, 0, -1), torch.swapaxes(cell, 0, -1)
 
         # Create a graph object for input into next rollout
-        self.graph = create_graph_structure(graph_structure['graph_nodes'], graph_structure['distances'])
+        xx, yy = graph_structure['data'][0, ..., 1]*image_shape[1], graph_structure['data'][0, ..., 2]*image_shape[0]
+        self.graph = create_graph_structure(graph_structure['mapping'], image_shape, xx, yy, calculate_distances=False)
         self.graph.x = graph_structure['data']
         self.graph.graph_structure = graph_structure
 

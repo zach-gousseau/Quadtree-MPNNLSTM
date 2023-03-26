@@ -25,6 +25,8 @@ class IceDataset(Dataset):
         self.x, self.y, self.launch_dates = self.get_xy(ds, years, month, input_timesteps, output_timesteps, x_vars=x_vars, y_vars=y_vars)
         self.image_shape = self.x[0].shape[1:-1]
 
+        self.climatology = ds.groupby('time.month').mean('time')
+
     def __len__(self):
         return len(self.y)
 
