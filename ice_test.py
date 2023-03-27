@@ -141,7 +141,7 @@ if __name__ == '__main__':
     )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    # device = torch.device('mps')
+    device = torch.device('mps')
     print('device:', device)
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'

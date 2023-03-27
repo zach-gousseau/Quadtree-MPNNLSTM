@@ -1,11 +1,15 @@
 import numpy as np
 import warnings
+import os
 import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
 import matplotlib.pyplot as plt
 from collections import defaultdict
 import numba as nb
+
+from multiprocessing import Pool
+from functools import partial
 
 from utils import minmax
 
@@ -57,7 +61,7 @@ def min_2d(arr):
                 min_val = arr[i, j]
     return min_val
 
-def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, transform_func=None, condition='max_larger_than'):
+def quadtree_decompose_(img, padding=0, thresh=0.05, max_size=8, mask=None, transform_func=None, condition='max_larger_than'):
     """
     Perform quadtree decomposition on an image.
 
@@ -84,16 +88,13 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, trans
     """
     
     assert max_size & (max_size - 1) == 0
-    
     assert condition in CONDITIONS
 
     n, m = img.shape
-    
     n_padded, m_padded = int(-(n // -max_size) * max_size), int(-(m // -max_size) * max_size)
     
     # Pad the image to match the labels array
     img = np.pad(img, ((0, n_padded - n), (0, m_padded-m)), mode='edge')
-    # img = F.pad(img.unsqueeze(0), (0, m_padded-m, 0, n_padded-n), mode='replicate').squeeze(0)
     
     # Apply transformation if desired
     img_for_criteria = transform_func(img) if transform_func else img
@@ -143,7 +144,6 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, trans
         
         # Even if it doesn't meet the criteria, split if the cell overlaps a masked area
         overlaps_mask = mask is not None and any_2d(mask[max(0, l-padding): min(r+padding, n_padded), max(0, t-padding): min(b+padding, m_padded)])
-        # overlaps_mask = mask is not None and torch.any(mask[max(0, l-padding): min(r+padding, shape[1]), max(0, t-padding): min(b+padding, shape[1])])
         split_cell = split_cell or (overlaps_mask)
         
         # Perform splitting if criteria is met, otherwise set all pixels to the current label
@@ -159,39 +159,135 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, trans
     
     return torch.Tensor(mapping[:i].reshape(-1, m*n))
 
-import threading
-lock = threading.Lock()
+def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, transform_func=None, condition='max_larger_than', num_cpu=1):
+    """
+    Perform quadtree decomposition on an image.
 
-def process_stack(stack):
-    while True:
-        # Pop an item from the stack
-        with lock:
-            if len(stack) == 0:
-                break
-            item = stack.pop()
+    This function decomposes the input image into a quadtree by dividing the image
+    into four quadrants of equal size and repeating the process recursively until
+    the maximum value in each quadrant is either below some threshold or contains a 
+    single pixel. 
+    
+    Optionally, provide a mask which will ensure not cell contains any value which 
+    falls within the mask. Masked pixels are assigned a label of -1.
+    
+ 
+    Parameters:
+    img (np.ndarray): Input image with shape (height, width).
+    padding (int, optional): Padding to add around each cell when checking the splitting criteria. Default is 0.
+    thresh (float, optional): Threshold to use as splitting criteria. Default is 0.05.
+    max_size (int, optional): Maximum grid cell size. Default is 8.
+    mask (np.ndarray, optional): Boolean mask. 
+    transform_func (optional): Function to apply to the input image used for criteria evaluation
 
-        # Process the item
-        quadtree_decompose(*item)
+    Returns:
+    np.ndarray: Array of shape (height, width) containing the labels for each pixel in the image.
+        Note: A '-1' label means that the pixel is invalid (according to the provided mask)
+    """
+    
+    assert max_size & (max_size - 1) == 0
+    assert condition in CONDITIONS
 
-def quadtree_decompose_multithread(img, num_threads=4, **kwargs):
+    n, m = image_shape = img.shape
+    n_padded, m_padded = int(-(n // -max_size) * max_size), int(-(m // -max_size) * max_size)
+    
+    # Pad the image to match the labels array
+    img = np.pad(img, ((0, n_padded - n), (0, m_padded-m)), mode='edge')
+    
+    # Apply transformation if desired
+    img_for_criteria = transform_func(img) if transform_func else img
+    
     # Build initial stack using each of the cells in the base grid
     stack = []
-    max_size = kwargs.get('max_size', 8)
-    n, m = img.shape
-    for i in range(-(n // -max_size)):
-        for j in range(-(m // -max_size)):
-            stack.append((img, 0, 0, max_size, None, None, None, None, None, None, None, None, None, None))
+    for i in range(n_padded // max_size): 
+        for j in range(m_padded // max_size):
+            stack.append((i*max_size, j*max_size, max_size))
 
-    # Create and start threads
-    threads = []
-    for i in range(num_threads):
-        t = threading.Thread(target=process_stack, args=(stack,))
-        threads.append(t)
-        t.start()
+    num_cpu = min(num_cpu, os.cpu_count())
+    if num_cpu == -1:
+        num_cpu = os.cpu_count()
 
-    # Wait for all threads to finish
-    for t in threads:
-        t.join()
+    if num_cpu > 1:
+        # Split stack into num_cpu roughly equal-sized lists
+        substack_size = int(np.ceil(len(stack) / num_cpu))
+        substack = [stack[i:i+substack_size] for i in range(0, len(stack), substack_size)]
+        
+        # Process 
+        with Pool(processes=num_cpu) as pool:
+            quadtree_over_stack_partial = partial(
+                    quadtree_over_stack,
+                    img_for_criteria=img_for_criteria, 
+                    padding=padding, 
+                    thresh=thresh, 
+                    max_size=max_size, 
+                    mask=mask, 
+                    condition=condition, 
+                    image_shape=image_shape
+                )
+            mapping = pool.map(quadtree_over_stack_partial, substack)
+            mapping = torch.cat(mapping, dim=0)
+    else:
+        mapping = quadtree_over_stack(stack, img_for_criteria, padding, thresh, max_size, mask, condition, image_shape)
+    return mapping
+
+
+def quadtree_over_stack(stack, img_for_criteria, padding, thresh, max_size, mask, condition, image_shape):
+    n_padded, m_padded = img_for_criteria.shape
+    n, m = image_shape
+
+    mapping = np.zeros(shape=(max_size*max_size*len(stack), n, m))  # Largest possible mapping 
+
+    i = 0
+    while stack:
+        x, y, size = stack.pop()
+        
+        # Skip if within the padded zone (which we ignore)
+        if x >= n or y >= m:
+            continue
+
+        l, r, t, b = x, x + size + 1, y, y + size + 1
+        
+        # Stop if cell is singular
+        if size == 1:
+            if mask is not None and mask[x, y]:
+                continue
+
+            mapping[i, x, y] = 1
+            i += 1
+            continue
+        
+        cell = img_for_criteria[
+            max(0, l-padding): min(r+padding, n_padded),
+            max(0, t-padding): min(b+padding, m_padded)
+        ]
+        
+        # Split if the cell meets the specified criteria
+        if condition == 'max_larger_than':
+            split_cell = max_2d(cell) > thresh 
+        elif condition == 'max_smaller_than':
+            split_cell = max_2d(cell) < thresh 
+        elif condition == 'min_larger_than':
+            split_cell = min_2d(cell) > thresh 
+        elif condition == 'min_smaller_than':
+            split_cell = min_2d(cell) < thresh
+
+        
+        # Even if it doesn't meet the criteria, split if the cell overlaps a masked area
+        overlaps_mask = mask is not None and any_2d(mask[max(0, l-padding): min(r+padding, n_padded), max(0, t-padding): min(b+padding, m_padded)])
+        split_cell = split_cell or (overlaps_mask)
+        
+        # Perform splitting if criteria is met, otherwise set all pixels to the current label
+        if split_cell:
+            new_size = size // 2
+            stack.append((x, y, new_size))
+            stack.append((x + new_size, y, new_size))
+            stack.append((x, y + new_size, new_size))
+            stack.append((x + new_size, y + new_size, new_size))
+        else:
+            mapping[i, x:x+size, y:y+size] = 1
+            i += 1
+    
+    return torch.Tensor(mapping[:i].reshape(-1, m*n))
 
 def mapping_to_labels(mapping, image_shape):
     graph_nodes = torch.arange(0, mapping.shape[0]).to(mapping.device)
