@@ -105,7 +105,7 @@ class Encoder(torch.nn.Module):
 
         hidden, cell = [hidden_layer], [cell_layer]
         for i in range(1, self.n_layers):
-            _, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=hidden_layer, C=cell_layer)
+            _, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=None, C=None)
 
             # hidden_layer = self.bn1(hidden_layer)
             hidden_layer = self.norm_h(hidden_layer)
@@ -116,14 +116,10 @@ class Encoder(torch.nn.Module):
 
         hidden = torch.stack(hidden)
         cell = torch.stack(cell)
-
-        if hidden.isnan().any():
-            raise ValueError
-        
         return hidden, cell
 
 class Decoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=2):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=1):
         super().__init__()
         
         self.input_features = input_features
