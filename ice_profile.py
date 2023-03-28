@@ -139,7 +139,7 @@ if __name__ == '__main__':
     )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    # device = torch.device('mps')
+    device = torch.device('mps')
     print('device:', device)
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
@@ -167,3 +167,43 @@ if __name__ == '__main__':
     pr.disable()
     stats = pstats.Stats(pr).sort_stats('time')
     stats.print_stats(10)
+
+"""
+GPU
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        5   59.771   11.954   59.771   11.954 {method 'run_backward' of 'torch._C._EngineBase' objects}
+     1210   35.624    0.029   37.355    0.031 /Users/zach/Documents/Quadtree-MPNNLSTM/graph_functions.py:263(flatten)
+     7920   21.319    0.003   26.378    0.003 /Users/zach/opt/miniconda3/envs/thesis/lib/python3.10/site-packages/torch_geometric/nn/aggr/base.py:103(__call__)
+847906/846976   20.496    0.000   20.546    0.000 {built-in method numpy.core._multiarray_umath.implement_array_function}
+      310   11.740    0.038   13.361    0.043 /Users/zach/Documents/Quadtree-MPNNLSTM/graph_functions.py:60(quadtree_decompose)
+      630   10.514    0.017   10.514    0.017 {method 'cpu' of 'torch._C._TensorBase' objects}
+     4050    8.422    0.002    8.422    0.002 {method 'to' of 'torch._C._TensorBase' objects}
+      310    6.060    0.020   45.341    0.146 /Users/zach/Documents/Quadtree-MPNNLSTM/graph_functions.py:200(create_graph_structure)
+    15840    5.181    0.000    5.181    0.000 {method 'scatter_add_' of 'torch._C._TensorBase' objects}
+     7920    4.758    0.001    8.576    0.001 /Users/zach/opt/miniconda3/envs/thesis/lib/python3.10/site-packages/torch_geometric/nn/conv/gcn_conv.py:33(gcn_norm)
+NOT GPU
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        5   21.630    4.326   21.630    4.326 {method 'run_backward' of 'torch._C._EngineBase' objects}
+847906/846976   18.110    0.000   18.146    0.000 {built-in method numpy.core._multiarray_umath.implement_array_function}
+     1210   16.517    0.014   16.724    0.014 /Users/zach/Documents/Quadtree-MPNNLSTM/graph_functions.py:263(flatten)
+     1200   11.134    0.009   11.161    0.009 /Users/zach/Documents/Quadtree-MPNNLSTM/graph_functions.py:289(unflatten)
+      310    9.973    0.032   11.382    0.037 /Users/zach/Documents/Quadtree-MPNNLSTM/graph_functions.py:60(quadtree_decompose)
+      310    5.377    0.017   33.108    0.107 /Users/zach/Documents/Quadtree-MPNNLSTM/graph_functions.py:200(create_graph_structure)
+    15840    5.037    0.000    5.037    0.000 {method 'scatter_add_' of 'torch._C._TensorBase' objects}
+     7920    3.357    0.000   17.175    0.002 /Users/zach/opt/miniconda3/envs/thesis/lib/python3.10/site-packages/torch_geometric/nn/conv/gcn_conv.py:168(forward)
+     7920    2.656    0.000    2.656    0.000 {method 'index_select' of 'torch._C._TensorBase' objects}
+  3382930    2.459    0.000    2.459    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+
+NOT GPU - OLD
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        5   24.027    4.805   24.027    4.805 {method 'run_backward' of 'torch._C._EngineBase' objects}
+     2410   21.479    0.009   21.479    0.009 {method 'to_dense' of 'torch._C._TensorBase' objects}
+     1210   19.941    0.016   31.088    0.026 /Users/zach/Documents/Quadtree-MPNNLSTM/graph_functions.py:285(flatten)
+     1200   13.455    0.011   24.046    0.020 /Users/zach/Documents/Quadtree-MPNNLSTM/graph_functions.py:341(unflatten)
+      310    5.021    0.016    6.319    0.020 /Users/zach/Documents/Quadtree-MPNNLSTM/graph_functions.py:99(quadtree_decompose)
+     7920    3.136    0.000   10.802    0.001 /Users/zach/opt/miniconda3/envs/thesis/lib/python3.10/site-packages/torch_geometric/nn/conv/gcn_conv.py:168(forward)
+    15840    2.524    0.000    2.524    0.000 {method 'scatter_add_' of 'torch._C._TensorBase' objects}
+      310    2.435    0.008    2.688    0.009 /Users/zach/Documents/Quadtree-MPNNLSTM/graph_functions.py:204(get_adj)
+3907458/2450    2.058    0.000    5.913    0.002 /Users/zach/opt/miniconda3/envs/thesis/lib/python3.10/site-packages/torch_geometric/data/storage.py:521(recursive_apply)
+19758249/19757938    1.323    0.000    2.463    0.000 {built-in method builtins.isinstance}
+"""
