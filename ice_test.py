@@ -183,7 +183,7 @@ if __name__ == '__main__':
         ),
     )
 
-    results_dir = 'ice_results_clim_pers'
+    results_dir = 'ice_results_gnn_out'
     
     ds.to_netcdf(f'{results_dir}/valpredictions_{experiment_name}.nc')
 
@@ -191,3 +191,4 @@ if __name__ == '__main__':
     model.save(results_dir)
 
     print(f'Finished model {month} in {(time.time() - start / 60)} minutes')
+x
