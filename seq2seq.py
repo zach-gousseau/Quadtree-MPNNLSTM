@@ -127,9 +127,10 @@ class Decoder(torch.nn.Module):
         self.n_layers = n_layers
 
         self.rnns = nn.ModuleList([GConvLSTM(input_features, hidden_size)] + [GConvLSTM(hidden_size, hidden_size) for _ in range(n_layers-1)])
-        
-        self.fc_out1 = torch.nn.Linear(hidden_size + skip_dim, hidden_size)
-        self.fc_out2 = torch.nn.Linear(hidden_size, 1)
+
+        self.fc_out1 = GCNConv(in_channels=hidden_size + skip_dim, out_channels=hidden_size, add_self_loops=False)
+        self.fc_out2 = GCNConv(in_channels=hidden_size, out_channels=1, add_self_loops=False)
+
         self.norm_o = nn.LayerNorm(hidden_size)
         self.norm_h = nn.LayerNorm(hidden_size)
         self.norm_c = nn.LayerNorm(hidden_size)
@@ -158,14 +159,15 @@ class Decoder(torch.nn.Module):
         output = output.squeeze(0)  # Use top layer's output
         output = self.norm_o(output)
         output = F.relu(output)
+
         if skip is not None:
             output = torch.cat([output, skip], dim=-1)
-        output = self.fc_out1(output)
+
+        output = self.fc_out1(output, edge_index, edge_weight)
         output = F.relu(output)
-        output = self.fc_out2(output)
-        output = torch.sigmoid(output)
+        output = self.fc_out2(output, edge_index, edge_weight)
+        # output = torch.sigmoid(output)
         return output, hidden, cell
-        # return output, hidden, cell
         
 
 class Seq2Seq(torch.nn.Module):
