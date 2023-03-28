@@ -191,4 +191,3 @@ if __name__ == '__main__':
     model.save(results_dir)
 
     print(f'Finished model {month} in {(time.time() - start / 60)} minutes')
-x
