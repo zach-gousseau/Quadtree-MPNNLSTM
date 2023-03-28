@@ -496,10 +496,10 @@ class NextFramePredictorS2S(NextFramePredictor):
 
     def get_climatology_array(self, climatology, launch_date):
         months = [int_to_datetime(launch_date.numpy()[0] + 8.640e13 * t).month for t in range(1, self.output_timesteps + 1)]
-        skip = torch.Tensor(np.array([climatology[:, m] for m in months])).squeeze(1)
+        skip = torch.Tensor(np.array([climatology[:, m-1] for m in months])).squeeze(1)
         skip = skip.to(self.device)
         return skip
-        
+        sq
     def predict(self, loader, climatology=None, mask=None):
         
         image_shape = loader.dataset.image_shape
@@ -509,7 +509,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         y_pred = []
         for x, y, launch_date in tqdm(loader, leave=False):
 
-            x = x.squeeze(0)
+            x = x.squeeze(0).to(self.device)
 
             if climatology is not None:
                 skip = self.get_climatology_array(climatology, launch_date)
