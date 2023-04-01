@@ -19,10 +19,10 @@ from seq2seq import Seq2Seq
 from torch.utils.data import Dataset, DataLoader
 
 class IceDataset(Dataset):
-    def __init__(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None, train=False):
+    def __init__(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None, train=False, y_binary_thresh=None):
         self.train = train
         
-        self.x, self.y, self.launch_dates = self.get_xy(ds, years, month, input_timesteps, output_timesteps, x_vars=x_vars, y_vars=y_vars)
+        self.x, self.y, self.launch_dates = self.get_xy(ds, years, month, input_timesteps, output_timesteps, x_vars=x_vars, y_vars=y_vars, y_binary_thresh=y_binary_thresh)
         self.image_shape = self.x[0].shape[1:-1]
 
     def __len__(self):
@@ -31,7 +31,7 @@ class IceDataset(Dataset):
     def __getitem__(self, idx):
         return self.x[idx], self.y[idx], self.launch_dates[idx]
 
-    def get_xy(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None):
+    def get_xy(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None, y_binary_thresh=None):
 
         x, y = [], []
         launch_dates = []
@@ -76,6 +76,9 @@ class IceDataset(Dataset):
             launch_dates.append(ds_year.time[input_timesteps:-output_timesteps].values)
 
         x, y, launch_dates = np.concatenate(x, 0), np.concatenate(y, 0), np.concatenate(launch_dates, 0)
+
+        if y_binary_thresh is not None:
+            y = y > y_binary_thresh
         
         return x.astype('float32'), y.astype('float32'), launch_dates.astype(int)
 
@@ -115,10 +118,12 @@ if __name__ == '__main__':
     climatology = np.nan_to_num(climatology)
 
     input_features = len(x_vars)
+
+    y_binary_thresh = 0.15
     
-    data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
-    data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
-    data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
+    data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, y_binary_thresh=y_binary_thresh)
+    data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, y_binary_thresh=y_binary_thresh)
+    data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars, y_binary_thresh=y_binary_thresh)
 
     loader_train = DataLoader(data_train, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
@@ -183,7 +188,7 @@ if __name__ == '__main__':
         ),
     )
 
-    results_dir = 'ice_results_gnn_out'
+    results_dir = 'ice_results_binary'
     
     ds.to_netcdf(f'{results_dir}/valpredictions_{experiment_name}.nc')
 

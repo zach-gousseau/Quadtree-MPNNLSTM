@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --account=def-ka3scott
+#SBATCH --account=def-dclausi
 #SBATCH --gres=gpu:v100l
-#SBATCH --array=1-12
+#SBATCH --array=1-3
 #SBATCH --mem=187G
 #SBATCH --cpus-per-task=8
 #SBATCH --time=00-12:00            # time (DD-HH:MM)

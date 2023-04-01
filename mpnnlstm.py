@@ -499,7 +499,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         skip = torch.Tensor(np.array([climatology[:, m-1] for m in months])).squeeze(1)
         skip = skip.to(self.device)
         return skip
-        sq
+        
     def predict(self, loader, climatology=None, mask=None):
         
         image_shape = loader.dataset.image_shape

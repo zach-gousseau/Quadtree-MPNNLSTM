@@ -109,11 +109,10 @@ for timestep in ds.timestep:
         else:
             err = masked_RMSE(~mask)(arr[0], arr[1])
         
-        forecast_date = pd.Timestamp(launch_date.values) + relativedelta(days=timestep)
-        forecast_month = forecast_date.month
+        launch_month = pd.Timestamp(launch_date.values).month
         
-        heatmap[timestep][forecast_month] += err
-        heatmap_n[timestep][forecast_month] += 1
+        heatmap[timestep][launch_month] += err
+        heatmap_n[timestep][launch_month] += 1
         
 heatmap = heatmap.div(heatmap_n)
 
@@ -121,7 +120,7 @@ plt.figure(dpi=80)
 sns.heatmap(heatmap, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=None, vmin=None)
 plt.xlabel('Lead time (days)')
 plt.savefig(f'{results_dir}/heatmap.png')
-
+quit()
 # Examples and GIF
 for m in range(12):
     ld = 15 + m*30
