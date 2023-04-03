@@ -2,6 +2,7 @@
 __pycache__/
 results/
 ice_results*/
+baseline_sifnet/
 test_results/
 data/
 pseudocode

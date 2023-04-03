@@ -14,70 +14,6 @@ import numpy as np
 
 from model import GConvLSTM, GConvLSTM_Cheb
 
-# class Encoder(torch.nn.Module):
-#     def __init__(self, input_features, hidden_size, dropout, n_layers=1):
-#         super().__init__()
-        
-#         self.hidden_size = hidden_size
-        
-#         self.n_layers = n_layers
-
-#         self.rnn = GConvLSTM(input_features, hidden_size)
-#         self.bn_h = nn.LayerNorm(hidden_size)
-#         self.bn_c = nn.LayerNorm(hidden_size)
-        
-#         self.dropout = nn.Dropout(dropout)
-        
-#     def forward(self, X, edge_index, edge_weight, H=None, C=None):
-
-#         _, hidden, cell = self.rnn(X, edge_index, edge_weight, H=H, C=C)
-
-#         hidden = self.bn_h(hidden)
-#         cell = self.bn_c(cell)
-
-#         # hidden = torch.unsqueeze(hidden, 0)
-#         # cell = torch.unsqueeze(cell, 0)
-        
-#         return hidden, cell
-
-
-# class Decoder(torch.nn.Module):
-#     def __init__(self, input_features, hidden_size, dropout, n_layers=1):
-#         super().__init__()
-        
-#         self.input_features = input_features
-#         self.hidden_size = hidden_size
-#         self.n_layers = n_layers
-        
-#         self.rnn = GConvLSTM(input_features, hidden_size)
-        
-#         self.fc_out = torch.nn.Linear(hidden_size, 1)  # Assuming output has 1 dimension
-#         self.bn_o = nn.LayerNorm(hidden_size)
-
-#         self.bn_c = nn.LayerNorm(hidden_size)
-#         self.bn_h = nn.LayerNorm(hidden_size)
-        
-#         self.dropout = nn.Dropout(dropout)
-        
-#     def forward(self, X, edge_index, edge_weight, skip, H, C):
-
-
-#         output, hidden, cell = self.rnn(X, edge_index, edge_weight, H=H, C=C)
-        
-#         output = output.squeeze(0)  # Use top layer's output
-
-#         output = F.relu(output)
-#         output = self.bn_o(output)
-
-#         hidden = self.bn_h(hidden)
-#         cell = self.bn_c(cell)
-
-#         # skip connection
-#         # output = torch.cat([output, skip], dim=-1)
-#         prediction = self.fc_out(output)
-#         prediction = torch.sigmoid(prediction)
-
-#         return prediction, hidden, cell
 
 class Encoder(torch.nn.Module):
     def __init__(self, input_features, hidden_size, dropout, n_layers=1):
@@ -119,7 +55,7 @@ class Encoder(torch.nn.Module):
         return hidden, cell
 
 class Decoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=1):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=2):
         super().__init__()
         
         self.input_features = input_features
