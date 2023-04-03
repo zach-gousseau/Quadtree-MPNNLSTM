@@ -102,7 +102,7 @@ class Decoder(torch.nn.Module):
         output = self.fc_out1(output, edge_index, edge_weight)
         output = F.relu(output)
         output = self.fc_out2(output, edge_index, edge_weight)
-        # output = torch.sigmoid(output)
+        output = torch.sigmoid(output)
         return output, hidden, cell
         
 
