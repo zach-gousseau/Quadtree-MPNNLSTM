@@ -76,8 +76,11 @@ class NextFramePredictor(ABC):
     def save(self, directory):
         torch.save(self.model.state_dict(), os.path.join(directory, f'{self.experiment_name}.pth'))
 
-    def load(self, path):
-        self.model.load_state_dict(torch.load(path))
+    def load(self, directory):
+        try:
+            self.model.load_state_dict(torch.load(os.path.join(directory, f'{self.experiment_name}.pth')))
+        except:
+            self.model.load_state_dict(torch.load(os.path.join(directory, f'{self.experiment_name}.pth'), map_location=torch.device('cpu')))
 
     @abstractmethod
     def train(
