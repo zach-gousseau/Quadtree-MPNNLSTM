@@ -84,11 +84,7 @@ class IceDataset(Dataset):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-m', '--month')  # Month number
-
-    args = vars(parser.parse_args())
-    month = int(args['month'])
+    month = 4
 
     ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
 
@@ -121,11 +117,10 @@ if __name__ == '__main__':
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
 
-    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
-    loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
+    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(1)))
+    loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(1)))
 
     thresh = 0.15
-    print(f'threshold is {thresh}')
 
     def dist_from_05(arr):
         return abs(abs(arr - 0.5) - 0.5)
@@ -139,7 +134,7 @@ if __name__ == '__main__':
     )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    # device = torch.device('mps')
+    device = torch.device('mps')
     print('device:', device)
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
@@ -152,9 +147,6 @@ if __name__ == '__main__':
         transform_func=dist_from_05,
         device=device,
         model_kwargs=model_kwargs)
-
-    print('Num. parameters:', model.get_n_params())
-    print('Model:\n', model.model)
 
     lr = 0.01
 
