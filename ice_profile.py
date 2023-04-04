@@ -84,11 +84,7 @@ class IceDataset(Dataset):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-m', '--month')  # Month number
-
-    args = vars(parser.parse_args())
-    month = int(args['month'])
+    month = 4
 
     ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
 
@@ -121,11 +117,10 @@ if __name__ == '__main__':
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
 
-    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
-    loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
+    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(1)))
+    loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(1)))
 
     thresh = 0.15
-    print(f'threshold is {thresh}')
 
     def dist_from_05(arr):
         return abs(abs(arr - 0.5) - 0.5)
@@ -139,8 +134,7 @@ if __name__ == '__main__':
     )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    # device = torch.device('mps')
-    device = 'cpu'
+    device = torch.device('mps')
     print('device:', device)
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
@@ -154,9 +148,6 @@ if __name__ == '__main__':
         device=device,
         model_kwargs=model_kwargs)
 
-    print('Num. parameters:', model.get_n_params())
-    print('Model:\n', model.model)
-
     lr = 0.01
 
     model.model.train()
@@ -168,6 +159,7 @@ if __name__ == '__main__':
     pr.disable()
     stats = pstats.Stats(pr).sort_stats('time')
     stats.print_stats(10)
+
 
 """
 GPU
@@ -182,6 +174,7 @@ GPU
       310    6.060    0.020   45.341    0.146 /Users/zach/Documents/Quadtree-MPNNLSTM/graph_functions.py:200(create_graph_structure)
     15840    5.181    0.000    5.181    0.000 {method 'scatter_add_' of 'torch._C._TensorBase' objects}
      7920    4.758    0.001    8.576    0.001 /Users/zach/opt/miniconda3/envs/thesis/lib/python3.10/site-packages/torch_geometric/nn/conv/gcn_conv.py:33(gcn_norm)
+
 NOT GPU
    ncalls  tottime  percall  cumtime  percall filename:lineno(function)
         5   21.630    4.326   21.630    4.326 {method 'run_backward' of 'torch._C._EngineBase' objects}
@@ -194,17 +187,4 @@ NOT GPU
      7920    3.357    0.000   17.175    0.002 /Users/zach/opt/miniconda3/envs/thesis/lib/python3.10/site-packages/torch_geometric/nn/conv/gcn_conv.py:168(forward)
      7920    2.656    0.000    2.656    0.000 {method 'index_select' of 'torch._C._TensorBase' objects}
   3382930    2.459    0.000    2.459    0.000 {method 'reduce' of 'numpy.ufunc' objects}
-
-NOT GPU - OLD
-   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
-        5   24.027    4.805   24.027    4.805 {method 'run_backward' of 'torch._C._EngineBase' objects}
-     2410   21.479    0.009   21.479    0.009 {method 'to_dense' of 'torch._C._TensorBase' objects}
-     1210   19.941    0.016   31.088    0.026 /Users/zach/Documents/Quadtree-MPNNLSTM/graph_functions.py:285(flatten)
-     1200   13.455    0.011   24.046    0.020 /Users/zach/Documents/Quadtree-MPNNLSTM/graph_functions.py:341(unflatten)
-      310    5.021    0.016    6.319    0.020 /Users/zach/Documents/Quadtree-MPNNLSTM/graph_functions.py:99(quadtree_decompose)
-     7920    3.136    0.000   10.802    0.001 /Users/zach/opt/miniconda3/envs/thesis/lib/python3.10/site-packages/torch_geometric/nn/conv/gcn_conv.py:168(forward)
-    15840    2.524    0.000    2.524    0.000 {method 'scatter_add_' of 'torch._C._TensorBase' objects}
-      310    2.435    0.008    2.688    0.009 /Users/zach/Documents/Quadtree-MPNNLSTM/graph_functions.py:204(get_adj)
-3907458/2450    2.058    0.000    5.913    0.002 /Users/zach/opt/miniconda3/envs/thesis/lib/python3.10/site-packages/torch_geometric/data/storage.py:521(recursive_apply)
-19758249/19757938    1.323    0.000    2.463    0.000 {built-in method builtins.isinstance}
 """
