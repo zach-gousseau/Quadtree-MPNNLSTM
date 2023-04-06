@@ -421,7 +421,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 y_hat = [unflatten(y_hat[i], y_hat_graph[i]['mapping'], image_shape, mask) for i in range(self.output_timesteps)]
                 y_hat = torch.stack(y_hat, dim=0)
                 
-                loss = loss_func(y_hat, y)  
+                loss = loss_func(y_hat[:, ~mask], y[:, ~mask])  
                 loss.backward()
                 
                 # decoder_params = [p for p in self.model.decoder.parameters()]
@@ -464,7 +464,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                     y_hat = [unflatten(y_hat[i], y_hat_graph[i]['mapping'], image_shape, mask) for i in range(self.output_timesteps)]
                     y_hat = torch.stack(y_hat, dim=0)
                 
-                    loss = loss_func(y_hat, y)
+                    loss = loss_func(y_hat[:, ~mask], y[:, ~mask])  
                     
                     writer.add_scalar("Loss/test", loss, epoch)
 

@@ -121,7 +121,7 @@ if __name__ == '__main__':
     loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(1)))
 
     thresh = 0.15
-    # thresh = -np.inf
+    thresh = -np.inf
 
     def dist_from_05(arr):
         return abs(abs(arr - 0.5) - 0.5)

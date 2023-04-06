@@ -269,7 +269,7 @@ def get_graph_nodes(labels):
     
 def flatten_pixelwise(img, mask):
     if mask is not None:
-        data = img[:, mask, :]
+        data = img[:, ~mask, :]
     else:
         data = img.reshape(img.shape[0], -1, img.shape[-1])
     return data
@@ -344,8 +344,8 @@ def unflatten(data, mapping, image_shape, mask=None):
 def unflatten_pixelwise(data, mask, image_shape):
     _, c = data.shape
     if mask is not None:
-        img = torch.full((*image_shape, c), np.nan)
-        img[mask, :] = data
+        img = torch.full((*image_shape, c), np.nan).to(data.device)
+        img[~mask, :] = data
     else:
         img = data.reshape(*image_shape, c)
     return img
@@ -382,16 +382,16 @@ def image_to_graph_pixelwise(img, mask=None):
 
     img0, _ = torch.max(img[..., 0], 0)  # For multi-step inputs
 
-    labels = ma.masked_array(mask.flatten().astype(bool).cumsum() - 1, mask=~mask.astype(bool)).filled(-1).reshape(img0.shape)
+    labels = ma.masked_array((~mask).flatten().cumsum() - 1, mask=mask.astype(bool)).filled(-1).reshape(img0.shape)
 
     if mask is not None:
-        graph_nodes = torch.arange(np.sum(mask))
+        graph_nodes = torch.arange(np.sum(~mask))
     else:
         graph_nodes = torch.arange(np.prod(img0.shape))
 
     data = flatten_pixelwise(img, mask)
 
-    node_sizes = torch.ones((data.shape[0], len(graph_nodes)))
+    node_sizes = torch.ones((data.shape[0], len(graph_nodes))).to(data.device)
     data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
 
     n_pixels_per_node = torch.ones((len(graph_nodes))).to(img.device)
