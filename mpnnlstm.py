@@ -418,7 +418,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 optimizer.zero_grad()
                 
                 y_hat, y_hat_graph = self.model(x, y, skip, teacher_forcing_ratio=0.5, mask=mask)
-                y_hat = [unflatten(y_hat[i], y_hat_graph[i]['mapping'], image_shape) for i in range(self.output_timesteps)]
+                y_hat = [unflatten(y_hat[i], y_hat_graph[i]['mapping'], image_shape, mask) for i in range(self.output_timesteps)]
                 y_hat = torch.stack(y_hat, dim=0)
                 
                 loss = loss_func(y_hat, y)  
@@ -461,7 +461,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 with torch.no_grad():
                     y_hat, y_hat_graph = self.model(x, y, skip, teacher_forcing_ratio=0.5, mask=mask)
 
-                    y_hat = [unflatten(y_hat[i], y_hat_graph[i]['mapping'], image_shape) for i in range(self.output_timesteps)]
+                    y_hat = [unflatten(y_hat[i], y_hat_graph[i]['mapping'], image_shape, mask) for i in range(self.output_timesteps)]
                     y_hat = torch.stack(y_hat, dim=0)
                 
                     loss = loss_func(y_hat, y)

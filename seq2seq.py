@@ -140,6 +140,8 @@ class Seq2Seq(torch.nn.Module):
     def forward(self, x, y=None, skip=None, teacher_forcing_ratio=0.5, mask=None, remesh_every=1):
         num_samples, w, h, c = x.shape
         image_shape = (w, h)
+
+        self.mask = mask
         
         if self.remesh_input:
             x0 = add_positional_encoding(x[[0]])
@@ -148,7 +150,7 @@ class Seq2Seq(torch.nn.Module):
             x = add_positional_encoding(x)
             graph_structure = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
 
-        self.graph = create_graph_structure(graph_structure['graph_nodes'], graph_structure['distances'])
+        self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
 
         self.graph.x = graph_structure['data']
 
@@ -178,10 +180,11 @@ class Seq2Seq(torch.nn.Module):
                     if self.remesh_input:
                         self.do_remesh_input(x[[t+1]], hidden, cell, mask)
                     else:
-                        if hidden.isnan().any():
-                            raise ValueError
                         self.graph.hidden = hidden
                         self.graph.cell = cell
+                else:
+                    self.graph.hidden = hidden
+                    self.graph.cell = cell
 
         
         # Decoder ------------------------------------------------------------------------------------------------------------
@@ -200,7 +203,7 @@ class Seq2Seq(torch.nn.Module):
             else:
                 skip_t = persistence
 
-            skip_t = flatten(skip_t, self.graph.graph_structure['mapping'], self.graph.graph_structure['n_pixels_per_node']).squeeze(0)
+            skip_t = flatten(skip_t, self.graph.graph_structure['mapping'], self.graph.graph_structure['n_pixels_per_node'], self.mask).squeeze(0)
 
             self.graph.skip = skip_t
             self.graph.to(self.device)
@@ -235,7 +238,7 @@ class Seq2Seq(torch.nn.Module):
     def update_without_remesh(self, data, hidden, cell, teacher_force=False, teacher_input=None):
         if teacher_force:
             teacher_input = add_positional_encoding(teacher_input)  # Add positional encoding
-            self.graph.x = flatten(teacher_input, self.graph.graph_structure['mapping'], self.graph.graph_structure['n_pixels_per_node'])
+            self.graph.x = flatten(teacher_input, self.graph.graph_structure['mapping'], self.graph.graph_structure['n_pixels_per_node'], self.mask)
             self.graph.x = torch.cat([self.graph.x, self.graph.graph_structure['n_pixels_per_node'].unsqueeze(0).unsqueeze(-1)], dim=-1)  # Add node sizes
         else:
             # Add positional encoding
@@ -274,7 +277,7 @@ class Seq2Seq(torch.nn.Module):
         hidden, cell = torch.swapaxes(hidden, 0, -1), torch.swapaxes(cell, 0, -1)
 
         # Create a graph object for input into next rollout
-        self.graph = create_graph_structure(graph_structure['graph_nodes'], graph_structure['distances'])
+        self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
         self.graph.x = graph_structure['data']
         # self.graph.skip = skip
         self.graph.graph_structure = graph_structure
@@ -302,7 +305,7 @@ class Seq2Seq(torch.nn.Module):
         hidden, cell = torch.swapaxes(hidden, 0, -1), torch.swapaxes(cell, 0, -1)
 
         # Create a graph object for input into next rollout
-        self.graph = create_graph_structure(graph_structure['graph_nodes'], graph_structure['distances'])
+        self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
         self.graph.x = graph_structure['data']
         self.graph.graph_structure = graph_structure
 

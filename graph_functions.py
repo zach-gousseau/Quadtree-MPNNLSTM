@@ -1,5 +1,6 @@
 import numpy as np
 import warnings
+import numpy.ma as ma
 import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
@@ -31,32 +32,7 @@ def plot_contours(ax, labels):
             except IndexError:
                 pass
 
-def create_graph_structure(graph_nodes, distances):
-    """
-    Create a graph structure with undirected edge, with the distance between nodes 
-    as edge attributes.
-
-    :param: graph_nodes: List of graph nodes
-    :param: distances: Nested dictionary of giving the distances between nodes, e.g.
-        {
-            node0: {node1: 0.2, node2: 0.3, ...},
-            node1: {node0: 0.2, node3: 0.1, ...},
-            ...
-        }
-    Returns:
-    torch_geometric.data.Data: Data object containing the edge indices and edge attributes for the graph.
-    """
-    edge_sources = []
-    edge_targets = []
-    edge_attrs = []
-    for node in graph_nodes:
-        for neighbor in distances[node]:
-            edge_sources.append(node)
-            edge_targets.append(neighbor)
-            edge_attrs.append(distances[node][neighbor])
-
-    edge_index = torch.tensor([edge_sources, edge_targets], dtype=torch.long)
-    edge_attrs = torch.tensor(edge_attrs, dtype=torch.float32)
+def create_graph_structure(edge_index, edge_attrs):
     return Data(edge_index=edge_index, edge_attr=edge_attrs)
 
 def create_blocks(M, N, B):
@@ -131,7 +107,8 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, trans
     # Initialize label array with the base grid (maximum grid cell size) while 
     # Note that the initial label array may be larger than the original image since
     # we do not want to cut off any base grid cells
-    labels = torch.full((-(n // -max_size) * max_size, -(m // -max_size) * max_size), -1, dtype=int)
+    # labels = torch.full((-(n // -max_size) * max_size, -(m // -max_size) * max_size), -1, dtype=int)
+    labels = np.full((-(n // -max_size) * max_size, -(m // -max_size) * max_size), -1, dtype=int)
     shape = n_padded, m_padded = labels.shape
     
     # Pad the image to match the labels array
@@ -209,6 +186,8 @@ def get_adj(labels, xx=None, yy=None, calculate_distances=False, edges_at_corner
     if calculate_distances:
         assert xx is not None and yy is not None, 'Provide x and y positions if distances are desired!'
 
+    edge_sources, edge_targets, edge_attrs = [], [], []
+
     for i in range(w):
         for j in range(h):
 
@@ -256,13 +235,20 @@ def get_adj(labels, xx=None, yy=None, calculate_distances=False, edges_at_corner
     
             for neighbor in neighbors:
                 if neighbor not in adj_dict[node]:
+                    edge_sources.append(node)
+                    edge_targets.append(neighbor)
+
+                    if node ==-1 or neighbor==-1:
+                        print('f')
+
                     if calculate_distances:
-                        adj_dict[node][neighbor] = dist(node, neighbor, xx, yy)
+                        edge_attrs.append(dist(node, neighbor, xx, yy))
                     else:
-                        adj_dict[node][neighbor] = 1
+                        edge_attrs.append(1)
 
-
-    return adj_dict
+    edge_index = torch.tensor([edge_sources, edge_targets], dtype=torch.long)
+    edge_attrs = torch.tensor(edge_attrs, dtype=torch.float32)
+    return edge_index, edge_attrs
 
 def dist(node0, node1, xx, yy):
     return np.sqrt((yy[node0] - yy[node1])**2 + (xx[node0] - xx[node1])**2)
@@ -281,8 +267,14 @@ def get_graph_nodes(labels):
     else:
         return graph_nodes
     
+def flatten_pixelwise(img, mask):
+    if mask is not None:
+        data = img[:, mask, :]
+    else:
+        data = img.reshape(img.shape[0], -1, img.shape[-1])
+    return data
 
-def flatten(img, mapping, n_pixels_per_node):
+def flatten(img, mapping, n_pixels_per_node, mask=None):
     """
     Given an input image of dimension (n_samples, w, h, channels) and a labels array of dimension (w, h)
     which correspond to the mesh node to which each pixel in the original image belong, convert the image to 
@@ -290,6 +282,9 @@ def flatten(img, mapping, n_pixels_per_node):
     img: (n_samples, w, h, c)"""
     assert len(img.shape) == 4, f'array should be 4-dimensional (n_samples, w, h, c); got {img.shape}'
     n_samples, w, h, c = img.shape
+
+    if mapping is None:
+        return flatten_pixelwise(img, mask)
     
     # (n_samples, w, h, c) -> (c, n_samples, w*h)
     img_flattened = torch.moveaxis(img, -1, 0).reshape(c, n_samples, w*h)
@@ -338,39 +333,81 @@ def grouped_mean_along_axis_2d(arr, labels, axes):
     return np.apply_along_axis(grouped_mean_along_axis, axis=axes[1], arr=arr, labels=labels) 
 
 
-def unflatten(data, mapping, image_shape):
+def unflatten(data, mapping, image_shape, mask=None):
     """Create an image of shape (n, w, h, c) for n samples of dimensions w, h and c channels"""
+    if mapping is None:
+        return unflatten_pixelwise(data, mask, image_shape)
     data = torch.moveaxis(data, -1, 0)
     img = (data @ mapping.to_dense()).reshape(*data.shape[:-1], *image_shape)
     return torch.moveaxis(img, 0, -1)
+
+def unflatten_pixelwise(data, mask, image_shape):
+    _, c = data.shape
+    if mask is not None:
+        img = torch.full((*image_shape, c), np.nan)
+        img[mask, :] = data
+    else:
+        img = data.reshape(*image_shape, c)
+    return img
+
+
+def get_adj_pixelwise(labels):
+    rows, cols = labels.shape
+
+    # Shift the array by one row and one column in each direction
+    north = np.roll(labels, shift=-1, axis=0)
+    south = np.roll(labels, shift=1, axis=0)
+    west = np.roll(labels, shift=-1, axis=1)
+    east = np.roll(labels, shift=1, axis=1)
+
+    # Remove the indices which have rolled around 
+    north[-1] = -1
+    south[0] = -1
+    west[:, -1] = -1
+    east[:, 0] = -1
+
+    neighbors = torch.Tensor(np.array([
+        labels.flatten().repeat(4),
+        np.vstack((north, south, west, east)).reshape(4, rows*cols).T.flatten()
+    ])).type(torch.int64)
+
+    # Mask out invalid nodes
+    neighbors = neighbors[:, ~torch.any(neighbors == -1, 0)]
+    distances = torch.ones(neighbors.shape[1])
+
+    return neighbors, distances
     
 
 def image_to_graph_pixelwise(img, mask=None):
-    """TODO: implement masking"""
 
-    img0 = np.max(img[..., 0], 0)  # For multi-step inputs
+    img0, _ = torch.max(img[..., 0], 0)  # For multi-step inputs
 
-    labels = np.arange(np.prod(img0.shape)).reshape(img0.shape)
-    graph_nodes = np.arange(np.prod(img0.shape))
+    labels = ma.masked_array(mask.flatten().astype(bool).cumsum() - 1, mask=~mask.astype(bool)).filled(-1).reshape(img0.shape)
 
-    data = img.reshape((img.shape[0], img.shape[1]*img.shape[2], img.shape[3]))
+    if mask is not None:
+        graph_nodes = torch.arange(np.sum(mask))
+    else:
+        graph_nodes = torch.arange(np.prod(img0.shape))
 
-    node_sizes = np.ones((data.shape[0], len(graph_nodes)))
-    data = np.concatenate([data, np.expand_dims(node_sizes, -1)], -1)
+    data = flatten_pixelwise(img, mask)
 
-    mappings = {}
-    mappings['n->p'] = {n: [n] for n in graph_nodes}
-    mappings['p->n'] = {n: n for n in graph_nodes}
+    node_sizes = torch.ones((data.shape[0], len(graph_nodes)))
+    data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
+
+    n_pixels_per_node = torch.ones((len(graph_nodes))).to(img.device)
+    mapping = None
 
     # Distances are all the same so don't bother calculating them. Uses '1' as the distance for each edge.
-    distances = get_adj(labels, calculate_distances=False)
+    edge_index, edge_attrs = get_adj_pixelwise(labels)
 
     out = dict(
         labels=labels,
-        distances=distances,
+        edge_index=edge_index,
+        edge_attrs=edge_attrs,
         data=data,
         graph_nodes=graph_nodes,
-        mappings=mappings,
+        mapping=mapping,
+        n_pixels_per_node=n_pixels_per_node,
     )
 
     return out
@@ -431,14 +468,14 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=
     if torch.any(torch.isnan(img)):
         raise ValueError(f'Found NaNs in image data {torch.sum(torch.isnan(img))} / {np.prod(img.shape)}')
 
+    if thresh == -np.inf:
+        return image_to_graph_pixelwise(img, mask)
+
     img_for_decompose, _ = torch.max(img[..., 0], 0)  # For multi-step inputs
     n_samples, h, w, c = img.shape
 
     image_shape = img_for_decompose.shape
     img_for_decompose = img_for_decompose.cpu().detach().numpy()
-
-    if thresh == -np.inf:
-        return image_to_graph_pixelwise(img, mask)
     
     labels = quadtree_decompose(
         img_for_decompose,
@@ -472,11 +509,12 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=
 
     data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
 
-    distances = get_adj(labels.cpu().numpy(), xx=xx, yy=yy, calculate_distances=False)
+    edge_index, edge_attrs = get_adj(labels, calculate_distances=False)
 
     out = dict(
         labels=labels,
-        distances=distances,
+        edge_index=edge_index,
+        edge_attrs=edge_attrs,
         data=data,
         graph_nodes=graph_nodes,
         mapping=mapping,
