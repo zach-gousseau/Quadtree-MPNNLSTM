@@ -100,9 +100,9 @@ if __name__ == '__main__':
 
     mask = np.isnan(ds.siconc.isel(time=0)).values
 
-    np.random.seed(42)
-    random.seed(42)
-    torch.manual_seed(42)
+    np.random.seed(21)
+    random.seed(21)
+    torch.manual_seed(21)
 
     # Number of frames to read as input
     input_timesteps = 5
@@ -118,18 +118,17 @@ if __name__ == '__main__':
     climatology = np.nan_to_num(climatology)
 
     input_features = len(x_vars)
-
-    y_binary_thresh = 0.15
     
-    data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, y_binary_thresh=y_binary_thresh)
-    data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, y_binary_thresh=y_binary_thresh)
-    data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars, y_binary_thresh=y_binary_thresh)
+    data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
+    data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
+    data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
 
     loader_train = DataLoader(data_train, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
     loader_val = DataLoader(data_val, batch_size=1, shuffle=False)#, collate_fn=lambda x: x[0])
 
-    thresh = 0.15
+    # thresh = 0.15
+    thresh = -np.inf
     print(f'threshold is {thresh}')
 
     def dist_from_05(arr):
@@ -164,7 +163,7 @@ if __name__ == '__main__':
     lr = 0.01
 
     model.model.train()
-    model.train(loader_train, loader_test, climatology, lr=lr, n_epochs=15, mask=mask)  # Train for 20 epochs
+    model.train(loader_train, loader_test, climatology, lr=lr, n_epochs=60, mask=mask)  # Train for 20 epochs
 
     # model.model.eval()
     # model.score(x_val, y_val[:, :1])  # Check the MSE on the validation set
@@ -188,7 +187,7 @@ if __name__ == '__main__':
         ),
     )
 
-    results_dir = 'ice_results_binary'
+    results_dir = 'ice_results_old'
     
     ds.to_netcdf(f'{results_dir}/valpredictions_{experiment_name}.nc')
 
