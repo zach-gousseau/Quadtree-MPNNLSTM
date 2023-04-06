@@ -19,13 +19,11 @@ from seq2seq import Seq2Seq
 from torch.utils.data import Dataset, DataLoader
 
 class IceDataset(Dataset):
-    def __init__(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None, train=False):
+    def __init__(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None, train=False, y_binary_thresh=None):
         self.train = train
         
-        self.x, self.y, self.launch_dates = self.get_xy(ds, years, month, input_timesteps, output_timesteps, x_vars=x_vars, y_vars=y_vars)
+        self.x, self.y, self.launch_dates = self.get_xy(ds, years, month, input_timesteps, output_timesteps, x_vars=x_vars, y_vars=y_vars, y_binary_thresh=y_binary_thresh)
         self.image_shape = self.x[0].shape[1:-1]
-
-        self.climatology = ds.groupby('time.month').mean('time')
 
     def __len__(self):
         return len(self.y)
@@ -33,7 +31,7 @@ class IceDataset(Dataset):
     def __getitem__(self, idx):
         return self.x[idx], self.y[idx], self.launch_dates[idx]
 
-    def get_xy(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None):
+    def get_xy(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None, y_binary_thresh=None):
 
         x, y = [], []
         launch_dates = []
@@ -78,6 +76,9 @@ class IceDataset(Dataset):
             launch_dates.append(ds_year.time[input_timesteps:-output_timesteps].values)
 
         x, y, launch_dates = np.concatenate(x, 0), np.concatenate(y, 0), np.concatenate(launch_dates, 0)
+
+        if y_binary_thresh is not None:
+            y = y > y_binary_thresh
         
         return x.astype('float32'), y.astype('float32'), launch_dates.astype(int)
 
@@ -99,9 +100,9 @@ if __name__ == '__main__':
 
     mask = np.isnan(ds.siconc.isel(time=0)).values
 
-    np.random.seed(42)
-    random.seed(42)
-    torch.manual_seed(42)
+    np.random.seed(21)
+    random.seed(21)
+    torch.manual_seed(21)
 
     # Number of frames to read as input
     input_timesteps = 5
@@ -126,7 +127,8 @@ if __name__ == '__main__':
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
     loader_val = DataLoader(data_val, batch_size=1, shuffle=False)#, collate_fn=lambda x: x[0])
 
-    thresh = 0.15
+    # thresh = 0.15
+    thresh = -np.inf
     print(f'threshold is {thresh}')
 
     def dist_from_05(arr):
@@ -161,7 +163,7 @@ if __name__ == '__main__':
     lr = 0.01
 
     model.model.train()
-    model.train(loader_train, loader_test, climatology, lr=lr, n_epochs=15, mask=mask)  # Train for 20 epochs
+    model.train(loader_train, loader_test, climatology, lr=lr, n_epochs=60, mask=mask)  # Train for 20 epochs
 
     # model.model.eval()
     # model.score(x_val, y_val[:, :1])  # Check the MSE on the validation set
@@ -185,7 +187,7 @@ if __name__ == '__main__':
         ),
     )
 
-    results_dir = 'ice_results_clim_pers'
+    results_dir = 'ice_results_old'
     
     ds.to_netcdf(f'{results_dir}/valpredictions_{experiment_name}.nc')
 

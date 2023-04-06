@@ -2,6 +2,7 @@ import numpy as np
 import warnings
 import os
 import torch
+import numpy.ma as ma
 import torch.nn.functional as F
 from torch_geometric.data import Data
 import matplotlib.pyplot as plt
@@ -64,7 +65,6 @@ def min_2d(arr):
 def quadtree_decompose_(img, padding=0, thresh=0.05, max_size=8, mask=None, transform_func=None, condition='max_larger_than'):
     """
     Perform quadtree decomposition on an image.
-
     This function decomposes the input image into a quadtree by dividing the image
     into four quadrants of equal size and repeating the process recursively until
     the maximum value in each quadrant is either below some threshold or contains a 
@@ -81,7 +81,6 @@ def quadtree_decompose_(img, padding=0, thresh=0.05, max_size=8, mask=None, tran
     max_size (int, optional): Maximum grid cell size. Default is 8.
     mask (np.ndarray, optional): Boolean mask. 
     transform_func (optional): Function to apply to the input image used for criteria evaluation
-
     Returns:
     np.ndarray: Array of shape (height, width) containing the labels for each pixel in the image.
         Note: A '-1' label means that the pixel is invalid (according to the provided mask)
@@ -162,7 +161,6 @@ def quadtree_decompose_(img, padding=0, thresh=0.05, max_size=8, mask=None, tran
 def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, transform_func=None, condition='max_larger_than', num_cpu=1):
     """
     Perform quadtree decomposition on an image.
-
     This function decomposes the input image into a quadtree by dividing the image
     into four quadrants of equal size and repeating the process recursively until
     the maximum value in each quadrant is either below some threshold or contains a 
@@ -179,7 +177,6 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, trans
     max_size (int, optional): Maximum grid cell size. Default is 8.
     mask (np.ndarray, optional): Boolean mask. 
     transform_func (optional): Function to apply to the input image used for criteria evaluation
-
     Returns:
     np.ndarray: Array of shape (height, width) containing the labels for each pixel in the image.
         Note: A '-1' label means that the pixel is invalid (according to the provided mask)
@@ -297,7 +294,6 @@ def create_graph_structure(mapping, image_shape, xx=None, yy=None, calculate_dis
     """
     Create a graph structure with undirected edge, with the distance between nodes 
     as edge attributes.
-
     :param torch.Tensor: mapping: Sparse matrix of mapping between grid-space and mesh-space
     :param tuple: image_shape: Shape of the original grid
     :param torch.Tensor: xx: x position of each of the nodes in the mapping object
@@ -356,14 +352,24 @@ def dist_xy(node0, node1, xx, yy):
     return np.array((xx[node0] - xx[node1], yy[node0] - yy[node1]))
     
 
-def flatten(img, mapping, n_pixels_per_node):
+def flatten_pixelwise(img, mask):
+    if mask is not None:
+        data = img[:, ~mask, :]
+    else:
+        data = img.reshape(img.shape[0], -1, img.shape[-1])
+    return data
+
+def flatten(img, mapping, n_pixels_per_node, mask=None):
     """
     Given an input image of dimension (n_samples, w, h, channels) and a labels array of dimension (w, h)
     which correspond to the mesh node to which each pixel in the original image belong, convert the image to 
-    its mesh representation. Note this could also be done using np.tensordot(b, a, axes=((1, 2), (1, 0)))
+    its mesh representation.
     img: (n_samples, w, h, c)"""
     assert len(img.shape) == 4, f'array should be 4-dimensional (n_samples, w, h, c); got {img.shape}'
     n_samples, w, h, c = img.shape
+
+    if mapping is None:
+        return flatten_pixelwise(img, mask)
     
     # (n_samples, w, h, c) -> (c, n_samples, w*h)
     img_flattened = torch.moveaxis(img, -1, 0).reshape(c, n_samples, w*h)
@@ -382,15 +388,78 @@ def flatten(img, mapping, n_pixels_per_node):
 
     return data
 
+def unflatten_pixelwise(data, mask, image_shape):
+    _, c = data.shape
+    if mask is not None:
+        img = torch.full((*image_shape, c), np.nan).to(data.device)
+        img[~mask, :] = data
+    else:
+        img = data.reshape(*image_shape, c)
+    return img
+
 def unflatten(data, mapping, image_shape):
     """Create an image of shape (n, w, h, c) for n samples of dimensions w, h and c channels"""
     data = torch.moveaxis(data, -1, 0)
     img = (data @ mapping.to_dense()).reshape(*data.shape[:-1], *image_shape)
     return torch.moveaxis(img, 0, -1)
+
+def get_adj_pixelwise(labels):
+    rows, cols = labels.shape
+
+    # Shift the array by one row and one column in each direction
+    north = np.roll(labels, shift=-1, axis=0)
+    south = np.roll(labels, shift=1, axis=0)
+    west = np.roll(labels, shift=-1, axis=1)
+    east = np.roll(labels, shift=1, axis=1)
+
+    # Remove the indices which have rolled around 
+    north[-1] = -1
+    south[0] = -1
+    west[:, -1] = -1
+    east[:, 0] = -1
+
+    neighbors = torch.Tensor(np.array([
+        labels.flatten().repeat(4),
+        np.vstack((north, south, west, east)).reshape(4, rows*cols).T.flatten()
+    ])).type(torch.int64)
+
+    # Mask out invalid nodes
+    neighbors = neighbors[:, ~torch.any(neighbors == -1, 0)]
+    distances = torch.ones(neighbors.shape[1])
+
+    return neighbors, distances
     
 
 def image_to_graph_pixelwise(img, mask=None):
-    pass
+
+    img0, _ = torch.max(img[..., 0], 0)  # For multi-step inputs
+
+    labels = ma.masked_array((~mask).flatten().cumsum() - 1, mask=mask.astype(bool)).filled(-1).reshape(img0.shape)
+
+    if mask is not None:
+        graph_nodes = torch.arange(np.sum(~mask))
+    else:
+        graph_nodes = torch.arange(np.prod(img0.shape))
+
+    data = flatten_pixelwise(img, mask)
+
+    node_sizes = torch.ones((data.shape[0], len(graph_nodes))).to(data.device)
+    data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
+
+    n_pixels_per_node = torch.ones((len(graph_nodes))).to(img.device)
+    mapping = None
+
+    # Distances are all the same so don't bother calculating them. Uses '1' as the distance for each edge.
+    edge_index, edge_attrs = get_adj_pixelwise(labels)
+
+    out = dict(
+        data=data,
+        graph_nodes=graph_nodes,
+        mapping=mapping,
+        n_pixels_per_node=n_pixels_per_node,
+    )
+
+    return out
 
 
 def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=None, condition='max_larger_than'):
@@ -398,12 +467,10 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=
     Decomposes an image into a quadtree and then generates a graph representation of the image
     using quadtree decomposition. The graph nodes are the centroids of the quadtree cells and the
     edges between nodes represent the distances between the corresponding image patches.
-
     Parameters:
     img (np.ndarray): Input image with shape (batch_size, height, width, channels).
     num_features (int, optional): Number of features to include in the data for each graph node. Default is 4.
     thresh (float, optional): Threshold for quadtree decomposition. Default is 0.05.
-
     Returns:
     dict: Dictionary containing the following information:
         labels (np.ndarray): Array of shape (height, width) containing the labels for each pixel in the image.
@@ -412,7 +479,6 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=
         graph_nodes (list): List of graph nodes.
         adj_dict (dict): Dictionary of adjacencies for each graph node.
         mappings (dict): Dictionary mapping graph node labels to indices.
-
     TODO: Add ability to choose which channel to use in the decomposition.
     """
 
