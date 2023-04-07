@@ -17,6 +17,73 @@ CONDITIONS = [
     'min_smaller_than',
 ]
 
+
+def quadtree_decompose_cuda(img, padding=0, thresh=0.05, max_size=8, mask=None, transform_func=None, condition='max_larger_than'):
+    assert max_size & (max_size - 1) == 0
+    assert condition in CONDITIONS
+
+    img = torch.from_numpy(img).float().cuda()
+
+    n, m = img.shape
+    labels = torch.full((-(n // -max_size) * max_size, -(m // -max_size) * max_size), -1, dtype=int, device='cuda')
+    shape = n_padded, m_padded = labels.shape
+
+    img = torch.nn.functional.pad(img, (0, m_padded-m, 0, n_padded-n), mode='edge')
+    img_for_criteria = transform_func(img) if transform_func else img
+
+    cur_label = torch.tensor(0, dtype=torch.int32, device='cuda')
+
+    stack = []
+    for i in range(n_padded // max_size):
+        for j in range(m_padded // max_size):
+            stack.append((i*max_size, j*max_size, max_size))
+
+    while stack:
+        x, y, size = stack.pop()
+
+        if x >= n or y >= m:
+            continue
+
+        l, r, t, b = x, x + size + 1, y, y + size + 1
+
+        if size == 1:
+            if mask is not None and mask[x, y]:
+                continue
+
+            labels[x, y] = cur_label
+            cur_label += 1
+            continue
+
+        cell = img_for_criteria[
+            max(0, l-padding): min(r+padding, shape[1]),
+            max(0, t-padding): min(b+padding, shape[1])
+        ]
+
+        if condition == 'max_larger_than':
+            split_cell = cell.max() > thresh
+        elif condition == 'max_smaller_than':
+            split_cell = cell.max() < thresh
+        elif condition == 'min_larger_than':
+            split_cell = cell.min() > thresh
+        elif condition == 'min_smaller_than':
+            split_cell = cell.min() < thresh
+
+        overlaps_mask = mask is not None and mask[max(0, l-padding): min(r+padding, shape[1]), max(0, t-padding): min(b+padding, shape[1])].any()
+        split_cell = split_cell or overlaps_mask
+
+        if split_cell:
+            new_size = size // 2
+            stack.append((x, y, new_size))
+            stack.append((x + new_size, y, new_size))
+            stack.append((x, y + new_size, new_size))
+            stack.append((x + new_size, y + new_size, new_size))
+        else:
+            labels[x:x+size, y:y+size] = cur_label
+            cur_label += 1
+
+    return labels[:n, :m].cpu().numpy()
+
+
 def plot_contours(ax, labels):
     for i in range(labels.shape[0]):
         for j in range(labels.shape[1]):
@@ -292,6 +359,7 @@ def flatten(img, mapping, n_pixels_per_node, mask=None):
     # Compute mean values for each graph node
     while True:
         data = img_flattened @ mapping.T.to_dense() / n_pixels_per_node
+        # data = img_flattened @ mapping.T / n_pixels_per_node
 
         if data.isnan().any():
             warnings.warn('Matrix multiplication in flatten() failed, trying again.')
@@ -339,6 +407,7 @@ def unflatten(data, mapping, image_shape, mask=None):
         return unflatten_pixelwise(data, mask, image_shape)
     data = torch.moveaxis(data, -1, 0)
     img = (data @ mapping.to_dense()).reshape(*data.shape[:-1], *image_shape)
+    # img = (data @ mapping).reshape(*data.shape[:-1], *image_shape)
     return torch.moveaxis(img, 0, -1)
 
 def unflatten_pixelwise(data, mask, image_shape):
@@ -436,7 +505,7 @@ def get_mapping(labels):
     graph_nodes, n_pixels_per_node = np.unique(row, return_counts=True)
     n_pixels_per_node = torch.Tensor(n_pixels_per_node)
     
-    mapping = torch.sparse_coo_tensor((row, col), data, size=(graph_nodes[-1]+1, len(labels_flat)))
+    mapping = torch.sparse_coo_tensor((row, col), data, size=(graph_nodes[-1]+1, len(labels_flat)))#.to_dense()
     return mapping, graph_nodes, n_pixels_per_node
 
 
@@ -477,7 +546,7 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=
     image_shape = img_for_decompose.shape
     img_for_decompose = img_for_decompose.cpu().detach().numpy()
     
-    labels = quadtree_decompose(
+    labels = quadtree_decompose_cuda(
         img_for_decompose,
         thresh=thresh, 
         max_size=max_grid_size,
@@ -522,3 +591,16 @@ def image_to_graph(img, thresh=0.05, max_grid_size=8, mask=None, transform_func=
     )
 
     return out
+
+"""
+import torch 
+A = torch.Tensor(
+    [[1, 2, 3],
+    [4, 5, 6],
+    [7, 8, 9]]
+).to_sparse()
+v = torch.Tensor([1, 0, 1])
+v = v.to_sparse()
+X = A@v
+
+"""
