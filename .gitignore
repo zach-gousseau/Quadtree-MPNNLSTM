@@ -13,6 +13,7 @@ runs/
 .vscode/
 scratch/
 .DS_Store
+mprofile*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

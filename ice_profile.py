@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import random
 import datetime
+import glob
 import os
 import time
 import pandas as pd
@@ -84,14 +85,25 @@ class IceDataset(Dataset):
 
 if __name__ == '__main__':
 
-    month = 4
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    # device = torch.device('mps')
+    print('device:', device)
 
-    ds = xr.open_zarr('data/era5_hb_daily.zarr').load()    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
+    month = 1
 
-    coarsen = 0
+    ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
+    # ds = xr.open_zarr('/home/zgoussea/scratch/era5_arctic_daily.zarr')
+    # ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5/*/*.nc'))
 
-    if coarsen != 0:
+    coarsen = 1
+
+    if coarsen > 1:
         ds = ds.coarsen(latitude=coarsen, longitude=coarsen, boundary='trim').mean()
+    elif coarsen < 1:
+        newres = 0.25 * coarsen
+        newlat = np.arange(ds.latitude.min(), ds.latitude.max() + newres, newres)
+        newlon = np.arange(ds.longitude.min(), ds.longitude.max() + newres, newres)
+        ds = ds.interp(latitude=newlat, longitude=newlon, method='nearest')
 
     mask = np.isnan(ds.siconc.isel(time=0)).values
 
@@ -105,38 +117,34 @@ if __name__ == '__main__':
 
     start = time.time()
 
-    x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
+    x_vars = ['siconc', 't2m', 'v10', 'u10']#, 'slhf']
     y_vars = ['siconc']  # ['siconc', 't2m']
     training_years = range(2011, 2012)
 
-    climatology = ds[y_vars].groupby('time.month').mean('time', skipna=True).to_array().values
-    climatology = np.nan_to_num(climatology)
+    climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
+    climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
 
     input_features = len(x_vars)
     
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
 
-    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(10)))
-    loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
+    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(50)))
+    loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(10)))
 
-    thresh = 0.15
-    # thresh = -np.inf
+    # thresh = 0.15
+    thresh = -np.inf
 
     def dist_from_05(arr):
         return abs(abs(arr - 0.5) - 0.5)
 
     # Add 3 to the number of input features since weadd positional encoding (x, y) and node size (s)
     model_kwargs = dict(
-        hidden_size=64,
+        hidden_size=32,
         dropout=0.1,
-        n_layers=3,
+        n_layers=1,
         transform_func=dist_from_05
     )
-
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    device = torch.device('mps')
-    print('device:', device)
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
 

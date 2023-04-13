@@ -85,6 +85,10 @@ class IceDataset(Dataset):
 
 if __name__ == '__main__':
 
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    # device = torch.device('mps')
+    print('device:', device)
+
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--month')  # Month number
 
@@ -114,8 +118,8 @@ if __name__ == '__main__':
     y_vars = ['siconc']  # ['siconc', 't2m']
     training_years = range(2011, 2016)
 
-    climatology = ds[y_vars].groupby('time.month').mean('time', skipna=True).to_array().values
-    climatology = np.nan_to_num(climatology)
+    climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
+    climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
 
     input_features = len(x_vars)
     
@@ -127,8 +131,8 @@ if __name__ == '__main__':
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
     loader_val = DataLoader(data_val, batch_size=1, shuffle=False)#, collate_fn=lambda x: x[0])
 
-    # thresh = 0.15
-    thresh = -np.inf
+    thresh = 0.15
+    # thresh = -np.inf
     print(f'threshold is {thresh}')
 
     def dist_from_05(arr):
@@ -141,10 +145,6 @@ if __name__ == '__main__':
         n_layers=3,
         transform_func=dist_from_05
     )
-
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    # device = torch.device('mps')
-    print('device:', device)
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
 
@@ -163,7 +163,7 @@ if __name__ == '__main__':
     lr = 0.01
 
     model.model.train()
-    model.train(loader_train, loader_test, climatology, lr=lr, n_epochs=60, mask=mask)  # Train for 20 epochs
+    model.train(loader_train, loader_test, climatology, lr=lr, n_epochs=15, mask=mask)  # Train for 20 epochs
 
     # model.model.eval()
     # model.score(x_val, y_val[:, :1])  # Check the MSE on the validation set
@@ -187,7 +187,7 @@ if __name__ == '__main__':
         ),
     )
 
-    results_dir = 'ice_results_old'
+    results_dir = 'ice_results_without_nodesize_doy_clim_edgeweights'
     
     ds.to_netcdf(f'{results_dir}/valpredictions_{experiment_name}.nc')
 

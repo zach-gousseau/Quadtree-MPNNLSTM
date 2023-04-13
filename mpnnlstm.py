@@ -127,14 +127,15 @@ class NextFramePredictorS2S(NextFramePredictor):
         self.output_timesteps = output_timesteps
         
         self.model = Seq2Seq(
-            input_features=input_features + 3,
+            input_features=input_features + 2,  # 3 (node_size)
             output_timesteps=output_timesteps,
             thresh=thresh,
             device=device,
             remesh_input=remesh_input,
             **model_kwargs
         ).to(device)
-
+    
+    @profile
     def train(
         self,
         loader_train,
@@ -178,13 +179,13 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                 optimizer.zero_grad()
                 
-                y_hat, y_hat_graph = self.model(x, y, skip, teacher_forcing_ratio=0.5, mask=mask)
-                y_hat = [unflatten(y_hat[i], y_hat_graph[i]['mapping'], image_shape, mask) for i in range(self.output_timesteps)]
+                y_hat, y_hat_mappings = self.model(x, y, skip, teacher_forcing_ratio=0.5, mask=mask)
+                y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
                 y_hat = torch.stack(y_hat, dim=0)
                 
                 loss = loss_func(y_hat[:, ~mask], y[:, ~mask])  
                 loss.backward()
-                
+
                 # decoder_params = [p for p in self.model.decoder.parameters()]
                 # decoder_grads = [p.grad.mean().cpu() for p in decoder_params if p.grad is not None]
                 # decoder_param_means = [p.mean().abs().detach().cpu() for p in decoder_params]
@@ -205,7 +206,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 running_loss += loss
 
                 del y_hat
-                del y_hat_graph
+                del y_hat_mappings
                 torch.cuda.empty_cache()
 
             running_loss_test = 0
@@ -220,9 +221,9 @@ class NextFramePredictorS2S(NextFramePredictor):
                     skip = None
 
                 with torch.no_grad():
-                    y_hat, y_hat_graph = self.model(x, y, skip, teacher_forcing_ratio=0.5, mask=mask)
+                    y_hat, y_hat_mappings = self.model(x, y, skip, teacher_forcing_ratio=0.5, mask=mask)
 
-                    y_hat = [unflatten(y_hat[i], y_hat_graph[i]['mapping'], image_shape, mask) for i in range(self.output_timesteps)]
+                    y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
                     y_hat = torch.stack(y_hat, dim=0)
                 
                     loss = loss_func(y_hat[:, ~mask], y[:, ~mask])  
@@ -233,7 +234,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 running_loss_test += loss
 
                 del y_hat
-                del y_hat_graph
+                del y_hat_mappings
                 torch.cuda.empty_cache()
 
 
@@ -259,9 +260,10 @@ class NextFramePredictorS2S(NextFramePredictor):
         })
 
     def get_climatology_array(self, climatology, launch_date):
-        months = [int_to_datetime(launch_date.numpy()[0] + 8.640e13 * t).month for t in range(1, self.output_timesteps + 1)]
-        skip = torch.Tensor(np.array([climatology[:, m-1] for m in months])).squeeze(1)
-        skip = skip.to(self.device)
+        doys = [int_to_datetime(launch_date.numpy()[0] + 8.640e13 * t).timetuple().tm_yday - 1 for t in range(0, self.output_timesteps)]
+
+        skip = climatology[:, doys]
+        skip = torch.moveaxis(skip, 0, -1)
         return skip
         
     def predict(self, loader, climatology=None, mask=None):
@@ -281,15 +283,15 @@ class NextFramePredictorS2S(NextFramePredictor):
                 skip = None
 
             with torch.no_grad():
-                y_hat, y_hat_graph = self.model(x, skip=skip, teacher_forcing_ratio=0, mask=mask)
+                y_hat, y_hat_mappings = self.model(x, skip=skip, teacher_forcing_ratio=0, mask=mask)
                 
-                y_hat = [unflatten(y_hat[i], y_hat_graph[i]['mapping'], image_shape, mask).detach().cpu() for i in range(self.output_timesteps)]
+                y_hat = [unflatten(y_hat[i], mappings[i], image_shape, mask).detach().cpu() for i in range(self.output_timesteps)]
                 
                 y_hat = np.stack(y_hat)#.squeeze(1)
                 
                 y_pred.append(y_hat)
 
-                del y_hat_graph
+                del y_hat_mappings
                 torch.cuda.empty_cache()
             
         return np.stack(y_pred, 0)

@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Parameter
-from torch_geometric.nn import GCNConv, ChebConv
+from torch_geometric.nn import GCNConv, ChebConv, TransformerConv
+from torch_geometric.nn.dense.linear import Linear
 from torch_geometric.nn.inits import glorot, zeros
 
 from graph_functions import image_to_graph, flatten, create_graph_structure, unflatten
@@ -11,8 +12,10 @@ from utils import add_positional_encoding
 import gc 
 import random
 import numpy as np
+import psutil
+import os
 
-from model import GConvLSTM, GConvLSTM_Cheb
+from model import GConvLSTM
 
 
 class Encoder(torch.nn.Module):
@@ -24,6 +27,7 @@ class Encoder(torch.nn.Module):
         self.n_layers = n_layers
 
         self.rnns = nn.ModuleList([GConvLSTM(input_features, hidden_size)] + [GConvLSTM(hidden_size, hidden_size) for _ in range(n_layers-1)])
+        self.edge_lin = Linear(2, hidden_size)  # FOR TRANSFORMER, assume edge_dim is 2
         
         self.dropout = nn.Dropout(dropout)
 
@@ -33,6 +37,8 @@ class Encoder(torch.nn.Module):
         
     def forward(self, X, edge_index, edge_weight, H=None, C=None):
         X = X.squeeze(0)
+
+        # edge_weight = self.edge_lin(edge_weight)
 
         _, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H, C=C)
         hidden_layer, cell_layer = hidden_layer.squeeze(0), cell_layer.squeeze(0)
@@ -66,6 +72,8 @@ class Decoder(torch.nn.Module):
 
         self.fc_out1 = GCNConv(in_channels=hidden_size + skip_dim, out_channels=hidden_size, add_self_loops=False)
         self.fc_out2 = GCNConv(in_channels=hidden_size, out_channels=1, add_self_loops=False)
+        # self.fc_out1 = TransformerConv(in_channels=hidden_size + skip_dim, out_channels=hidden_size, edge_dim=2)
+        # self.fc_out2 = TransformerConv(in_channels=hidden_size, out_channels=1, edge_dim=2)
 
         self.norm_o = nn.LayerNorm(hidden_size)
         self.norm_h = nn.LayerNorm(hidden_size)
@@ -112,7 +120,7 @@ class Seq2Seq(torch.nn.Module):
                  dropout,
                  thresh,
                  input_timesteps=3,
-                 input_features=4,
+                 input_features=3, #4 node_size
                  output_timesteps=5,
                  n_layers=4,
                  transform_func=None,
@@ -122,7 +130,7 @@ class Seq2Seq(torch.nn.Module):
         super().__init__()
         
         self.encoder = Encoder(input_features, hidden_size, dropout, n_layers=n_layers)
-        self.decoder = Decoder(1+3, hidden_size, dropout, n_layers=n_layers)  # 1 output variable + 3 (positional encoding and node size)
+        self.decoder = Decoder(1+2, hidden_size, dropout, n_layers=n_layers)  # 1 output variable + 3 (positional encoding and node_size)
 
         self.input_timesteps = input_timesteps
         self.output_timesteps = output_timesteps
@@ -154,13 +162,14 @@ class Seq2Seq(torch.nn.Module):
 
         self.graph.x = graph_structure['data']
 
-        self.graph.graph_structure = graph_structure
+        self.graph.mapping = graph_structure['mapping']
+        self.graph.n_pixels_per_node = graph_structure['n_pixels_per_node']
         self.graph.image_shape = image_shape
         self.graph.to(self.device)
         
         # Lists to store decoder outputs
         outputs = []
-        outputs_graph_structures = []
+        output_mappings = []
         
         # Encoder ------------------------------------------------------------------------------------------------------------
         self.graph.hidden, self.graph.cell = None, None
@@ -193,17 +202,25 @@ class Seq2Seq(torch.nn.Module):
         persistence = x[[-1]][:, :, :, [0]]
         
         # First input to the decoder is the last input to the encoder 
-        # self.graph.x = self.graph.x[[-1]][:, [0, -3, -2, -1]]
-        self.graph.x = self.graph.x[-1, :, [0, -3, -2, -1]].unsqueeze(0)
+        # self.graph.x = self.graph.x[-1, :, [0, -3, -2, -1]].unsqueeze(0)
+        self.graph.x = self.graph.x[-1, :, [0, -2, -1]].unsqueeze(0)  # node_size
 
         for t in range(self.output_timesteps):
+            # print('Decoder step', t)
+            # print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
+            # print("torch.cuda.memory_reserved: %fGB"%(torch.cuda.memory_reserved(0)/1024/1024/1024))
+            # print("torch.cuda.max_memory_reserved: %fGB"%(torch.cuda.max_memory_reserved(0)/1024/1024/1024))
+            pid = os.getpid()
+            python_process = psutil.Process(pid)
+            memoryUse = python_process.memory_info()[0]/2.**30  # memory use in GB...I think
+            print('memory use:', memoryUse)
             
             if skip is not None:
-                skip_t = torch.cat([skip[[t]].unsqueeze(-1), persistence], dim=-1)
+                skip_t = torch.cat([skip[t].unsqueeze(0), persistence], dim=-1)
             else:
                 skip_t = persistence
 
-            skip_t = flatten(skip_t, self.graph.graph_structure['mapping'], self.graph.graph_structure['n_pixels_per_node'], self.mask).squeeze(0)
+            skip_t = flatten(skip_t, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
 
             self.graph.skip = skip_t
             self.graph.to(self.device)
@@ -220,7 +237,7 @@ class Seq2Seq(torch.nn.Module):
 
             # This is the prediction we are outputting. 
             outputs.append(output)
-            outputs_graph_structures.append(self.graph.graph_structure)
+            output_mappings.append(self.graph.mapping)
 
             output = output.unsqueeze(0)#.to(self.device)
 
@@ -233,13 +250,13 @@ class Seq2Seq(torch.nn.Module):
             else:
                 self.update_without_remesh(output, hidden, cell, teacher_force=teacher_force, teacher_input=teacher_input)
             
-        return outputs, outputs_graph_structures
+        return outputs, output_mappings
 
     def update_without_remesh(self, data, hidden, cell, teacher_force=False, teacher_input=None):
         if teacher_force:
             teacher_input = add_positional_encoding(teacher_input)  # Add positional encoding
-            self.graph.x = flatten(teacher_input, self.graph.graph_structure['mapping'], self.graph.graph_structure['n_pixels_per_node'], self.mask)
-            self.graph.x = torch.cat([self.graph.x, self.graph.graph_structure['n_pixels_per_node'].unsqueeze(0).unsqueeze(-1)], dim=-1)  # Add node sizes
+            self.graph.x = flatten(teacher_input, self.graph.mapping, self.graph.n_pixels_per_node, self.mask)
+            # self.graph.x = torch.cat([self.graph.x, self.graph.n_pixels_per_node.unsqueeze(0).unsqueeze(-1)], dim=-1)  # Add node sizes
         else:
             # Add positional encoding
             pos_encoding = self.graph.x[..., 1:]
@@ -255,9 +272,11 @@ class Seq2Seq(torch.nn.Module):
         # Output is a prediction on the original graph structure
         # First convert it back to its grid representation
         # We also convert the hidden and cell state in the same way 
-        data_img = unflatten(data, self.graph.graph_structure['mapping'], image_shape)
-        hidden_img = unflatten(hidden, self.graph.graph_structure['mapping'], image_shape)
-        cell_img = unflatten(cell, self.graph.graph_structure['mapping'], image_shape)
+        data_img = unflatten(data, self.graph.mapping, image_shape)
+        hidden_img = unflatten(hidden, self.graph.mapping, image_shape)
+        cell_img = unflatten(cell, self.graph.mapping, image_shape)
+
+        del self.graph.mapping
 
         # Then we convert it back to a graph representation where the graph is determined by
         # its own values (rather than the one created by the input images / previous step)
@@ -280,7 +299,8 @@ class Seq2Seq(torch.nn.Module):
         self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
         self.graph.x = graph_structure['data']
         # self.graph.skip = skip
-        self.graph.graph_structure = graph_structure
+        self.graph.mapping = graph_structure['mapping']
+        self.graph.n_pixels_per_node = graph_structure['n_pixels_per_node']
 
         self.graph.hidden = hidden
         self.graph.cell = cell
@@ -291,8 +311,8 @@ class Seq2Seq(torch.nn.Module):
         image_shape = self.graph.image_shape
 
         # Convert H and C to their image represenation using the old graph
-        hidden_img = unflatten(hidden, self.graph.graph_structure['mapping'], image_shape)
-        cell_img = unflatten(cell, self.graph.graph_structure['mapping'], image_shape)
+        hidden_img = unflatten(hidden, self.graph.mapping, image_shape)
+        cell_img = unflatten(cell, self.graph.mapping, image_shape)
 
         # Create graph using the current input
         data_img = add_positional_encoding(data_img)  # Add pos. embedding
@@ -307,7 +327,8 @@ class Seq2Seq(torch.nn.Module):
         # Create a graph object for input into next rollout
         self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
         self.graph.x = graph_structure['data']
-        self.graph.graph_structure = graph_structure
+        self.graph.mapping = graph_structure['mapping']
+        self.graph.n_pixels_per_node = graph_structure['n_pixels_per_node']
 
         self.graph.hidden = hidden
         self.graph.cell = cell
