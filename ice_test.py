@@ -140,7 +140,7 @@ if __name__ == '__main__':
 
     # Add 3 to the number of input features since weadd positional encoding (x, y) and node size (s)
     model_kwargs = dict(
-        hidden_size=64,
+        hidden_size=32,
         dropout=0.1,
         n_layers=3,
         transform_func=dist_from_05

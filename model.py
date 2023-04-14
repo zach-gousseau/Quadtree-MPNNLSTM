@@ -2,21 +2,23 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Parameter
-from torch_geometric.nn import GCNConv, ChebConv, TransformerConv, GATConv
+from torch_geometric.nn import GCNConv, ChebConv, TransformerConv, GATConv, GATv2Conv
 from torch_geometric.nn.inits import glorot, zeros
 
 CONVOLUTIONS = {
     'GCNConv': GCNConv,
     'TransformerConv': TransformerConv,
     'ChebConv': ChebConv,
-    'GATConv': GATConv,
+    'GATConv': GATConv,  # These do not work (asking for a static graph(?))
+    'GATv2Conv': GATv2Conv,  # These do not work (asking for a static graph(?))
 }
 
 CONVOLUTION_KWARGS = {
     'GCNConv': dict(add_self_loops=False),
     'TransformerConv': dict(heads=1, edge_dim=2),
     'ChebConv': dict(K=3, normalization='sym', bias=True),
-    'GATConv': dict(heads=1, edge_dim=13950)
+    'GATConv': dict(heads=1, edge_dim=2),
+    'GATv2Conv': dict(heads=1, edge_dim=2)
 }
 
 class GConvLSTM(nn.Module):
@@ -31,17 +33,17 @@ class GConvLSTM(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        conv_func='TransformerConv'
+        convolution_type='GCNConv'
     ):
         super(GConvLSTM, self).__init__()
 
-        assert conv_func in CONVOLUTIONS
+        assert convolution_type in CONVOLUTIONS
 
         self.in_channels = in_channels
         self.out_channels = out_channels
 
-        self.conv_func = CONVOLUTIONS[conv_func]
-        self.conv_kwargs = CONVOLUTION_KWARGS[conv_func]
+        self.conv_func = CONVOLUTIONS[convolution_type]
+        self.conv_kwargs = CONVOLUTION_KWARGS[convolution_type]
 
         self._create_parameters_and_layers()
         self._set_parameters()

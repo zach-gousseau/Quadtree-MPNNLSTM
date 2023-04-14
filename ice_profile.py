@@ -143,7 +143,8 @@ if __name__ == '__main__':
         hidden_size=32,
         dropout=0.1,
         n_layers=3,
-        transform_func=dist_from_05
+        transform_func=dist_from_05,
+        convolution_type='TransformerConv'
     )
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
@@ -156,6 +157,8 @@ if __name__ == '__main__':
         transform_func=dist_from_05,
         device=device,
         model_kwargs=model_kwargs)
+
+    print('Num. parameters:', model.get_n_params())
 
     lr = 0.01
 

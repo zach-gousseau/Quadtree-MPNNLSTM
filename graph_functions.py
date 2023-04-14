@@ -248,7 +248,7 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, trans
     
     return labels[:n, :m]
 
-def get_adj(labels, xx=None, yy=None, calculate_distances=False, edges_at_corners=False):
+def get_adj(labels, xx=None, yy=None, calculate_distances=False, edges_at_corners=False, use_edge_attrs=True):
     """Get the adjacency matrix for a given label matrix (this could be more efficient)"""
     w, h = labels.shape
     adj_dict = {}
@@ -317,10 +317,13 @@ def get_adj(labels, xx=None, yy=None, calculate_distances=False, edges_at_corner
                     #     edge_attrs.append(dist(node, neighbor, xx, yy))
                     #     edge_attrs.append(1)
 
-    edge_attrs = torch.cat(
-        dist_angle(edge_sources, edge_targets, xx, yy),
-        dist(edge_sources, edge_targets, xx, yy)
-    )
+    if use_edge_attrs:
+        edge_attrs = torch.cat(
+            dist_angle(edge_sources, edge_targets, xx, yy),
+            dist(edge_sources, edge_targets, xx, yy)
+        )
+    else:
+        edge_attrs = dist(edge_sources, edge_targets, xx, yy)
 
     edge_index = torch.tensor([edge_sources, edge_targets], dtype=torch.long)
     return edge_index, edge_attrs
@@ -437,7 +440,7 @@ def unflatten_pixelwise(data, mask, image_shape):
     return img
 
 
-def get_adj_pixelwise(labels, xx=None, yy=None):
+def get_adj_pixelwise(labels, xx=None, yy=None, use_edge_attrs=True):
     rows, cols = labels.shape
 
     # Shift the array by one row and one column in each direction
@@ -459,16 +462,19 @@ def get_adj_pixelwise(labels, xx=None, yy=None):
 
     # Mask out invalid nodes
     edge_index = neighbors[:, ~torch.any(neighbors == -1, 0)]
-    edge_attrs = None#torch.ones(neighbors.shape[1])
-    edge_attrs = torch.stack((
-        dist_angle(edge_index[0], edge_index[1], xx, yy),
-        dist(edge_index[0], edge_index[1], xx, yy)
-    )).T
+
+    if use_edge_attrs:
+        edge_attrs = torch.stack((
+            dist_angle(edge_index[0], edge_index[1], xx, yy),
+            dist(edge_index[0], edge_index[1], xx, yy)
+        )).T
+    else:
+        edge_attrs = None#torch.ones(neighbors.shape[1])
 
     return edge_index, edge_attrs
     
 
-def image_to_graph_pixelwise(img, mask=None):
+def image_to_graph_pixelwise(img, mask=None, use_edge_attrs=True):
 
     img0, _ = torch.max(img[..., 0], 0)  # For multi-step inputs
     image_shape = img.shape
@@ -490,7 +496,7 @@ def image_to_graph_pixelwise(img, mask=None):
     mapping = 0
 
     # Distances are all the same so don't bother calculating them. Uses '1' as the distance for each edge.
-    edge_index, edge_attrs = get_adj_pixelwise(labels, xx=xx, yy=yy)
+    edge_index, edge_attrs = get_adj_pixelwise(labels, xx=xx, yy=yy, use_edge_attrs=use_edge_attrs)
 
     out = dict(
         edge_index=edge_index,
@@ -531,7 +537,7 @@ def get_mapping(labels):
     return mapping, graph_nodes, n_pixels_per_node
 
 
-def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func=None, condition='max_larger_than'):
+def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func=None, condition='max_larger_than', use_edge_attrs=True):
     """
     Decomposes an image into a quadtree and then generates a graph representation of the image
     using quadtree decomposition. The graph nodes are the centroids of the quadtree cells and the
@@ -560,7 +566,7 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func
         raise ValueError(f'Found NaNs in image data {torch.sum(torch.isnan(img))} / {np.prod(img.shape)}')
 
     if thresh == -np.inf:
-        return image_to_graph_pixelwise(img, mask)
+        return image_to_graph_pixelwise(img, mask, use_edge_attrs=use_edge_attrs)
 
     img_for_decompose, _ = torch.max(img[..., 0], 0)  # For multi-step inputs
     n_samples, h, w, c = img.shape
@@ -600,7 +606,7 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func
 
     # data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
 
-    edge_index, edge_attrs = get_adj(labels, xx=xx, yy=yy, calculate_distances=False)
+    edge_index, edge_attrs = get_adj(labels, xx=xx, yy=yy, calculate_distances=False, use_edge_attrs=use_edge_attrs)
 
     out = dict(
         edge_index=edge_index,

@@ -15,30 +15,28 @@ import numpy as np
 import psutil
 import os
 
-from model import GConvLSTM
+from model import GConvLSTM, CONVOLUTION_KWARGS, CONVOLUTIONS
 
 
 class Encoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, convolution_type='GCNConv'):
         super().__init__()
         
         self.hidden_size = hidden_size
-        
         self.n_layers = n_layers
 
-        self.rnns = nn.ModuleList([GConvLSTM(input_features, hidden_size)] + [GConvLSTM(hidden_size, hidden_size) for _ in range(n_layers-1)])
-        self.edge_lin = Linear(2, hidden_size)  # FOR TRANSFORMER, assume edge_dim is 2
+        self.rnns = nn.ModuleList(
+            [GConvLSTM(input_features, hidden_size, convolution_type=convolution_type)] + \
+            [GConvLSTM(hidden_size, hidden_size, convolution_type=convolution_type) for _ in range(n_layers-1)]
+        )
         
         self.dropout = nn.Dropout(dropout)
 
-        # self.bn1 = nn.BatchNorm1d(hidden_size, track_running_stats=False)
         self.norm_h = nn.LayerNorm(hidden_size)
         self.norm_c = nn.LayerNorm(hidden_size)
         
     def forward(self, X, edge_index, edge_weight, H=None, C=None):
         X = X.squeeze(0)
-
-        # edge_weight = self.edge_lin(edge_weight)
 
         _, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H, C=C)
         hidden_layer, cell_layer = hidden_layer.squeeze(0), cell_layer.squeeze(0)
@@ -49,7 +47,6 @@ class Encoder(torch.nn.Module):
         for i in range(1, self.n_layers):
             _, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=None, C=None)
 
-            # hidden_layer = self.bn1(hidden_layer)
             hidden_layer = self.norm_h(hidden_layer)
             cell_layer = self.norm_c(cell_layer)
 
@@ -61,19 +58,22 @@ class Encoder(torch.nn.Module):
         return hidden, cell
 
 class Decoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=2):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=2, convolution_type='GCNConv'):
         super().__init__()
         
         self.input_features = input_features
         self.hidden_size = hidden_size
         self.n_layers = n_layers
 
-        self.rnns = nn.ModuleList([GConvLSTM(input_features, hidden_size)] + [GConvLSTM(hidden_size, hidden_size) for _ in range(n_layers-1)])
+        self.rnns = nn.ModuleList(
+            [GConvLSTM(input_features, hidden_size, convolution_type=convolution_type)] + \
+            [GConvLSTM(hidden_size, hidden_size, convolution_type=convolution_type) for _ in range(n_layers-1)]
+            )
 
-        # self.fc_out1 = GCNConv(in_channels=hidden_size + skip_dim, out_channels=hidden_size, add_self_loops=False)
-        # self.fc_out2 = GCNConv(in_channels=hidden_size, out_channels=1, add_self_loops=False)
-        self.fc_out1 = TransformerConv(in_channels=hidden_size + skip_dim, out_channels=hidden_size, edge_dim=2)
-        self.fc_out2 = TransformerConv(in_channels=hidden_size, out_channels=1, edge_dim=2)
+        conv_func = CONVOLUTIONS[convolution_type]
+        conv_func_kwargs = CONVOLUTION_KWARGS[convolution_type]
+        self.fc_out1 = conv_func(in_channels=hidden_size + skip_dim, out_channels=hidden_size, **conv_func_kwargs)
+        self.fc_out2 = conv_func(in_channels=hidden_size, out_channels=1, **conv_func_kwargs)
 
         self.norm_o = nn.LayerNorm(hidden_size)
         self.norm_h = nn.LayerNorm(hidden_size)
@@ -82,14 +82,14 @@ class Decoder(torch.nn.Module):
         self.dropout = nn.Dropout(dropout)
         
     def forward(self, X, edge_index, edge_weight, skip, H, C):
-        output, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H[[0]], C=C[[0]])
+        output, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H[0], C=C[0])
 
         hidden_layer = self.norm_h(hidden_layer)
         cell_layer = self.norm_c(cell_layer)
         hidden, cell = [hidden_layer], [cell_layer]
 
         for i in range(1, self.n_layers):
-            output, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=H[[i]], C=C[[i]])
+            output, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=H[i], C=C[i])
 
             hidden_layer = self.norm_h(hidden_layer)
             cell_layer = self.norm_c(cell_layer)
@@ -97,8 +97,8 @@ class Decoder(torch.nn.Module):
             hidden.append(hidden_layer)
             cell.append(cell_layer)
 
-        hidden = torch.cat(hidden)
-        cell = torch.cat(cell)
+        hidden = torch.stack(hidden)
+        cell = torch.stack(cell)
         
         output = output.squeeze(0)  # Use top layer's output
         output = self.norm_o(output)
@@ -126,17 +126,25 @@ class Seq2Seq(torch.nn.Module):
                  transform_func=None,
                  condition='max_larger_than',
                  remesh_input=False,
+                 convolution_type='ChebConv',
                  device=None):
         super().__init__()
         
-        self.encoder = Encoder(input_features, hidden_size, dropout, n_layers=n_layers)
-        self.decoder = Decoder(1+2, hidden_size, dropout, n_layers=n_layers)  # 1 output variable + 3 (positional encoding and node_size)
+        self.encoder = Encoder(input_features, hidden_size, dropout, n_layers=n_layers, convolution_type=convolution_type)
+        self.decoder = Decoder(1+2, hidden_size, dropout, n_layers=n_layers, convolution_type=convolution_type)  # 1 output variable + 3 (positional encoding and node_size)
 
         self.input_timesteps = input_timesteps
         self.output_timesteps = output_timesteps
         self.n_layers = n_layers
         self.condition = condition
         self.remesh_input = remesh_input
+
+        self.convolution_type = convolution_type
+
+        if convolution_type in ['TransformerConv', 'GATConv']:
+            self.use_edge_attrs = True
+        else:
+            self.use_edge_attrs = False
 
         self.thresh = thresh
         self.transform_func = transform_func
@@ -153,10 +161,10 @@ class Seq2Seq(torch.nn.Module):
         
         if self.remesh_input:
             x0 = add_positional_encoding(x[[0]])
-            graph_structure = image_to_graph(x0, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
+            graph_structure = image_to_graph(x0, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
         else:
             x = add_positional_encoding(x)
-            graph_structure = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
+            graph_structure = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
 
         self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
 
@@ -203,7 +211,7 @@ class Seq2Seq(torch.nn.Module):
         
         # First input to the decoder is the last input to the encoder 
         # self.graph.x = self.graph.x[-1, :, [0, -3, -2, -1]].unsqueeze(0)
-        self.graph.x = self.graph.x[-1, :, [0, -2, -1]].unsqueeze(0)  # node_size
+        self.graph.x = self.graph.x[-1, :, [0, -2, -1]]  # node_size
 
         for t in range(self.output_timesteps):
             # print('Decoder step', t)
@@ -213,7 +221,7 @@ class Seq2Seq(torch.nn.Module):
             pid = os.getpid()
             python_process = psutil.Process(pid)
             memoryUse = python_process.memory_info()[0]/2.**30  # memory use in GB...I think
-            print('memory use:', memoryUse)
+            print('memory use:', memoryUse, end='\r')
             
             if skip is not None:
                 skip_t = torch.cat([skip[t].unsqueeze(0), persistence], dim=-1)
@@ -239,7 +247,7 @@ class Seq2Seq(torch.nn.Module):
             outputs.append(output)
             output_mappings.append(self.graph.mapping)
 
-            output = output.unsqueeze(0)#.to(self.device)
+            output = output#.to(self.device)
 
             # Ddecide whether to use the prediction or ground truth for the input to the next rollout step
             teacher_force = random.random() < teacher_forcing_ratio
@@ -255,7 +263,7 @@ class Seq2Seq(torch.nn.Module):
     def update_without_remesh(self, data, hidden, cell, teacher_force=False, teacher_input=None):
         if teacher_force:
             teacher_input = add_positional_encoding(teacher_input)  # Add positional encoding
-            self.graph.x = flatten(teacher_input, self.graph.mapping, self.graph.n_pixels_per_node, self.mask)
+            self.graph.x = flatten(teacher_input, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
             # self.graph.x = torch.cat([self.graph.x, self.graph.n_pixels_per_node.unsqueeze(0).unsqueeze(-1)], dim=-1)  # Add node sizes
         else:
             # Add positional encoding
@@ -282,10 +290,10 @@ class Seq2Seq(torch.nn.Module):
         # its own values (rather than the one created by the input images / previous step)
         if teacher_force:
             teacher_input = add_positional_encoding(teacher_input)
-            graph_structure = image_to_graph(teacher_input, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
+            graph_structure = image_to_graph(teacher_input, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
         else:
             data_img = add_positional_encoding(data_img)  # Add pos. embedding
-            graph_structure = image_to_graph(data_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
+            graph_structure = image_to_graph(data_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
 
         # skip = graph_structure['data'][:, :, [0]]
 
@@ -316,7 +324,7 @@ class Seq2Seq(torch.nn.Module):
 
         # Create graph using the current input
         data_img = add_positional_encoding(data_img)  # Add pos. embedding
-        graph_structure = image_to_graph(data_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition)
+        graph_structure = image_to_graph(data_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
 
         # Use the graph structure to convert the hidden and cell states to their graph representations
         hidden_img, cell_img = torch.swapaxes(hidden_img, 0, -1), torch.swapaxes(cell_img, 0, -1)
