@@ -142,7 +142,7 @@ if __name__ == '__main__':
     model_kwargs = dict(
         hidden_size=32,
         dropout=0.1,
-        n_layers=1,
+        n_layers=3,
         transform_func=dist_from_05
     )
 

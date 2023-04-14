@@ -131,8 +131,8 @@ if __name__ == '__main__':
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
     loader_val = DataLoader(data_val, batch_size=1, shuffle=False)#, collate_fn=lambda x: x[0])
 
-    thresh = 0.15
-    # thresh = -np.inf
+    # thresh = 0.15
+    thresh = -np.inf
     print(f'threshold is {thresh}')
 
     def dist_from_05(arr):

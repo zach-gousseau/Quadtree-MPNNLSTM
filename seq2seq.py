@@ -70,10 +70,10 @@ class Decoder(torch.nn.Module):
 
         self.rnns = nn.ModuleList([GConvLSTM(input_features, hidden_size)] + [GConvLSTM(hidden_size, hidden_size) for _ in range(n_layers-1)])
 
-        self.fc_out1 = GCNConv(in_channels=hidden_size + skip_dim, out_channels=hidden_size, add_self_loops=False)
-        self.fc_out2 = GCNConv(in_channels=hidden_size, out_channels=1, add_self_loops=False)
-        # self.fc_out1 = TransformerConv(in_channels=hidden_size + skip_dim, out_channels=hidden_size, edge_dim=2)
-        # self.fc_out2 = TransformerConv(in_channels=hidden_size, out_channels=1, edge_dim=2)
+        # self.fc_out1 = GCNConv(in_channels=hidden_size + skip_dim, out_channels=hidden_size, add_self_loops=False)
+        # self.fc_out2 = GCNConv(in_channels=hidden_size, out_channels=1, add_self_loops=False)
+        self.fc_out1 = TransformerConv(in_channels=hidden_size + skip_dim, out_channels=hidden_size, edge_dim=2)
+        self.fc_out2 = TransformerConv(in_channels=hidden_size, out_channels=1, edge_dim=2)
 
         self.norm_o = nn.LayerNorm(hidden_size)
         self.norm_h = nn.LayerNorm(hidden_size)

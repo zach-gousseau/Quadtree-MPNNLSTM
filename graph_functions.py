@@ -460,10 +460,10 @@ def get_adj_pixelwise(labels, xx=None, yy=None):
     # Mask out invalid nodes
     edge_index = neighbors[:, ~torch.any(neighbors == -1, 0)]
     edge_attrs = None#torch.ones(neighbors.shape[1])
-    # edge_attrs = torch.stack((
-    #     dist_angle(edge_index[0], edge_index[1], xx, yy),
-    #     dist(edge_index[0], edge_index[1], xx, yy)
-    # )).T
+    edge_attrs = torch.stack((
+        dist_angle(edge_index[0], edge_index[1], xx, yy),
+        dist(edge_index[0], edge_index[1], xx, yy)
+    )).T
 
     return edge_index, edge_attrs
     

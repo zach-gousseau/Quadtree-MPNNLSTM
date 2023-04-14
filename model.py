@@ -31,7 +31,7 @@ class GConvLSTM(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        conv_func='GCNConv'
+        conv_func='TransformerConv'
     ):
         super(GConvLSTM, self).__init__()
 

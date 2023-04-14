@@ -135,7 +135,7 @@ class NextFramePredictorS2S(NextFramePredictor):
             **model_kwargs
         ).to(device)
     
-    @profile
+    # @profile
     def train(
         self,
         loader_train,
@@ -200,10 +200,10 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                 optimizer.step()
 
-                writer.add_scalar("Loss/train", loss, epoch)
+                writer.add_scalar("Loss/train", loss.item(), epoch)
 
                 step += 1
-                running_loss += loss
+                running_loss += loss.item()
 
                 del y_hat
                 del y_hat_mappings
@@ -243,7 +243,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
             scheduler.step()
 
-            train_loss.append(running_loss.item())
+            train_loss.append(running_loss)
             test_loss.append(running_loss_test.item())
             
             print(f"Epoch {epoch} train MSE: {running_loss.item():.4f}, "+ \
