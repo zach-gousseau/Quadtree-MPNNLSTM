@@ -58,12 +58,13 @@ class Encoder(torch.nn.Module):
         return hidden, cell
 
 class Decoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=2, convolution_type='GCNConv'):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=2, convolution_type='GCNConv', binary=False):
         super().__init__()
         
         self.input_features = input_features
         self.hidden_size = hidden_size
         self.n_layers = n_layers
+        self.binary = binary
 
         self.rnns = nn.ModuleList(
             [GConvLSTM(input_features, hidden_size, convolution_type=convolution_type)] + \
@@ -118,7 +119,9 @@ class Decoder(torch.nn.Module):
         # output = self.fc_out3(output, edge_index, edge_weight)
         # output = torch.sigmoid(output)#F.relu(output)
         # output = self.fc_out4(output, edge_index, edge_weight)
-        output = torch.sigmoid(output)
+
+        if self.binary:
+            output = torch.sigmoid(output)
         return output, hidden, cell
         
 
@@ -135,11 +138,12 @@ class Seq2Seq(torch.nn.Module):
                  condition='max_larger_than',
                  remesh_input=False,
                  convolution_type='ChebConv',
+                 binary=False,
                  device=None):
         super().__init__()
         
         self.encoder = Encoder(input_features, hidden_size, dropout, n_layers=n_layers, convolution_type=convolution_type)
-        self.decoder = Decoder(1+2, hidden_size, dropout, n_layers=n_layers, convolution_type=convolution_type)  # 1 output variable + 3 (positional encoding and node_size)
+        self.decoder = Decoder(1+2, hidden_size, dropout, n_layers=n_layers, convolution_type=convolution_type, binary=binary)  # 1 output variable + 3 (positional encoding and node_size)
 
         self.input_timesteps = input_timesteps
         self.output_timesteps = output_timesteps

@@ -114,6 +114,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                  transform_func=None,
                  condition='max_larger_than',
                  remesh_input=False,
+                 binary=False,
                  model_kwargs={}):
         
         super().__init__(
@@ -126,6 +127,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                  condition=condition)
         
         self.output_timesteps = output_timesteps
+        self.binary = binary
         
         self.model = Seq2Seq(
             input_features=input_features + 2,  # 3 (node_size)
@@ -133,6 +135,7 @@ class NextFramePredictorS2S(NextFramePredictor):
             thresh=thresh,
             device=device,
             remesh_input=remesh_input,
+            binary=binary,
             **model_kwargs
         ).to(device)
     
@@ -155,7 +158,8 @@ class NextFramePredictorS2S(NextFramePredictor):
             
         # model = nn.DataParallel(self.model)
 
-        loss_func = torch.nn.MSELoss()  # torch.nn.BCELoss()
+        loss_func = torch.nn.MSELoss() if not self.binary else torch.nn.BCELoss()
+        loss_func_name = 'MSE' if not self.binary else 'BCE'
         # optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9)
         optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         scheduler = StepLR(optimizer, step_size=3, gamma=lr_decay)
@@ -256,8 +260,8 @@ class NextFramePredictorS2S(NextFramePredictor):
             train_loss.append(running_loss)
             test_loss.append(running_loss_test.item())
             
-            print(f"Epoch {epoch} train MSE: {running_loss:.4f}, "+ \
-                f"test MSE: {running_loss_test.item():.4f}, lr: {scheduler.get_last_lr()[0]:.4f}, time_per_epoch: {(time.time() - st) / (epoch+1):.1f}")
+            print(f"Epoch {epoch} train {loss_func_name}: {running_loss:.4f}, "+ \
+                f"test {loss_func_name}: {running_loss_test.item():.4f}, lr: {scheduler.get_last_lr()[0]:.4f}, time_per_epoch: {(time.time() - st) / (epoch+1):.1f}")
         
         print(f'Finished in {(time.time() - st)/60} minutes')
         

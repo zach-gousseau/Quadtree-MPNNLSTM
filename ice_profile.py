@@ -140,9 +140,9 @@ if __name__ == '__main__':
 
     # Add 3 to the number of input features since weadd positional encoding (x, y) and node size (s)
     model_kwargs = dict(
-        hidden_size=64,
+        hidden_size=8,
         dropout=0.1,
-        n_layers=3,
+        n_layers=1,
         transform_func=dist_from_05,
         convolution_type='TransformerConv'
     )
@@ -155,6 +155,7 @@ if __name__ == '__main__':
         input_features=input_features,
         output_timesteps=output_timesteps,
         transform_func=dist_from_05,
+        binary=True,
         device=device,
         model_kwargs=model_kwargs)
 
@@ -167,7 +168,7 @@ if __name__ == '__main__':
     import cProfile, pstats, io
     pr = cProfile.Profile()
     pr.enable()
-    model.train(loader_profile, loader_test, climatology, lr=lr, n_epochs=1, mask=mask)  # Train for 20 epochs
+    model.train(loader_profile, loader_test, climatology, lr=lr, n_epochs=10, mask=mask)  # Train for 20 epochs
     pr.disable()
     stats = pstats.Stats(pr).sort_stats('time')
     stats.print_stats(10)
