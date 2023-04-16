@@ -7,6 +7,7 @@ from torch_geometric.data import Data
 import matplotlib.pyplot as plt
 from collections import defaultdict
 import numba as nb
+from functools import lru_cache
 
 from utils import minmax
 
@@ -308,20 +309,11 @@ def get_adj(labels, xx=None, yy=None, calculate_distances=False, edges_at_corner
                     edge_sources.append(node)
                     edge_targets.append(neighbor)
 
-                    # if node ==-1 or neighbor==-1:
-                    #     print('f')
-
-                    # if calculate_distances:
-                    #     edge_attrs.append(dist_xy(node, neighbor, xx, yy))
-                    # else:
-                    #     edge_attrs.append(dist(node, neighbor, xx, yy))
-                    #     edge_attrs.append(1)
-
     if use_edge_attrs:
-        edge_attrs = torch.cat(
+        edge_attrs = torch.stack((
             dist_angle(edge_sources, edge_targets, xx, yy),
             dist(edge_sources, edge_targets, xx, yy)
-        )
+        ))
     else:
         edge_attrs = dist(edge_sources, edge_targets, xx, yy)
 

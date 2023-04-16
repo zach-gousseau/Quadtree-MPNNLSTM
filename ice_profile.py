@@ -89,7 +89,7 @@ if __name__ == '__main__':
     # device = torch.device('mps')
     print('device:', device)
 
-    month = 1
+    month = 6
 
     ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
     # ds = xr.open_zarr('/home/zgoussea/scratch/era5_arctic_daily.zarr')
@@ -129,8 +129,8 @@ if __name__ == '__main__':
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
 
-    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(50)))
-    loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(10)))
+    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(10)))
+    loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(1)))
 
     # thresh = 0.15
     thresh = -np.inf
@@ -140,7 +140,7 @@ if __name__ == '__main__':
 
     # Add 3 to the number of input features since weadd positional encoding (x, y) and node size (s)
     model_kwargs = dict(
-        hidden_size=32,
+        hidden_size=64,
         dropout=0.1,
         n_layers=3,
         transform_func=dist_from_05,

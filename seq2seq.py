@@ -74,6 +74,10 @@ class Decoder(torch.nn.Module):
         conv_func_kwargs = CONVOLUTION_KWARGS[convolution_type]
         self.fc_out1 = conv_func(in_channels=hidden_size + skip_dim, out_channels=hidden_size, **conv_func_kwargs)
         self.fc_out2 = conv_func(in_channels=hidden_size, out_channels=1, **conv_func_kwargs)
+        # self.fc_out1 = Linear(in_channels=hidden_size + skip_dim, out_channels=hidden_size)
+        # self.fc_out2 = Linear(in_channels=hidden_size, out_channels=hidden_size)
+        # self.fc_out3 = Linear(in_channels=hidden_size, out_channels=hidden_size)
+        # self.fc_out4 = Linear(in_channels=hidden_size, out_channels=1)
 
         self.norm_o = nn.LayerNorm(hidden_size)
         self.norm_h = nn.LayerNorm(hidden_size)
@@ -110,6 +114,10 @@ class Decoder(torch.nn.Module):
         output = self.fc_out1(output, edge_index, edge_weight)
         output = F.relu(output)
         output = self.fc_out2(output, edge_index, edge_weight)
+        # output = torch.sigmoid(output)#F.relu(output)
+        # output = self.fc_out3(output, edge_index, edge_weight)
+        # output = torch.sigmoid(output)#F.relu(output)
+        # output = self.fc_out4(output, edge_index, edge_weight)
         output = torch.sigmoid(output)
         return output, hidden, cell
         
@@ -218,10 +226,10 @@ class Seq2Seq(torch.nn.Module):
             # print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
             # print("torch.cuda.memory_reserved: %fGB"%(torch.cuda.memory_reserved(0)/1024/1024/1024))
             # print("torch.cuda.max_memory_reserved: %fGB"%(torch.cuda.max_memory_reserved(0)/1024/1024/1024))
-            pid = os.getpid()
-            python_process = psutil.Process(pid)
-            memoryUse = python_process.memory_info()[0]/2.**30  # memory use in GB...I think
-            print('memory use:', memoryUse, end='\r')
+            # pid = os.getpid()
+            # python_process = psutil.Process(pid)
+            # memoryUse = python_process.memory_info()[0]/2.**30  # memory use in GB...I think
+            # print('memory use:', memoryUse, end='\r')
             
             if skip is not None:
                 skip_t = torch.cat([skip[t].unsqueeze(0), persistence], dim=-1)
@@ -342,4 +350,4 @@ class Seq2Seq(torch.nn.Module):
         self.graph.cell = cell
 
         self.graph.image_shape = image_shape
-        
+    

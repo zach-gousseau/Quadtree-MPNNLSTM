@@ -15,7 +15,7 @@ CONVOLUTIONS = {
 
 CONVOLUTION_KWARGS = {
     'GCNConv': dict(add_self_loops=False),
-    'TransformerConv': dict(heads=1, edge_dim=2),
+    'TransformerConv': dict(heads=3, edge_dim=2),
     'ChebConv': dict(K=3, normalization='sym', bias=True),
     'GATConv': dict(heads=1, edge_dim=2),
     'GATv2Conv': dict(heads=1, edge_dim=2)

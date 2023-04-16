@@ -14,6 +14,7 @@ from torch_geometric.nn import MessagePassing
 from torch_geometric.utils import add_self_loops, degree
 from torch_geometric.nn import GCNConv, ChebConv, GraphConv, TransformerConv
 from torch.utils.tensorboard import SummaryWriter
+from torch.cuda import amp
 
 from torch.optim.lr_scheduler import StepLR
 
@@ -155,8 +156,11 @@ class NextFramePredictorS2S(NextFramePredictor):
         # model = nn.DataParallel(self.model)
 
         loss_func = torch.nn.MSELoss()  # torch.nn.BCELoss()
-        optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9)
+        # optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         scheduler = StepLR(optimizer, step_size=3, gamma=lr_decay)
+
+        # scaler = amp.GradScaler()
         
         writer = SummaryWriter()
 
@@ -179,12 +183,20 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                 optimizer.zero_grad()
                 
-                y_hat, y_hat_mappings = self.model(x, y, skip, teacher_forcing_ratio=0.5, mask=mask)
+                # with amp.autocast():
+                y_hat, y_hat_mappings = self.model(x, y, skip, teacher_forcing_ratio=0, mask=mask)
                 y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
                 y_hat = torch.stack(y_hat, dim=0)
                 
                 loss = loss_func(y_hat[:, ~mask], y[:, ~mask])  
+
+
+                # scaler.scale(loss).backward()
+                # scaler.step(optimizer)
+                # scaler.update()
+
                 loss.backward()
+                optimizer.step()
 
                 # decoder_params = [p for p in self.model.decoder.parameters()]
                 # decoder_grads = [p.grad.mean().cpu() for p in decoder_params if p.grad is not None]
@@ -197,8 +209,6 @@ class NextFramePredictorS2S(NextFramePredictor):
                 # encoder_param_means = [p.mean().abs().detach().cpu() for p in encoder_params]
                 # writer.add_scalar("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), epoch)
                 # writer.add_scalar("Param/encoder/mean", np.mean(encoder_param_means), epoch)
-
-                optimizer.step()
 
                 writer.add_scalar("Loss/train", loss.item(), epoch)
 
@@ -221,7 +231,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                     skip = None
 
                 with torch.no_grad():
-                    y_hat, y_hat_mappings = self.model(x, y, skip, teacher_forcing_ratio=0.5, mask=mask)
+                    y_hat, y_hat_mappings = self.model(x, y, skip, teacher_forcing_ratio=0, mask=mask)
 
                     y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
                     y_hat = torch.stack(y_hat, dim=0)
@@ -246,7 +256,7 @@ class NextFramePredictorS2S(NextFramePredictor):
             train_loss.append(running_loss)
             test_loss.append(running_loss_test.item())
             
-            print(f"Epoch {epoch} train MSE: {running_loss.item():.4f}, "+ \
+            print(f"Epoch {epoch} train MSE: {running_loss:.4f}, "+ \
                 f"test MSE: {running_loss_test.item():.4f}, lr: {scheduler.get_last_lr()[0]:.4f}, time_per_epoch: {(time.time() - st) / (epoch+1):.1f}")
         
         print(f'Finished in {(time.time() - st)/60} minutes')
@@ -285,7 +295,7 @@ class NextFramePredictorS2S(NextFramePredictor):
             with torch.no_grad():
                 y_hat, y_hat_mappings = self.model(x, skip=skip, teacher_forcing_ratio=0, mask=mask)
                 
-                y_hat = [unflatten(y_hat[i], mappings[i], image_shape, mask).detach().cpu() for i in range(self.output_timesteps)]
+                y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask).detach().cpu() for i in range(self.output_timesteps)]
                 
                 y_hat = np.stack(y_hat)#.squeeze(1)
                 

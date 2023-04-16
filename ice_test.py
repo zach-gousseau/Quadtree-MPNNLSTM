@@ -91,9 +91,11 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--month')  # Month number
+    parser.add_argument('-c', '--conv')
 
     args = vars(parser.parse_args())
     month = int(args['month'])
+    convolution_type = str(args['conv'])
 
     ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
 
@@ -143,7 +145,8 @@ if __name__ == '__main__':
         hidden_size=32,
         dropout=0.1,
         n_layers=3,
-        transform_func=dist_from_05
+        transform_func=dist_from_05,
+        convolution_type=convolution_type,
     )
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
@@ -187,7 +190,10 @@ if __name__ == '__main__':
         ),
     )
 
-    results_dir = 'ice_results_without_nodesize_doy_clim_edgeweights'
+    results_dir = f'ice_results_{convolution_type}_noteacher'
+
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
     
     ds.to_netcdf(f'{results_dir}/valpredictions_{experiment_name}.nc')
 
