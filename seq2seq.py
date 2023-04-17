@@ -15,20 +15,22 @@ import numpy as np
 import psutil
 import os
 
-from model import GConvLSTM, CONVOLUTION_KWARGS, CONVOLUTIONS
+from model import GConvLSTM, DummyLSTM, CONVOLUTION_KWARGS, CONVOLUTIONS
 
 
 class Encoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1, convolution_type='GCNConv'):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, convolution_type='GCNConv', dummy=False):
         super().__init__()
         
         self.hidden_size = hidden_size
         self.n_layers = n_layers
+        self.dummy = dummy
 
-        self.rnns = nn.ModuleList(
-            [GConvLSTM(input_features, hidden_size, convolution_type=convolution_type)] + \
-            [GConvLSTM(hidden_size, hidden_size, convolution_type=convolution_type) for _ in range(n_layers-1)]
-        )
+        if not self.dummy:
+            self.rnns = nn.ModuleList(
+                [GConvLSTM(input_features, hidden_size, convolution_type=convolution_type)] + \
+                [GConvLSTM(hidden_size, hidden_size, convolution_type=convolution_type) for _ in range(n_layers-1)]
+            )
         
         self.dropout = nn.Dropout(dropout)
 
@@ -36,9 +38,14 @@ class Encoder(torch.nn.Module):
         self.norm_c = nn.LayerNorm(hidden_size)
         
     def forward(self, X, edge_index, edge_weight, H=None, C=None):
+
+        if self.dummy:
+            return H, C
+
         X = X.squeeze(0)
 
         _, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H, C=C)
+
         hidden_layer, cell_layer = hidden_layer.squeeze(0), cell_layer.squeeze(0)
         hidden_layer = self.norm_h(hidden_layer)
         cell_layer = self.norm_c(cell_layer)
@@ -58,24 +65,31 @@ class Encoder(torch.nn.Module):
         return hidden, cell
 
 class Decoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=2, convolution_type='GCNConv', binary=False):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=2, convolution_type='GCNConv', binary=False, dummy=False):
         super().__init__()
         
         self.input_features = input_features
         self.hidden_size = hidden_size
         self.n_layers = n_layers
         self.binary = binary
+        self.dummy = dummy
 
-        self.rnns = nn.ModuleList(
-            [GConvLSTM(input_features, hidden_size, convolution_type=convolution_type)] + \
-            [GConvLSTM(hidden_size, hidden_size, convolution_type=convolution_type) for _ in range(n_layers-1)]
-            )
+        if not self.dummy:
+            self.rnns = nn.ModuleList(
+                [GConvLSTM(input_features, hidden_size, convolution_type=convolution_type)] + \
+                [GConvLSTM(hidden_size, hidden_size, convolution_type=convolution_type) for _ in range(n_layers-1)]
+                )
 
         conv_func = CONVOLUTIONS[convolution_type]
         conv_func_kwargs = CONVOLUTION_KWARGS[convolution_type]
-        self.fc_out1 = conv_func(in_channels=hidden_size + skip_dim, out_channels=hidden_size, **conv_func_kwargs)
-        self.fc_out2 = conv_func(in_channels=hidden_size, out_channels=1, **conv_func_kwargs)
-        # self.fc_out1 = Linear(in_channels=hidden_size + skip_dim, out_channels=hidden_size)
+
+        in_channels = hidden_size + skip_dim if not dummy else 3 + skip_dim
+
+        self.fc_out1 = conv_func(in_channels=in_channels, out_channels=hidden_size, **conv_func_kwargs)
+        self.fc_out2 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
+        self.fc_out3 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
+        self.fc_out4 = conv_func(in_channels=hidden_size, out_channels=1, **conv_func_kwargs)
+        # self.fc_out1 = Linear(in_channels=in_channels, out_channels=hidden_size)
         # self.fc_out2 = Linear(in_channels=hidden_size, out_channels=hidden_size)
         # self.fc_out3 = Linear(in_channels=hidden_size, out_channels=hidden_size)
         # self.fc_out4 = Linear(in_channels=hidden_size, out_channels=1)
@@ -87,6 +101,13 @@ class Decoder(torch.nn.Module):
         self.dropout = nn.Dropout(dropout)
         
     def forward(self, X, edge_index, edge_weight, skip, H, C):
+
+        if self.dummy:
+            if skip is not None:
+                X = torch.cat([X, skip], dim=-1)
+            X = self.gnn_out(X, edge_index, edge_weight)
+            return X, H, C
+
         output, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H[0], C=C[0])
 
         hidden_layer = self.norm_h(hidden_layer)
@@ -112,17 +133,25 @@ class Decoder(torch.nn.Module):
         if skip is not None:
             output = torch.cat([output, skip], dim=-1)
 
-        output = self.fc_out1(output, edge_index, edge_weight)
-        output = F.relu(output)
-        output = self.fc_out2(output, edge_index, edge_weight)
-        # output = torch.sigmoid(output)#F.relu(output)
-        # output = self.fc_out3(output, edge_index, edge_weight)
-        # output = torch.sigmoid(output)#F.relu(output)
-        # output = self.fc_out4(output, edge_index, edge_weight)
+        output = self.gnn_out(output, edge_index, edge_weight)
+        return output, hidden, cell
+
+    def gnn_out(self, x, edge_index, edge_weight):
+        x = self.fc_out1(x, edge_index, edge_weight)
+        x = F.relu(x)
+        x = self.fc_out2(x, edge_index, edge_weight)
+        x = F.relu(x)
+        x = self.fc_out3(x, edge_index, edge_weight)
+        x = F.relu(x)
+        x = self.fc_out4(x, edge_index, edge_weight)
+        # x = torch.sigmoid(x)#F.relu(x)
+        # x = self.fc_out3(x, edge_index, edge_weight)
+        # x = torch.sigmoid(x)#F.relu(x)
+        # x = self.fc_out4(x, edge_index, edge_weight)
 
         if self.binary:
-            output = torch.sigmoid(output)
-        return output, hidden, cell
+            x = torch.sigmoid(x)
+        return x
         
 
 class Seq2Seq(torch.nn.Module):
@@ -139,11 +168,27 @@ class Seq2Seq(torch.nn.Module):
                  remesh_input=False,
                  convolution_type='ChebConv',
                  binary=False,
+                 dummy=False,
                  device=None):
         super().__init__()
         
-        self.encoder = Encoder(input_features, hidden_size, dropout, n_layers=n_layers, convolution_type=convolution_type)
-        self.decoder = Decoder(1+2, hidden_size, dropout, n_layers=n_layers, convolution_type=convolution_type, binary=binary)  # 1 output variable + 3 (positional encoding and node_size)
+        self.encoder = Encoder(
+            input_features,
+            hidden_size,
+            dropout,
+            n_layers=n_layers,
+            convolution_type=convolution_type,
+            dummy=dummy,
+            )
+        self.decoder = Decoder(
+            1+2,  # 1 output variable + 3 (positional encoding and node_size)
+            hidden_size,
+            dropout,
+            n_layers=n_layers,
+            convolution_type=convolution_type,
+            binary=binary,
+            dummy=dummy,
+            )
 
         self.input_timesteps = input_timesteps
         self.output_timesteps = output_timesteps
@@ -180,12 +225,12 @@ class Seq2Seq(torch.nn.Module):
 
         self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
 
-        self.graph.x = graph_structure['data']
+        self.graph.pyg.x = graph_structure['data']
 
         self.graph.mapping = graph_structure['mapping']
         self.graph.n_pixels_per_node = graph_structure['n_pixels_per_node']
         self.graph.image_shape = image_shape
-        self.graph.to(self.device)
+        self.graph.pyg.to(self.device)
         
         # Lists to store decoder outputs
         outputs = []
@@ -197,11 +242,11 @@ class Seq2Seq(torch.nn.Module):
 
             # Perform encoding step
             hidden, cell = self.encoder(
-                X=self.graph.x if self.remesh_input else self.graph.x[[t]], 
-                edge_index=self.graph.edge_index, 
-                edge_weight=self.graph.edge_attr, 
-                H=self.graph.hidden[-1] if hasattr(self.graph, 'hidden') else None, 
-                C=self.graph.cell[-1] if hasattr(self.graph, 'cell') else None
+                X=self.graph.pyg.x if self.remesh_input else self.graph.pyg.x[[t]], 
+                edge_index=self.graph.pyg.edge_index, 
+                edge_weight=self.graph.pyg.edge_attr, 
+                H=self.graph.hidden[-1] if self.graph.hidden is not None else None, 
+                C=self.graph.cell[-1] if self.graph.hidden is not None else None
                 )
 
             if t < self.input_timesteps:
@@ -214,7 +259,6 @@ class Seq2Seq(torch.nn.Module):
                 else:
                     self.graph.hidden = hidden
                     self.graph.cell = cell
-
         
         # Decoder ------------------------------------------------------------------------------------------------------------
         
@@ -222,8 +266,8 @@ class Seq2Seq(torch.nn.Module):
         persistence = x[[-1]][:, :, :, [0]]
         
         # First input to the decoder is the last input to the encoder 
-        # self.graph.x = self.graph.x[-1, :, [0, -3, -2, -1]].unsqueeze(0)
-        self.graph.x = self.graph.x[-1, :, [0, -2, -1]]  # node_size
+        # self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -3, -2, -1]].unsqueeze(0)
+        self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -2, -1]]  # node_size
 
         for t in range(self.output_timesteps):
             # print('Decoder step', t)
@@ -243,13 +287,13 @@ class Seq2Seq(torch.nn.Module):
             skip_t = flatten(skip_t, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
 
             self.graph.skip = skip_t
-            self.graph.to(self.device)
+            self.graph.pyg.to(self.device)
 
             # Perform decoding step
             output, hidden, cell = self.decoder(
-                X=self.graph.x,
-                edge_index=self.graph.edge_index,
-                edge_weight=self.graph.edge_attr, 
+                X=self.graph.pyg.x,
+                edge_index=self.graph.pyg.edge_index,
+                edge_weight=self.graph.pyg.edge_attr, 
                 skip=self.graph.skip if hasattr(self.graph, 'skip') else None,
                 H=self.graph.hidden, 
                 C=self.graph.cell
@@ -275,12 +319,12 @@ class Seq2Seq(torch.nn.Module):
     def update_without_remesh(self, data, hidden, cell, teacher_force=False, teacher_input=None):
         if teacher_force:
             teacher_input = add_positional_encoding(teacher_input)  # Add positional encoding
-            self.graph.x = flatten(teacher_input, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
-            # self.graph.x = torch.cat([self.graph.x, self.graph.n_pixels_per_node.unsqueeze(0).unsqueeze(-1)], dim=-1)  # Add node sizes
+            self.graph.pyg.x = flatten(teacher_input, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
+            # self.graph.pyg.x = torch.cat([self.graph.pyg.x, self.graph.n_pixels_per_node.unsqueeze(0).unsqueeze(-1)], dim=-1)  # Add node sizes
         else:
             # Add positional encoding
-            pos_encoding = self.graph.x[..., 1:]
-            self.graph.x = torch.cat([data, pos_encoding], dim=-1)
+            pos_encoding = self.graph.pyg.x[..., 1:]
+            self.graph.pyg.x = torch.cat([data, pos_encoding], dim=-1)
 
         self.graph.hidden = hidden
         self.graph.cell = cell
@@ -317,7 +361,7 @@ class Seq2Seq(torch.nn.Module):
 
         # Create a graph object for input into next rollout
         self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
-        self.graph.x = graph_structure['data']
+        self.graph.pyg.x = graph_structure['data']
         # self.graph.skip = skip
         self.graph.mapping = graph_structure['mapping']
         self.graph.n_pixels_per_node = graph_structure['n_pixels_per_node']
@@ -346,7 +390,7 @@ class Seq2Seq(torch.nn.Module):
 
         # Create a graph object for input into next rollout
         self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
-        self.graph.x = graph_structure['data']
+        self.graph.pyg.x = graph_structure['data']
         self.graph.mapping = graph_structure['mapping']
         self.graph.n_pixels_per_node = graph_structure['n_pixels_per_node']
 
