@@ -133,23 +133,6 @@ class Decoder(torch.nn.Module):
         if skip is not None:
             output = torch.cat([output, skip], dim=-1)
 
-<<<<<<< HEAD
-        output = self.fc_out1(output, edge_index, edge_weight)
-        output = F.relu(output)
-        output = self.fc_out2(output, edge_index, edge_weight)
-        output = F.relu(output)
-        output = self.fc_out3(output, edge_index, edge_weight)
-        output = F.relu(output)
-        output = self.fc_out4(output, edge_index, edge_weight)
-        # output = F.relu(output)
-        # output = self.fc_out3(output, edge_index, edge_weight)
-        # output = F.relu(output)
-        # output = self.fc_out4(output, edge_index, edge_weight)
-        # output = torch.sigmoid(output)#F.relu(output)
-        # output = self.fc_out3(output, edge_index, edge_weight)
-        # output = torch.sigmoid(output)#F.relu(output)
-        # output = self.fc_out4(output, edge_index, edge_weight)
-=======
         output = self.gnn_out(output, edge_index, edge_weight)
         return output, hidden, cell
 
@@ -165,7 +148,6 @@ class Decoder(torch.nn.Module):
         # x = self.fc_out3(x, edge_index, edge_weight)
         # x = torch.sigmoid(x)#F.relu(x)
         # x = self.fc_out4(x, edge_index, edge_weight)
->>>>>>> 785c0390df06a7edbf4ec40aba3f70c94a31331f
 
         if self.binary:
             x = torch.sigmoid(x)
