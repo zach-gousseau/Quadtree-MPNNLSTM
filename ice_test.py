@@ -118,7 +118,7 @@ if __name__ == '__main__':
 
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
-    training_years = range(2011, 2016)
+    training_years = range(2015, 2016)
 
     climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
     climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
@@ -142,10 +142,11 @@ if __name__ == '__main__':
 
     # Add 3 to the number of input features since weadd positional encoding (x, y) and node size (s)
     model_kwargs = dict(
-        hidden_size=32,
+        hidden_size=64,
         dropout=0.1,
-        n_layers=3,
+        n_layers=2,
         transform_func=dist_from_05,
+        dummy=False,
         convolution_type=convolution_type,
     )
 
@@ -190,7 +191,7 @@ if __name__ == '__main__':
         ),
     )
 
-    results_dir = f'ice_results_{convolution_type}_noteacher'
+    results_dir = f'ice_results_{convolution_type}_test'
 
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)

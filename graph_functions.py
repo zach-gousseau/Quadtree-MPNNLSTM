@@ -4,6 +4,7 @@ import numpy.ma as ma
 import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
+from typing import Any
 import matplotlib.pyplot as plt
 from collections import defaultdict
 import numba as nb
@@ -19,11 +20,14 @@ CONDITIONS = [
 ]
 
 
-class Graph(Data):
+class Graph:
     def __init__(self, edge_index, edge_attr, **kwargs):
-        super(Graph, self).__init__(edge_index=edge_index, edge_attr=edge_attr, **kwargs)
-        self.mapping = 0 
-        self.n_pixels_per_node = 0
+        self.pyg = Data(edge_index=edge_index, edge_attr=edge_attr, **kwargs)
+        self.mapping = None
+        self.n_pixels_per_node = None
+
+        self.hidden = None
+        self.cell = None
 
 def quadtree_decompose_cuda(img, padding=0, thresh=0.05, max_size=8, mask=None, transform_func=None, condition='max_larger_than'):
     assert max_size & (max_size - 1) == 0
@@ -360,7 +364,7 @@ def flatten(img, mapping, n_pixels_per_node, mask=None):
     assert len(img.shape) == 4, f'array should be 4-dimensional (n_samples, w, h, c); got {img.shape}'
     n_samples, w, h, c = img.shape
 
-    if type(mapping) == int:
+    if mapping is None:
         return flatten_pixelwise(img, mask)
     
     # (n_samples, w, h, c) -> (c, n_samples, w*h)
@@ -368,8 +372,6 @@ def flatten(img, mapping, n_pixels_per_node, mask=None):
     
     # Compute mean values for each graph node
     while True:
-        # print(mapping.shape)
-        # print(mapping.requires_grad)
         data = img_flattened @ mapping.T.to_dense() / n_pixels_per_node
         # data = img_flattened @ mapping.T / n_pixels_per_node
 
@@ -415,7 +417,7 @@ def grouped_mean_along_axis_2d(arr, labels, axes):
 
 def unflatten(data, mapping, image_shape, mask=None):
     """Create an image of shape (n, w, h, c) for n samples of dimensions w, h and c channels"""
-    if type(mapping) == int:
+    if mapping is None:
         return unflatten_pixelwise(data, mask, image_shape)
     data = torch.moveaxis(data, -1, 0)
     img = (data @ mapping.to_dense()).reshape(*data.shape[:-1], *image_shape)
@@ -485,7 +487,7 @@ def image_to_graph_pixelwise(img, mask=None, use_edge_attrs=True):
     # data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
 
     n_pixels_per_node = torch.ones((len(graph_nodes))).to(img.device)
-    mapping = 0
+    mapping = None
 
     # Distances are all the same so don't bother calculating them. Uses '1' as the distance for each edge.
     edge_index, edge_attrs = get_adj_pixelwise(labels, xx=xx, yy=yy, use_edge_attrs=use_edge_attrs)
