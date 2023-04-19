@@ -198,7 +198,7 @@ class Seq2Seq(torch.nn.Module):
 
         self.convolution_type = convolution_type
 
-        if convolution_type in ['TransformerConv', 'GATConv']:
+        if convolution_type in ['MHTransformerConv', 'TransformerConv', 'GATConv']:
             self.use_edge_attrs = True
         else:
             self.use_edge_attrs = False

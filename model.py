@@ -3,7 +3,9 @@ from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Parameter
-from torch_geometric.typing import Adj, OptTensor
+from typing import Optional, Tuple, Union
+from torch_geometric.typing import Adj, OptTensor, PairTensor
+from torch_geometric.nn.dense.linear import Linear
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn import GCNConv, ChebConv, TransformerConv, GATConv, GATv2Conv
 from torch_geometric.nn.inits import glorot, zeros
@@ -19,9 +21,23 @@ class DummyLSTM(MessagePassing):
     H: OptTensor = None, C: OptTensor = None) -> Tensor:
         return x, H, C
 
+class MHTransformerConv(TransformerConv):
+    def __init__(self, in_channels: Union[int, Tuple[int, int]], out_channels: int, heads: int = 1, concat: bool = True, beta: bool = False, dropout: float = 0, edge_dim: Optional[int] = None, bias: bool = True, root_weight: bool = True, **kwargs):
+        super().__init__(in_channels, out_channels, heads, concat, beta, dropout, edge_dim, bias, root_weight, **kwargs)
+
+        self.lin = Linear(out_channels*heads, out_channels)
+
+    def forward(self, x: Union[Tensor, PairTensor], edge_index: Adj,
+                edge_attr: OptTensor = None, return_attention_weights=None):
+
+        out = super().forward(x, edge_index, edge_attr, return_attention_weights)
+        out = self.lin(out)
+        return out
+
 CONVOLUTIONS = {
     'GCNConv': GCNConv,
     'TransformerConv': TransformerConv,
+    'MHTransformerConv': MHTransformerConv,
     'ChebConv': ChebConv,
     'GATConv': GATConv,
     'GATv2Conv': GATv2Conv,
@@ -30,10 +46,12 @@ CONVOLUTIONS = {
 CONVOLUTION_KWARGS = {
     'GCNConv': dict(add_self_loops=False),
     'TransformerConv': dict(heads=1, edge_dim=2),
+    'MHTransformerConv': dict(heads=3, edge_dim=2),
     'ChebConv': dict(K=3, normalization='sym', bias=True),
     'GATConv': dict(heads=1, edge_dim=2),
     'GATv2Conv': dict(heads=1, edge_dim=2),
 }
+
 
 class GConvLSTM(nn.Module):
     r"""
