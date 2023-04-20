@@ -135,7 +135,7 @@ class Decoder(torch.nn.Module):
 
         output = self.gnn_out(output, edge_index, edge_weight)
 
-        output += skip[:, [1]]
+        output += X[:, [0]]
 
         return output, hidden, cell
 
