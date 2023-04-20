@@ -16,6 +16,8 @@ from torch_geometric.nn import GCNConv, ChebConv, GraphConv, TransformerConv
 from torch.utils.tensorboard import SummaryWriter
 from torch.cuda import amp
 
+import torch.autograd.profiler as profiler
+
 from torch.optim.lr_scheduler import StepLR
 
 from graph_functions import image_to_graph, flatten, create_graph_structure, unflatten, plot_contours
@@ -199,7 +201,13 @@ class NextFramePredictorS2S(NextFramePredictor):
                 # scaler.step(optimizer)
                 # scaler.update()
 
+                # with profiler.profile(enabled=True, use_cuda=True) as prof:
                 loss.backward()
+
+                # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+                # prof.export_chrome_trace("profiling_results.json")
+                # quit()
+
                 optimizer.step()
 
                 # decoder_params = [p for p in self.model.decoder.parameters()]

@@ -134,6 +134,9 @@ class Decoder(torch.nn.Module):
             output = torch.cat([output, skip], dim=-1)
 
         output = self.gnn_out(output, edge_index, edge_weight)
+
+        output += skip[:, [1]]
+
         return output, hidden, cell
 
     def gnn_out(self, x, edge_index, edge_weight):
@@ -305,7 +308,7 @@ class Seq2Seq(torch.nn.Module):
 
             output = output#.to(self.device)
 
-            # Ddecide whether to use the prediction or ground truth for the input to the next rollout step
+            # Decide whether to use the prediction or ground truth for the input to the next rollout step
             teacher_force = random.random() < teacher_forcing_ratio
             teacher_input = y[[t]] if teacher_force else None
 
