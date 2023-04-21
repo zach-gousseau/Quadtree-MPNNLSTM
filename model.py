@@ -54,13 +54,19 @@ CONVOLUTION_KWARGS = {
 
 class GraphConv(nn.Module):
     def __init__(self, convolution_type, in_channels, out_channels, n_layers):
+
+        super(GraphConv, self).__init__()
+
         self.convolution_type = convolution_type
         self.n_layers = n_layers
 
         conv_func = CONVOLUTIONS[convolution_type]
         conv_kwargs = CONVOLUTION_KWARGS[convolution_type]
 
-        self.convolutions = nn.ModuleList([conv_func(in_channels, out_channels, **conv_kwargs) for  _ in range(n_layers)])
+        self.convolutions = nn.ModuleList(
+            [conv_func(in_channels, out_channels, **conv_kwargs)] + \
+            [conv_func(out_channels, out_channels, **conv_kwargs) for  _ in range(n_layers - 1)]
+            )
 
     
     def forward(self, x: Union[Tensor, PairTensor], edge_index: Adj, edge_attr: OptTensor = None):
