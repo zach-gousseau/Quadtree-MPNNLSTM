@@ -52,6 +52,24 @@ CONVOLUTION_KWARGS = {
     'GATv2Conv': dict(heads=1, edge_dim=2),
 }
 
+class GraphConv(nn.Module):
+    def __init__(self, convolution_type, in_channels, out_channels, n_layers):
+        self.convolution_type = convolution_type
+        self.n_layers = n_layers
+
+        conv_func = CONVOLUTIONS[convolution_type]
+        conv_kwargs = CONVOLUTION_KWARGS[convolution_type]
+
+        self.convolutions = nn.ModuleList([conv_func(in_channels, out_channels, **conv_kwargs) for  _ in range(n_layers)])
+
+    
+    def forward(self, x: Union[Tensor, PairTensor], edge_index: Adj, edge_attr: OptTensor = None):
+        for i in range(self.n_layers):
+            x = self.convolutions[i](x, edge_index, edge_attr)
+        return x
+
+    
+
 
 class GConvLSTM(nn.Module):
     r"""
@@ -65,14 +83,15 @@ class GConvLSTM(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
+        n_conv_layers: int = 1, 
         convolution_type='GCNConv'
     ):
         super(GConvLSTM, self).__init__()
 
         assert convolution_type in CONVOLUTIONS
 
-        self.conv_func = CONVOLUTIONS[convolution_type]
-        self.conv_kwargs = CONVOLUTION_KWARGS[convolution_type]
+        self.convolution_type = convolution_type
+        self.n_conv_layers = n_conv_layers
 
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -82,16 +101,18 @@ class GConvLSTM(nn.Module):
 
     def _create_input_gate_parameters_and_layers(self):
 
-        self.conv_x_i = self.conv_func(
+        self.conv_x_i = GraphConv(
+            convolution_type=self.convolution_type,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
-            **self.conv_kwargs
+            n_layers = self.n_conv_layers
         )
 
-        self.conv_h_i = self.conv_func(
+        self.conv_h_i = GraphConv(
+            convolution_type=self.convolution_type,
             in_channels=self.out_channels,
             out_channels=self.out_channels,
-            **self.conv_kwargs
+            n_layers = self.n_conv_layers
         )
 
         self.w_c_i = Parameter(torch.Tensor(1, self.out_channels))
@@ -99,16 +120,18 @@ class GConvLSTM(nn.Module):
 
     def _create_forget_gate_parameters_and_layers(self):
 
-        self.conv_x_f = self.conv_func(
+        self.conv_x_f = GraphConv(
+            convolution_type=self.convolution_type,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
-            **self.conv_kwargs
+            n_layers = self.n_conv_layers
         )
 
-        self.conv_h_f = self.conv_func(
+        self.conv_h_f = GraphConv(
+            convolution_type=self.convolution_type,
             in_channels=self.out_channels,
             out_channels=self.out_channels,
-            **self.conv_kwargs
+            n_layers = self.n_conv_layers
         )
 
         self.w_c_f = Parameter(torch.Tensor(1, self.out_channels))
@@ -116,32 +139,36 @@ class GConvLSTM(nn.Module):
 
     def _create_cell_state_parameters_and_layers(self):
 
-        self.conv_x_c = self.conv_func(
+        self.conv_x_c = GraphConv(
+            convolution_type=self.convolution_type,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
-            **self.conv_kwargs
+            n_layers = self.n_conv_layers
         )
 
-        self.conv_h_c = self.conv_func(
+        self.conv_h_c = GraphConv(
+            convolution_type=self.convolution_type,
             in_channels=self.out_channels,
             out_channels=self.out_channels,
-            **self.conv_kwargs
+            n_layers = self.n_conv_layers
         )
 
         self.b_c = Parameter(torch.Tensor(1, self.out_channels))
 
     def _create_output_gate_parameters_and_layers(self):
 
-        self.conv_x_o = self.conv_func(
+        self.conv_x_o = GraphConv(
+            convolution_type=self.convolution_type,
             in_channels=self.in_channels,
             out_channels=self.out_channels,
-            **self.conv_kwargs
+            n_layers = self.n_conv_layers
         )
 
-        self.conv_h_o = self.conv_func(
+        self.conv_h_o = GraphConv(
+            convolution_type=self.convolution_type,
             in_channels=self.out_channels,
             out_channels=self.out_channels,
-            **self.conv_kwargs
+            n_layers = self.n_conv_layers
         )
 
         self.w_c_o = Parameter(torch.Tensor(1, self.out_channels))
