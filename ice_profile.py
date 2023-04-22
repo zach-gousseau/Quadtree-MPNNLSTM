@@ -54,8 +54,8 @@ if __name__ == '__main__':
     binary_thresh = 0.15
 
     # Number of frames to read as input
-    input_timesteps = 5
-    output_timesteps= 30
+    input_timesteps = 30
+    output_timesteps= 90
 
     start = time.time()
 
@@ -71,8 +71,8 @@ if __name__ == '__main__':
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, y_binary_thresh=binary_thresh if binary else None)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, y_binary_thresh=binary_thresh if binary else None)
 
-    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(25)))
-    loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(10)))
+    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
+    loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(1)))
 
     # thresh = 0.15
     thresh = -np.inf
@@ -84,7 +84,7 @@ if __name__ == '__main__':
     model_kwargs = dict(
         hidden_size=8,
         dropout=0.1,
-        n_layers=4,
+        n_layers=1,
         transform_func=dist_from_05,
         dummy=False,
         convolution_type='TransformerConv'
@@ -96,6 +96,7 @@ if __name__ == '__main__':
         thresh=thresh,
         experiment_name=experiment_name,
         input_features=input_features,
+        input_timesteps=input_timesteps,
         output_timesteps=output_timesteps,
         transform_func=dist_from_05,
         binary=binary,
@@ -112,7 +113,7 @@ if __name__ == '__main__':
     import cProfile, pstats, io
     pr = cProfile.Profile()
     pr.enable()
-    model.train(loader_profile, loader_test, climatology, lr=lr, n_epochs=10, mask=mask)  # Train for 20 epochs
+    model.train(loader_profile, loader_test, climatology, lr=lr, n_epochs=1, mask=mask)  # Train for 20 epochs
     pr.disable()
     stats = pstats.Stats(pr).sort_stats('time')
     stats.print_stats(10)

@@ -212,8 +212,9 @@ class Seq2Seq(torch.nn.Module):
         self.graph = None
 
         self.device = device
-        
-    def forward(self, x, y=None, skip=None, teacher_forcing_ratio=0.5, mask=None, remesh_every=1):
+
+    def process_inputs(self, x, mask=None):
+
         num_samples, w, h, c = x.shape
         image_shape = (w, h)
 
@@ -234,10 +235,6 @@ class Seq2Seq(torch.nn.Module):
         self.graph.n_pixels_per_node = graph_structure['n_pixels_per_node']
         self.graph.image_shape = image_shape
         self.graph.pyg.to(self.device)
-        
-        # Lists to store decoder outputs
-        outputs = []
-        output_mappings = []
         
         # Encoder ------------------------------------------------------------------------------------------------------------
         self.graph.hidden, self.graph.cell = None, None
@@ -262,17 +259,22 @@ class Seq2Seq(torch.nn.Module):
                 else:
                     self.graph.hidden = hidden
                     self.graph.cell = cell
-        
-        # Decoder ------------------------------------------------------------------------------------------------------------
-        
+
         # Persistance
-        persistence = x[[-1]][:, :, :, [0]]
+        self.graph.persistence = x[[-1]][:, :, :, [0]]
         
         # First input to the decoder is the last input to the encoder 
         # self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -3, -2, -1]].unsqueeze(0)
         self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -2, -1]]  # node_size
 
-        for t in range(self.output_timesteps):
+
+    def unroll_output(self, unroll_steps, y, skip=None, teacher_forcing_ratio=0.5, mask=None, remesh_every=1):
+
+        # Lists to store decoder outputs
+        outputs = []
+        output_mappings = []
+
+        for t in range(unroll_steps):
             # print('Decoder step', t)
             # print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
             # print("torch.cuda.memory_reserved: %fGB"%(torch.cuda.memory_reserved(0)/1024/1024/1024))
@@ -283,9 +285,9 @@ class Seq2Seq(torch.nn.Module):
             # print('memory use:', memoryUse, end='\r')
             
             if skip is not None:
-                skip_t = torch.cat([skip[t].unsqueeze(0), persistence], dim=-1)
+                skip_t = torch.cat([skip[t].unsqueeze(0), self.graph.persistence], dim=-1)
             else:
-                skip_t = persistence
+                skip_t = self.graph.persistence
 
             skip_t = flatten(skip_t, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
 
@@ -316,6 +318,25 @@ class Seq2Seq(torch.nn.Module):
                 self.do_remesh(output, hidden, cell, mask, teacher_force=teacher_force, teacher_input=teacher_input)
             else:
                 self.update_without_remesh(output, hidden, cell, teacher_force=teacher_force, teacher_input=teacher_input)
+
+        return outputs, output_mappings
+        
+
+        
+    def forward(self, x, y=None, skip=None, teacher_forcing_ratio=0.5, mask=None, remesh_every=1):
+
+        # Encoder
+        self.process_inputs(x, mask=mask)
+
+        # Decoder
+        outputs, output_mappings = self.unroll_output(
+            self.output_timesteps,
+            y,
+            skip=skip,
+            teacher_forcing_ratio=teacher_forcing_ratio,
+            mask=mask,
+            remesh_every=remesh_every
+            )
             
         return outputs, output_mappings
 

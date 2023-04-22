@@ -111,6 +111,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                  experiment_name='experiment', 
                  decompose=True, 
                  input_features=1,
+                 input_timesteps=3,
                  output_timesteps=3,
                  device=None,
                  transform_func=None,
@@ -128,11 +129,13 @@ class NextFramePredictorS2S(NextFramePredictor):
                  transform_func=transform_func,
                  condition=condition)
         
+        self.input_timesteps = input_timesteps
         self.output_timesteps = output_timesteps
         self.binary = binary
         
         self.model = Seq2Seq(
             input_features=input_features + 2,  # 3 (node_size)
+            input_timesteps=input_timesteps,
             output_timesteps=output_timesteps,
             thresh=thresh,
             device=device,
@@ -150,7 +153,8 @@ class NextFramePredictorS2S(NextFramePredictor):
         n_epochs=200,
         lr=0.01,
         lr_decay=0.95,
-        mask=None
+        mask=None,
+        truncated_backprop=45,
         ):
 
         image_shape = loader_train.dataset.image_shape
@@ -186,49 +190,81 @@ class NextFramePredictorS2S(NextFramePredictor):
                     skip = self.get_climatology_array(climatology, launch_date)
                 else:
                     skip = None
-
-                optimizer.zero_grad()
                 
-                # with amp.autocast():
-                y_hat, y_hat_mappings = self.model(x, y, skip, teacher_forcing_ratio=0, mask=mask)
-                y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
-                y_hat = torch.stack(y_hat, dim=0)
+                if truncated_backprop == 0:
+                    optimizer.zero_grad()
                 
-                loss = loss_func(y_hat[:, ~mask], y[:, ~mask])  
+                    # with amp.autocast():
+                    y_hat, y_hat_mappings = self.model(x, y, skip, teacher_forcing_ratio=0, mask=mask)
+                    
+                    y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
+                    y_hat = torch.stack(y_hat, dim=0)
+                    
+                    loss = loss_func(y_hat[:, ~mask], y[:, ~mask])  
 
 
-                # scaler.scale(loss).backward()
-                # scaler.step(optimizer)
-                # scaler.update()
+                    # scaler.scale(loss).backward()
+                    # scaler.step(optimizer)
+                    # scaler.update()
 
-                # with profiler.profile(enabled=True, use_cuda=True) as prof:
-                loss.backward()
+                    # with profiler.profile(enabled=True, use_cuda=True) as prof:
+                    loss.backward()
 
-                # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
-                # prof.export_chrome_trace("profiling_results.json")
-                # quit()
+                    # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+                    # prof.export_chrome_trace("profiling_results.json")
+                    # quit()
 
-                optimizer.step()
+                    optimizer.step()
 
-                # decoder_params = [p for p in self.model.decoder.parameters()]
-                # decoder_grads = [p.grad.mean().cpu() for p in decoder_params if p.grad is not None]
-                # decoder_param_means = [p.mean().abs().detach().cpu() for p in decoder_params]
-                # writer.add_scalar("Grad/decoder/mean", np.mean(np.abs(decoder_grads)), epoch)
-                # writer.add_scalar("Param/decoder/mean", np.mean(decoder_param_means), epoch)
+                    # decoder_params = [p for p in self.model.decoder.parameters()]
+                    # decoder_grads = [p.grad.mean().cpu() for p in decoder_params if p.grad is not None]
+                    # decoder_param_means = [p.mean().abs().detach().cpu() for p in decoder_params]
+                    # writer.add_scalar("Grad/decoder/mean", np.mean(np.abs(decoder_grads)), epoch)
+                    # writer.add_scalar("Param/decoder/mean", np.mean(decoder_param_means), epoch)
 
-                # encoder_params = [p for p in self.model.encoder.parameters()]
-                # encoder_grads = [p.grad.mean().cpu() for p in encoder_params if p.grad is not None]
-                # encoder_param_means = [p.mean().abs().detach().cpu() for p in encoder_params]
-                # writer.add_scalar("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), epoch)
-                # writer.add_scalar("Param/encoder/mean", np.mean(encoder_param_means), epoch)
+                    # encoder_params = [p for p in self.model.encoder.parameters()]
+                    # encoder_grads = [p.grad.mean().cpu() for p in encoder_params if p.grad is not None]
+                    # encoder_param_means = [p.mean().abs().detach().cpu() for p in encoder_params]
+                    # writer.add_scalar("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), epoch)
+                    # writer.add_scalar("Param/encoder/mean", np.mean(encoder_param_means), epoch)
+
+                    del y_hat
+                    del y_hat_mappings
+
+                else:
+                    output_timestep = 0
+                    while output_timestep < self.output_timesteps:
+
+                        output_timestep = min(output_timestep + truncated_backprop, self.output_timesteps)
+
+                        optimizer.zero_grad()
+
+                        # Encoder
+                        self.model.process_inputs(x, mask=mask)
+
+                        # Decoder
+                        y_hat, y_hat_mappings = self.model.unroll_output(
+                            truncated_backprop,
+                            y,
+                            skip=skip,
+                            teacher_forcing_ratio=0,
+                            mask=mask,
+                            remesh_every=1
+                            )
+                    
+                        y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(truncated_backprop)]
+                        y_hat = torch.stack(y_hat, dim=0)
+                        
+                        loss = loss_func(y_hat[:, ~mask], y[output_timestep-truncated_backprop:output_timestep, ~mask])  
+                        loss.backward()
+                        optimizer.step()
+
+                        del y_hat, y_hat_mappings
 
                 writer.add_scalar("Loss/train", loss.item(), epoch)
 
                 step += 1
                 running_loss += loss.item()
-
-                del y_hat
-                del y_hat_mappings
                 torch.cuda.empty_cache()
 
             running_loss_test = 0

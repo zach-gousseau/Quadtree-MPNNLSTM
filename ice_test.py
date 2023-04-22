@@ -156,6 +156,7 @@ if __name__ == '__main__':
         thresh=thresh,
         experiment_name=experiment_name,
         input_features=input_features,
+        input_timesteps=input_timesteps,
         output_timesteps=output_timesteps,
         transform_func=dist_from_05,
         device=device,
