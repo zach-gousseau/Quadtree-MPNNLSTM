@@ -5,6 +5,7 @@ import random
 import datetime
 import os
 import time
+import glob
 import pandas as pd
 import xarray as xr
 from dateutil.relativedelta import relativedelta
@@ -97,7 +98,12 @@ if __name__ == '__main__':
     month = int(args['month'])
     convolution_type = str(args['conv'])
 
-    ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
+    # ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
+    ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
+    # ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))  # ln -s /home/zgoussea/scratch/hb_era5_glorys_nc data/hb_era5_glorys_nc
+    # ds = xr.open_zarr('data/hb_era5_glorys.zarr')  # ln -s /home/zgoussea/scratch/hb_era5_glorys.zarr/  data/hb_era5_glorys.zarr
+
+    training_years = range(2011, 2016)
 
     coarsen = 0
 
@@ -111,14 +117,15 @@ if __name__ == '__main__':
     torch.manual_seed(21)
 
     # Number of frames to read as input
-    input_timesteps = 5
-    output_timesteps= 30
+    input_timesteps = 10
+    output_timesteps= 90
+
+    print(input_timesteps, output_timesteps)
 
     start = time.time()
 
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
-    training_years = range(2015, 2016)
 
     climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
     climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
@@ -133,6 +140,8 @@ if __name__ == '__main__':
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
     loader_val = DataLoader(data_val, batch_size=1, shuffle=False)#, collate_fn=lambda x: x[0])
 
+    # fdsa
+
     # thresh = 0.15
     thresh = -np.inf
     print(f'threshold is {thresh}')
@@ -144,7 +153,7 @@ if __name__ == '__main__':
     model_kwargs = dict(
         hidden_size=64,
         dropout=0.1,
-        n_layers=2,
+        n_layers=1,
         transform_func=dist_from_05,
         dummy=False,
         convolution_type=convolution_type,
@@ -192,7 +201,7 @@ if __name__ == '__main__':
         ),
     )
 
-    results_dir = f'ice_results_{convolution_type}_test'
+    results_dir = f'ice_results_{convolution_type}_apr20'
 
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)

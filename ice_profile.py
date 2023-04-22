@@ -82,12 +82,12 @@ if __name__ == '__main__':
 
     # Add 3 to the number of input features since weadd positional encoding (x, y) and node size (s)
     model_kwargs = dict(
-        hidden_size=8,
+        hidden_size=32,
         dropout=0.1,
         n_layers=1,
         transform_func=dist_from_05,
         dummy=False,
-        convolution_type='TransformerConv'
+        convolution_type=convolution_type,
     )
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
@@ -99,7 +99,6 @@ if __name__ == '__main__':
         input_timesteps=input_timesteps,
         output_timesteps=output_timesteps,
         transform_func=dist_from_05,
-        binary=binary,
         device=device,
         model_kwargs=model_kwargs)
 
