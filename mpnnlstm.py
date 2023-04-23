@@ -235,7 +235,9 @@ class NextFramePredictorS2S(NextFramePredictor):
                     output_timestep = 0
                     while output_timestep < self.output_timesteps:
 
-                        output_timestep = min(output_timestep + truncated_backprop, self.output_timesteps)
+                        output_timestep = min(output_timestep + truncated_backprop, self.output_timesteps+1)
+
+                        unroll_steps = range(output_timestep-truncated_backprop, output_timestep)
 
                         optimizer.zero_grad()
 
@@ -244,7 +246,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                         # Decoder
                         y_hat, y_hat_mappings = self.model.unroll_output(
-                            truncated_backprop,
+                            unroll_steps,
                             y,
                             skip=skip,
                             teacher_forcing_ratio=0,
@@ -256,10 +258,11 @@ class NextFramePredictorS2S(NextFramePredictor):
                         y_hat = torch.stack(y_hat, dim=0)
                         
                         loss = loss_func(y_hat[:, ~mask], y[output_timestep-truncated_backprop:output_timestep, ~mask])  
-                        loss.backward()
-                        optimizer.step()
+                        loss.backward(retain_graph=True)
 
                         del y_hat, y_hat_mappings
+
+                    optimizer.step()
 
                 writer.add_scalar("Loss/train", loss.item(), epoch)
 

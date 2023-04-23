@@ -274,7 +274,7 @@ class Seq2Seq(torch.nn.Module):
         outputs = []
         output_mappings = []
 
-        for t in range(unroll_steps):
+        for t in unroll_steps:
             # print('Decoder step', t)
             # print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
             # print("torch.cuda.memory_reserved: %fGB"%(torch.cuda.memory_reserved(0)/1024/1024/1024))
@@ -330,7 +330,7 @@ class Seq2Seq(torch.nn.Module):
 
         # Decoder
         outputs, output_mappings = self.unroll_output(
-            self.output_timesteps,
+            range(self.output_timesteps),
             y,
             skip=skip,
             teacher_forcing_ratio=teacher_forcing_ratio,

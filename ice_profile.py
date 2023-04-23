@@ -29,6 +29,7 @@ if __name__ == '__main__':
     print('device:', device)
 
     month = 6
+    convolution_type = 'TransformerConv'
 
     ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
     # ds = xr.open_zarr('/home/zgoussea/scratch/era5_arctic_daily.zarr')
@@ -54,8 +55,8 @@ if __name__ == '__main__':
     binary_thresh = 0.15
 
     # Number of frames to read as input
-    input_timesteps = 30
-    output_timesteps= 90
+    input_timesteps = 5
+    output_timesteps= 30
 
     start = time.time()
 
@@ -112,7 +113,7 @@ if __name__ == '__main__':
     import cProfile, pstats, io
     pr = cProfile.Profile()
     pr.enable()
-    model.train(loader_profile, loader_test, climatology, lr=lr, n_epochs=1, mask=mask)  # Train for 20 epochs
+    model.train(loader_profile, loader_test, climatology, lr=lr, n_epochs=10, mask=mask, truncated_backprop=10)  # Train for 20 epochs
     pr.disable()
     stats = pstats.Stats(pr).sort_stats('time')
     stats.print_stats(10)
