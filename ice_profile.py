@@ -31,8 +31,8 @@ if __name__ == '__main__':
     month = 6
     convolution_type = 'TransformerConv'
 
-    # ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
-    ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
+    ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
+    # ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
     # ds = xr.open_zarr('/home/zgoussea/scratch/era5_arctic_daily.zarr')
     # ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5/*/*.nc'))
 

@@ -98,18 +98,18 @@ if __name__ == '__main__':
     month = int(args['month'])
     convolution_type = str(args['conv'])
 
-    # ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
-    ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
+    # Half resolution dataset
+    ds0 = xr.open_dataset('data/era5_hb_daily_coarsened_2.zarr') # ln -s /home/zgoussea/scratch/era5_hb_daily_coarsen_2.zarr data/era5_hb_daily_coarsen_2.zarr
+
+    # Full resolution dataset
+    ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
+    # ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
     # ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))  # ln -s /home/zgoussea/scratch/hb_era5_glorys_nc data/hb_era5_glorys_nc
     # ds = xr.open_zarr('data/hb_era5_glorys.zarr')  # ln -s /home/zgoussea/scratch/hb_era5_glorys.zarr/  data/hb_era5_glorys.zarr
 
     training_years = range(2011, 2016)
 
-    coarsen = 0
-
-    if coarsen != 0:
-        ds = ds.coarsen(latitude=coarsen, longitude=coarsen, boundary='trim').mean()
-
+    mask_0 = np.isnan(ds0.siconc.isel(time=0)).values
     mask = np.isnan(ds.siconc.isel(time=0)).values
 
     np.random.seed(21)
@@ -127,29 +127,42 @@ if __name__ == '__main__':
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
 
-    climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
-    climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
-
     input_features = len(x_vars)
+
+    # Half resolution datasets
+    data_train_0 = IceDataset(ds0, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
+    data_test_0 = IceDataset(ds0, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
+    data_val_0 = IceDataset(ds0, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
+
+    loader_train_0 = DataLoader(data_train_0, batch_size=1, shuffle=True)
+    loader_test_0 = DataLoader(data_test_0, batch_size=1, shuffle=True)
+    loader_val_0 = DataLoader(data_val_0, batch_size=1, shuffle=False)
+
+    climatology_0 = ds0[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
+    climatology_0 = torch.tensor(np.nan_to_num(climatology_0)).to(device)
     
+    # Full resolution datasets
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
     data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
 
-    loader_train = DataLoader(data_train, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
-    loader_test = DataLoader(data_test, batch_size=1, shuffle=True)#, collate_fn=lambda x: x[0])
-    loader_val = DataLoader(data_val, batch_size=1, shuffle=False)#, collate_fn=lambda x: x[0])
+    loader_train = DataLoader(data_train, batch_size=1, shuffle=True)
+    loader_test = DataLoader(data_test, batch_size=1, shuffle=True)
+    loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
 
-    # fdsa
+    climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
+    climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
 
+    # Set threshold 
     # thresh = 0.15
     thresh = -np.inf
-    print(f'threshold is {thresh}')
+    print(f'Threshold is {thresh}')
 
+    # Note: irrelevant if thresh = -np.inf
     def dist_from_05(arr):
         return abs(abs(arr - 0.5) - 0.5)
 
-    # Add 3 to the number of input features since weadd positional encoding (x, y) and node size (s)
+    # Arguments passed to Seq2Seq constructor
     model_kwargs = dict(
         hidden_size=32,
         dropout=0.1,
@@ -176,16 +189,42 @@ if __name__ == '__main__':
 
     lr = 0.01
 
+    # Train model
     model.model.train()
-    model.train(loader_train, loader_test, climatology, lr=lr, n_epochs=15, mask=mask)  # Train for 20 epochs
 
-    # model.model.eval()
-    # model.score(x_val, y_val[:, :1])  # Check the MSE on the validation set
-    # Unfinished
+    model.train(
+        loader_train,
+        loader_test,
+        climatology,
+        lr=lr,
+        n_epochs=5,
+        mask=mask) 
+
     
+
+    # Train with half resolution first
+    model.train(
+        loader_train_0,
+        loader_test_0,
+        climatology_0,
+        lr=lr,
+        n_epochs=5,
+        mask=mask_0) 
+
+    # Train with full resolution 
+    model.train(
+        loader_train,
+        loader_test,
+        climatology,
+        lr=lr,
+        n_epochs=5,
+        mask=mask) 
+    
+    # Generate predictions
     model.model.eval()
     val_preds = model.predict(loader_val, climatology, mask=mask)
     
+    # Save results
     launch_dates = loader_val.dataset.launch_dates
     
     ds = xr.Dataset(
@@ -211,4 +250,4 @@ if __name__ == '__main__':
     model.loss.to_csv(f'{results_dir}/loss_{experiment_name}.csv')
     model.save(results_dir)
 
-    print(f'Finished model {month} in {(time.time() - start / 60)} minutes')
+    print(f'Finished model {month} in {((time.time() - start) / 60)} minutes')
