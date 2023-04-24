@@ -15,6 +15,7 @@ from torch_geometric.utils import add_self_loops, degree
 from torch_geometric.nn import GCNConv, ChebConv, GraphConv, TransformerConv
 from torch.utils.tensorboard import SummaryWriter
 from torch.cuda import amp
+from torchviz import make_dot
 
 import torch.autograd.profiler as profiler
 
@@ -210,6 +211,8 @@ class NextFramePredictorS2S(NextFramePredictor):
                     # with profiler.profile(enabled=True, use_cuda=True) as prof:
                     loss.backward()
 
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1)
+
                     # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
                     # prof.export_chrome_trace("profiling_results.json")
                     # quit()
@@ -259,6 +262,8 @@ class NextFramePredictorS2S(NextFramePredictor):
                         
                         loss = loss_func(y_hat[:, ~mask], y[output_timestep-truncated_backprop:output_timestep, ~mask])  
                         loss.backward(retain_graph=True)
+
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1)
 
                         del y_hat, y_hat_mappings
 

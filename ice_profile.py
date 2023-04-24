@@ -31,7 +31,8 @@ if __name__ == '__main__':
     month = 6
     convolution_type = 'TransformerConv'
 
-    ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
+    # ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
+    ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
     # ds = xr.open_zarr('/home/zgoussea/scratch/era5_arctic_daily.zarr')
     # ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5/*/*.nc'))
 
@@ -55,8 +56,8 @@ if __name__ == '__main__':
     binary_thresh = 0.15
 
     # Number of frames to read as input
-    input_timesteps = 5
-    output_timesteps= 30
+    input_timesteps = 10
+    output_timesteps= 90
 
     start = time.time()
 
@@ -72,8 +73,8 @@ if __name__ == '__main__':
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, y_binary_thresh=binary_thresh if binary else None)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, y_binary_thresh=binary_thresh if binary else None)
 
-    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
-    loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(1)))
+    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(25)))
+    loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
 
     # thresh = 0.15
     thresh = -np.inf
@@ -89,6 +90,7 @@ if __name__ == '__main__':
         transform_func=dist_from_05,
         dummy=False,
         convolution_type=convolution_type,
+        debug=False,
     )
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
@@ -113,7 +115,17 @@ if __name__ == '__main__':
     import cProfile, pstats, io
     pr = cProfile.Profile()
     pr.enable()
-    model.train(loader_profile, loader_test, climatology, lr=lr, n_epochs=10, mask=mask, truncated_backprop=10)  # Train for 20 epochs
+
+    model.train(
+        loader_profile,
+        loader_test,
+        climatology,
+        lr=lr, 
+        n_epochs=10, 
+        mask=mask, 
+        truncated_backprop=0
+        )
+
     pr.disable()
     stats = pstats.Stats(pr).sort_stats('time')
     stats.print_stats(10)

@@ -172,7 +172,8 @@ class Seq2Seq(torch.nn.Module):
                  convolution_type='ChebConv',
                  binary=False,
                  dummy=False,
-                 device=None):
+                 device=None,
+                 debug=False):
         super().__init__()
         
         self.encoder = Encoder(
@@ -198,6 +199,7 @@ class Seq2Seq(torch.nn.Module):
         self.n_layers = n_layers
         self.condition = condition
         self.remesh_input = remesh_input
+        self.debug = debug
 
         self.convolution_type = convolution_type
 
@@ -275,14 +277,21 @@ class Seq2Seq(torch.nn.Module):
         output_mappings = []
 
         for t in unroll_steps:
-            # print('Decoder step', t)
-            # print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
-            # print("torch.cuda.memory_reserved: %fGB"%(torch.cuda.memory_reserved(0)/1024/1024/1024))
-            # print("torch.cuda.max_memory_reserved: %fGB"%(torch.cuda.max_memory_reserved(0)/1024/1024/1024))
-            # pid = os.getpid()
-            # python_process = psutil.Process(pid)
-            # memoryUse = python_process.memory_info()[0]/2.**30  # memory use in GB...I think
-            # print('memory use:', memoryUse, end='\r')
+
+            if self.debug:
+                if self.device.type == 'cuda':
+                    print(
+                        f'Decoder step {t} \n' + \
+                        f"torch.cuda.memory_allocated: {torch.cuda.memory_allocated(0)/1024/1024/1024}GB\n" + \
+                        f"torch.cuda.memory_reserved: {torch.cuda.memory_reserved(0)/1024/1024/1024}GB\n" + \
+                        f"torch.cuda.max_memory_reserved: {torch.cuda.max_memory_reserved(0)/1024/1024/1024}GB",
+                        end='\033[A\033[A\033[A'
+                    )
+                else:
+                    pid = os.getpid()
+                    python_process = psutil.Process(pid)
+                    memoryUse = python_process.memory_info()[0]/2.**30  # memory use in GB...I think
+                    print('CPU memory usage:', memoryUse, 'GB', end='\r')
             
             if skip is not None:
                 skip_t = torch.cat([skip[t].unsqueeze(0), self.graph.persistence], dim=-1)

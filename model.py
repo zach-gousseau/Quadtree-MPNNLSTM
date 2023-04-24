@@ -45,7 +45,7 @@ CONVOLUTIONS = {
 
 CONVOLUTION_KWARGS = {
     'GCNConv': dict(add_self_loops=False),
-    'TransformerConv': dict(heads=1, edge_dim=2, dropout=0.1, concat=False),
+    'TransformerConv': dict(heads=2, edge_dim=2, dropout=0.1, concat=False),
     'MHTransformerConv': dict(heads=3, edge_dim=2, dropout=0.1),
     'ChebConv': dict(K=3, normalization='sym', bias=True),
     'GATConv': dict(heads=1, edge_dim=2),
@@ -89,7 +89,7 @@ class GConvLSTM(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        n_conv_layers: int = 1, 
+        n_conv_layers: int = 2, 
         convolution_type='GCNConv'
     ):
         super(GConvLSTM, self).__init__()
