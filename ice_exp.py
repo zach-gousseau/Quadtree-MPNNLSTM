@@ -121,6 +121,7 @@ if __name__ == '__main__':
         n_layers=1,
         transform_func=dist_from_05,
         dummy=False,
+        n_conv_layers=2,
         convolution_type=convolution_type,
     )
 
