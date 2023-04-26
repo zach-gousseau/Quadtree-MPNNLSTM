@@ -19,7 +19,7 @@ from model import GConvLSTM, DummyLSTM, CONVOLUTION_KWARGS, CONVOLUTIONS
 
 
 class Encoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1, convolution_type='GCNConv', dummy=False):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, convolution_type='GCNConv', n_conv_layers=3, dummy=False):
         super().__init__()
         
         self.hidden_size = hidden_size
@@ -28,8 +28,8 @@ class Encoder(torch.nn.Module):
 
         if not self.dummy:
             self.rnns = nn.ModuleList(
-                [GConvLSTM(input_features, hidden_size, convolution_type=convolution_type)] + \
-                [GConvLSTM(hidden_size, hidden_size, convolution_type=convolution_type) for _ in range(n_layers-1)]
+                [GConvLSTM(input_features, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers)] + \
+                [GConvLSTM(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers) for _ in range(n_layers-1)]
             )
         
         self.dropout = nn.Dropout(dropout)
@@ -65,7 +65,7 @@ class Encoder(torch.nn.Module):
         return hidden, cell
 
 class Decoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=2, convolution_type='GCNConv', binary=False, dummy=False):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=2, convolution_type='GCNConv', n_conv_layers=3, binary=False, dummy=False):
         super().__init__()
         
         self.input_features = input_features
@@ -74,10 +74,12 @@ class Decoder(torch.nn.Module):
         self.binary = binary
         self.dummy = dummy
 
+        n_conv_layers = 1
+
         if not self.dummy:
             self.rnns = nn.ModuleList(
-                [GConvLSTM(input_features, hidden_size, convolution_type=convolution_type)] + \
-                [GConvLSTM(hidden_size, hidden_size, convolution_type=convolution_type) for _ in range(n_layers-1)]
+                [GConvLSTM(input_features, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers)] + \
+                [GConvLSTM(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers) for _ in range(n_layers-1)]
                 )
 
         conv_func = CONVOLUTIONS[convolution_type]
@@ -166,6 +168,7 @@ class Seq2Seq(torch.nn.Module):
                  input_features=3, #4 node_size
                  output_timesteps=5,
                  n_layers=4,
+                 n_conv_layers=2,
                  transform_func=None,
                  condition='max_larger_than',
                  remesh_input=False,
@@ -182,6 +185,7 @@ class Seq2Seq(torch.nn.Module):
             dropout,
             n_layers=n_layers,
             convolution_type=convolution_type,
+            n_conv_layers=n_conv_layers,
             dummy=dummy,
             )
         self.decoder = Decoder(
@@ -190,6 +194,7 @@ class Seq2Seq(torch.nn.Module):
             dropout,
             n_layers=n_layers,
             convolution_type=convolution_type,
+            n_conv_layers=n_conv_layers,
             binary=binary,
             dummy=dummy,
             )

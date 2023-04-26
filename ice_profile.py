@@ -31,8 +31,8 @@ if __name__ == '__main__':
     month = 6
     convolution_type = 'TransformerConv'
 
-    # ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
-    ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
+    ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
+    # ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
     # ds = xr.open_zarr('/home/zgoussea/scratch/era5_arctic_daily.zarr')
     # ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5/*/*.nc'))
 
@@ -87,6 +87,7 @@ if __name__ == '__main__':
         hidden_size=32,
         dropout=0.1,
         n_layers=1,
+        n_conv_layers=3,
         transform_func=dist_from_05,
         dummy=False,
         convolution_type=convolution_type,
@@ -106,7 +107,8 @@ if __name__ == '__main__':
         model_kwargs=model_kwargs)
 
     print('Num. parameters:', model.get_n_params())
-    print(model.model)
+
+    # print(model.model)
 
     lr = 0.01
 

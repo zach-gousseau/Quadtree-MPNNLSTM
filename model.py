@@ -41,15 +41,17 @@ CONVOLUTIONS = {
     'ChebConv': ChebConv,
     'GATConv': GATConv,
     'GATv2Conv': GATv2Conv,
+    'Dummy': None
 }
 
 CONVOLUTION_KWARGS = {
     'GCNConv': dict(add_self_loops=False),
-    'TransformerConv': dict(heads=2, edge_dim=2, dropout=0.1, concat=False),
+    'TransformerConv': dict(heads=1, edge_dim=2, dropout=0.1, concat=False),
     'MHTransformerConv': dict(heads=3, edge_dim=2, dropout=0.1),
     'ChebConv': dict(K=3, normalization='sym', bias=True),
     'GATConv': dict(heads=1, edge_dim=2),
     'GATv2Conv': dict(heads=1, edge_dim=2),
+    'Dummy': dict(),
 }
 
 class GraphConv(nn.Module):
@@ -63,10 +65,13 @@ class GraphConv(nn.Module):
         conv_func = CONVOLUTIONS[convolution_type]
         conv_kwargs = CONVOLUTION_KWARGS[convolution_type]
 
-        self.convolutions = nn.ModuleList(
-            [conv_func(in_channels, out_channels, **conv_kwargs)] + \
-            [conv_func(out_channels, out_channels, **conv_kwargs) for  _ in range(n_layers - 1)]
-            )
+        if convolution_type is not 'Dummy':
+            self.convolutions = nn.ModuleList(
+                [conv_func(in_channels, out_channels, **conv_kwargs)] + \
+                [conv_func(out_channels, out_channels, **conv_kwargs) for  _ in range(n_layers - 1)]
+                )
+        else:
+            self.n_layers = 0
 
     
     def forward(self, x: Union[Tensor, PairTensor], edge_index: Adj, edge_attr: OptTensor = None):
@@ -89,7 +94,7 @@ class GConvLSTM(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        n_conv_layers: int = 2, 
+        n_conv_layers: int = 1, 
         convolution_type='GCNConv'
     ):
         super(GConvLSTM, self).__init__()
