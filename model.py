@@ -89,7 +89,7 @@ class GConvLSTM(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        n_conv_layers: int = 2, 
+        n_conv_layers: int = 1, 
         convolution_type='GCNConv'
     ):
         super(GConvLSTM, self).__init__()

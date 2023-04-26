@@ -328,7 +328,7 @@ def dist(node0, node1, xx, yy):
     return torch.sqrt((yy[node0] - yy[node1])**2 + (xx[node0] - xx[node1])**2)
 
 def dist_angle(node0, node1, xx, yy):
-    return torch.atan2(xx[node0] - xx[node1], yy[node0] - yy[node1])
+    return torch.atan2(xx[node0] - xx[node1], yy[node0] - yy[node1]) % (2*np.pi) / (2*np.pi)
 
 def dist_xy(node0, node1, xx, yy):
     x = xx[node0] < xx[node1]
@@ -434,7 +434,7 @@ def unflatten_pixelwise(data, mask, image_shape):
     return img
 
 
-def get_adj_pixelwise(labels, xx=None, yy=None, use_edge_attrs=True):
+def get_adj_pixelwise(labels, xx=None, yy=None, use_edge_attrs=True, resolution=0.25):
     rows, cols = labels.shape
 
     # Shift the array by one row and one column in each direction
@@ -468,10 +468,10 @@ def get_adj_pixelwise(labels, xx=None, yy=None, use_edge_attrs=True):
     return edge_index, edge_attrs
     
 
-def image_to_graph_pixelwise(img, mask=None, use_edge_attrs=True):
+def image_to_graph_pixelwise(img, mask=None, use_edge_attrs=True, resolution=0.25):
 
     img0, _ = torch.max(img[..., 0], 0)  # For multi-step inputs
-    image_shape = img.shape
+    image_shape = img.shape[1:3]
 
     labels = ma.masked_array((~mask).flatten().cumsum() - 1, mask=mask.astype(bool)).filled(-1).reshape(img0.shape)
 
@@ -481,10 +481,10 @@ def image_to_graph_pixelwise(img, mask=None, use_edge_attrs=True):
         graph_nodes = torch.arange(np.prod(img0.shape))
 
     data = flatten_pixelwise(img, mask)
-    xx, yy = data[0, ..., 1]*image_shape[1], data[0, ..., 2]*image_shape[0]
+    xx, yy = data[0, ..., -2]*image_shape[1]*resolution, data[0, ..., -1]*image_shape[0]*resolution
 
-    # node_sizes = torch.ones((data.shape[0], len(graph_nodes))).to(data.device)
-    # data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
+    node_sizes = torch.ones((data.shape[0], len(graph_nodes))).to(data.device) * (resolution ** 2)
+    data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
 
     n_pixels_per_node = torch.ones((len(graph_nodes))).to(img.device)
     mapping = None
@@ -531,7 +531,7 @@ def get_mapping(labels):
     return mapping, graph_nodes, n_pixels_per_node
 
 
-def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func=None, condition='max_larger_than', use_edge_attrs=True):
+def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func=None, condition='max_larger_than', use_edge_attrs=True, resolution=0.25):
     """
     Decomposes an image into a quadtree and then generates a graph representation of the image
     using quadtree decomposition. The graph nodes are the centroids of the quadtree cells and the
@@ -560,7 +560,7 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func
         raise ValueError(f'Found NaNs in image data {torch.sum(torch.isnan(img))} / {np.prod(img.shape)}')
 
     if thresh == -np.inf:
-        return image_to_graph_pixelwise(img, mask, use_edge_attrs=use_edge_attrs)
+        return image_to_graph_pixelwise(img, mask, use_edge_attrs=use_edge_attrs, resolution=resolution)
 
     img_for_decompose, _ = torch.max(img[..., 0], 0)  # For multi-step inputs
     n_samples, h, w, c = img.shape
@@ -595,6 +595,9 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func
     # assert len(node_sizes) == len(graph_nodes)
 
     # # Pseudo-normalize and add node sizes as feature 
+    
+    # TODO: Use resolution argument to scale the node sizes -- currently only done for pixelwise modelling
+    
     # node_sizes = torch.Tensor(node_sizes) / ((max_grid_size/2)**2)
     # node_sizes = node_sizes.repeat((n_samples, *[1]*len(node_sizes.shape)))
 

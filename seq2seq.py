@@ -163,7 +163,7 @@ class Seq2Seq(torch.nn.Module):
                  dropout,
                  thresh,
                  input_timesteps=3,
-                 input_features=3, #4 node_size
+                 input_features=4, #3 node_size
                  output_timesteps=5,
                  n_layers=4,
                  transform_func=None,
@@ -185,7 +185,7 @@ class Seq2Seq(torch.nn.Module):
             dummy=dummy,
             )
         self.decoder = Decoder(
-            1+2,  # 1 output variable + 3 (positional encoding and node_size)
+            1+3,  # 1 output variable + 3 (positional encoding and node_size)
             hidden_size,
             dropout,
             n_layers=n_layers,
@@ -266,8 +266,8 @@ class Seq2Seq(torch.nn.Module):
         self.graph.persistence = x[[-1]][:, :, :, [0]]
         
         # First input to the decoder is the last input to the encoder 
-        # self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -3, -2, -1]].unsqueeze(0)
-        self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -2, -1]]  # node_size
+        self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -3, -2, -1]]#.unsqueeze(0)
+        # self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -2, -1]]  # node_size
 
 
     def unroll_output(self, unroll_steps, y, skip=None, teacher_forcing_ratio=0.5, mask=None, remesh_every=1):
@@ -353,7 +353,7 @@ class Seq2Seq(torch.nn.Module):
         if teacher_force:
             teacher_input = add_positional_encoding(teacher_input)  # Add positional encoding
             self.graph.pyg.x = flatten(teacher_input, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
-            # self.graph.pyg.x = torch.cat([self.graph.pyg.x, self.graph.n_pixels_per_node.unsqueeze(0).unsqueeze(-1)], dim=-1)  # Add node sizes
+            self.graph.pyg.x = torch.cat([self.graph.pyg.x, self.graph.n_pixels_per_node.unsqueeze(0).unsqueeze(-1)], dim=-1)  # Add node sizes
         else:
             # Add positional encoding
             pos_encoding = self.graph.pyg.x[..., 1:]

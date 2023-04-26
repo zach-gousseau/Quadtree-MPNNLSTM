@@ -135,7 +135,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         self.binary = binary
         
         self.model = Seq2Seq(
-            input_features=input_features + 2,  # 3 (node_size)
+            input_features=input_features + 3,  # 3 (node_size)
             input_timesteps=input_timesteps,
             output_timesteps=output_timesteps,
             thresh=thresh,
