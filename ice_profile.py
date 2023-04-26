@@ -123,9 +123,9 @@ if __name__ == '__main__':
         loader_test,
         climatology,
         lr=lr, 
-        n_epochs=10, 
+        n_epochs=1, 
         mask=mask, 
-        truncated_backprop=0
+        truncated_backprop=truncated_backprop
         )
 
     pr.disable()

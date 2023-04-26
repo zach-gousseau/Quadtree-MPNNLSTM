@@ -135,7 +135,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         self.binary = binary
         
         self.model = Seq2Seq(
-            input_features=input_features + 2,  # 3 (node_size)
+            input_features=input_features + 3,  # 3 (node_size)
             input_timesteps=input_timesteps,
             output_timesteps=output_timesteps,
             thresh=thresh,
@@ -144,6 +144,25 @@ class NextFramePredictorS2S(NextFramePredictor):
             binary=binary,
             **model_kwargs
         ).to(device)
+
+        self.training_initiated = False
+
+
+    def initiate_training(self, lr, lr_decay):
+        self.loss_func = torch.nn.MSELoss() if not self.binary else torch.nn.BCELoss()
+        self.loss_func_name = 'MSE' if not self.binary else 'BCE'
+        # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        self.scheduler = StepLR(self.optimizer, step_size=3, gamma=lr_decay)
+
+        # scaler = amp.GradScaler()
+        
+        self.writer = SummaryWriter()
+
+        self.test_loss = []
+        self.train_loss = []
+
+        self.training_initiated = True
     
     # @profile
     def train(
@@ -160,23 +179,11 @@ class NextFramePredictorS2S(NextFramePredictor):
 
         image_shape = loader_train.dataset.image_shape
 
+        if not self.training_initiated:
+            self.initiate_training(lr, lr_decay)
+
         if mask is not None:
             assert mask.shape == image_shape, f'Mask and image shapes do not match. Got {mask.shape} and {image_shape}'
-            
-        # model = nn.DataParallel(self.model)
-
-        loss_func = torch.nn.MSELoss() if not self.binary else torch.nn.BCELoss()
-        loss_func_name = 'MSE' if not self.binary else 'BCE'
-        # optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9)
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
-        scheduler = StepLR(optimizer, step_size=3, gamma=lr_decay)
-
-        # scaler = amp.GradScaler()
-        
-        writer = SummaryWriter()
-
-        test_loss = []
-        train_loss = []
 
         st = time.time()
         for epoch in range(n_epochs): 
@@ -193,7 +200,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                     skip = None
                 
                 if truncated_backprop == 0:
-                    optimizer.zero_grad()
+                    self.optimizer.zero_grad()
                 
                     # with amp.autocast():
                     y_hat, y_hat_mappings = self.model(x, y, skip, teacher_forcing_ratio=0, mask=mask)
@@ -201,11 +208,11 @@ class NextFramePredictorS2S(NextFramePredictor):
                     y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
                     y_hat = torch.stack(y_hat, dim=0)
                     
-                    loss = loss_func(y_hat[:, ~mask], y[:, ~mask])  
+                    loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
 
 
                     # scaler.scale(loss).backward()
-                    # scaler.step(optimizer)
+                    # scaler.step(self.optimizer)
                     # scaler.update()
 
                     # with profiler.profile(enabled=True, use_cuda=True) as prof:
@@ -217,19 +224,19 @@ class NextFramePredictorS2S(NextFramePredictor):
                     # prof.export_chrome_trace("profiling_results.json")
                     # quit()
 
-                    optimizer.step()
+                    self.optimizer.step()
 
                     # decoder_params = [p for p in self.model.decoder.parameters()]
                     # decoder_grads = [p.grad.mean().cpu() for p in decoder_params if p.grad is not None]
                     # decoder_param_means = [p.mean().abs().detach().cpu() for p in decoder_params]
-                    # writer.add_scalar("Grad/decoder/mean", np.mean(np.abs(decoder_grads)), epoch)
-                    # writer.add_scalar("Param/decoder/mean", np.mean(decoder_param_means), epoch)
+                    # self.writer.add_scalar("Grad/decoder/mean", np.mean(np.abs(decoder_grads)), epoch)
+                    # self.writer.add_scalar("Param/decoder/mean", np.mean(decoder_param_means), epoch)
 
                     # encoder_params = [p for p in self.model.encoder.parameters()]
                     # encoder_grads = [p.grad.mean().cpu() for p in encoder_params if p.grad is not None]
                     # encoder_param_means = [p.mean().abs().detach().cpu() for p in encoder_params]
-                    # writer.add_scalar("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), epoch)
-                    # writer.add_scalar("Param/encoder/mean", np.mean(encoder_param_means), epoch)
+                    # self.writer.add_scalar("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), epoch)
+                    # self.writer.add_scalar("Param/encoder/mean", np.mean(encoder_param_means), epoch)
 
                     del y_hat
                     del y_hat_mappings
@@ -242,7 +249,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                         unroll_steps = range(output_timestep-truncated_backprop, output_timestep)
 
-                        optimizer.zero_grad()
+                        self.optimizer.zero_grad()
 
                         # Encoder
                         self.model.process_inputs(x, mask=mask)
@@ -260,16 +267,16 @@ class NextFramePredictorS2S(NextFramePredictor):
                         y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(truncated_backprop)]
                         y_hat = torch.stack(y_hat, dim=0)
                         
-                        loss = loss_func(y_hat[:, ~mask], y[output_timestep-truncated_backprop:output_timestep, ~mask])  
+                        loss = self.loss_func(y_hat[:, ~mask], y[output_timestep-truncated_backprop:output_timestep, ~mask])  
                         loss.backward(retain_graph=True)
 
                         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1)
 
                         del y_hat, y_hat_mappings
 
-                    optimizer.step()
+                    self.optimizer.step()
 
-                writer.add_scalar("Loss/train", loss.item(), epoch)
+                self.writer.add_scalar("Loss/train", loss.item(), epoch)
 
                 step += 1
                 running_loss += loss.item()
@@ -292,9 +299,9 @@ class NextFramePredictorS2S(NextFramePredictor):
                     y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
                     y_hat = torch.stack(y_hat, dim=0)
                 
-                    loss = loss_func(y_hat[:, ~mask], y[:, ~mask])  
+                    loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
                     
-                    writer.add_scalar("Loss/test", loss, epoch)
+                    self.writer.add_scalar("Loss/test", loss, epoch)
 
                 step_test += 1
                 running_loss_test += loss
@@ -307,21 +314,21 @@ class NextFramePredictorS2S(NextFramePredictor):
             running_loss = running_loss / (step + 1)
             running_loss_test = running_loss_test / (step_test + 1)
 
-            scheduler.step()
+            self.scheduler.step()
 
-            train_loss.append(running_loss)
-            test_loss.append(running_loss_test.item())
+            self.train_loss.append(running_loss)
+            self.test_loss.append(running_loss_test.item())
             
-            print(f"Epoch {epoch} train {loss_func_name}: {running_loss:.4f}, "+ \
-                f"test {loss_func_name}: {running_loss_test.item():.4f}, lr: {scheduler.get_last_lr()[0]:.4f}, time_per_epoch: {(time.time() - st) / (epoch+1):.1f}")
+            print(f"Epoch {epoch} train {self.loss_func_name}: {running_loss:.4f}, "+ \
+                f"test {self.loss_func_name}: {running_loss_test.item():.4f}, lr: {self.scheduler.get_last_lr()[0]:.4f}, time_per_epoch: {(time.time() - st) / (epoch+1):.1f}")
         
         print(f'Finished in {(time.time() - st)/60} minutes')
         
-        writer.flush()
+        self.writer.flush()
 
         self.loss = pd.DataFrame({
-            'train_loss': train_loss,
-            'test_loss': test_loss,
+            'train_loss': self.train_loss,
+            'test_loss': self.test_loss,
 
         })
 
