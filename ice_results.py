@@ -82,7 +82,7 @@ months = range(1, 13)
 ds = []
 for month in months:
     try:
-        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y2015_Y2015_I10O10.nc', engine='netcdf4'))
+        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y2015_Y2015_I10O90.nc', engine='netcdf4'))
     except Exception as e: #FileNotFoundError:
         print(e)
         pass
@@ -190,8 +190,6 @@ for timestep in ds.timestep:
         
 heatmap_clim = heatmap_clim.div(heatmap_clim_n)
 
-print(heatmap_clim)
-
 plt.figure(dpi=80)
 sns.heatmap(heatmap_clim, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.18, vmin=0.02)
 plt.xlabel('Lead time (days)')
@@ -201,12 +199,11 @@ plt.close()
 
         
 heatmap = create_heatmap(ds)
-print(heatmap)
 
 plt.figure(dpi=80)
 sns.heatmap(heatmap, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.18, vmin=0.02)
 plt.xlabel('Lead time (days)')
-plt.savefig(f'{results_dir}/heatmap2.png')
+plt.savefig(f'{results_dir}/heatmap.png')
 plt.close()
 
 plt.figure(dpi=80)

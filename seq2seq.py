@@ -82,15 +82,16 @@ class Decoder(torch.nn.Module):
                 [GConvLSTM(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers) for _ in range(n_layers-1)]
                 )
 
+        convolution_type = 'TransformerConv'
         conv_func = CONVOLUTIONS[convolution_type]
         conv_func_kwargs = CONVOLUTION_KWARGS[convolution_type]
 
         in_channels = hidden_size + skip_dim if not dummy else 3 + skip_dim
 
-        self.fc_out1 = conv_func(in_channels=in_channels, out_channels=hidden_size, **conv_func_kwargs)
+        self.fc_out1 = conv_func(in_channels=in_channels, out_channels=hidden_size, heads=1, edge_dim=2, dropout=0.1, concat=False)#**conv_func_kwargs)
         # self.fc_out2 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
         # self.fc_out3 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
-        self.fc_out2 = conv_func(in_channels=hidden_size, out_channels=1, **conv_func_kwargs)
+        self.fc_out2 = conv_func(in_channels=hidden_size, out_channels=1, heads=1, edge_dim=2, dropout=0.1, concat=False)#**conv_func_kwargs)
         # self.fc_out1 = Linear(in_channels=in_channels, out_channels=hidden_size)
         # self.fc_out2 = Linear(in_channels=hidden_size, out_channels=hidden_size)
         # self.fc_out3 = Linear(in_channels=hidden_size, out_channels=hidden_size)

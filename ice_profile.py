@@ -62,7 +62,7 @@ if __name__ == '__main__':
 
     # Number of frames to read as input
     input_timesteps = 10
-    output_timesteps= 10
+    output_timesteps= 90
 
     start = time.time()
 
