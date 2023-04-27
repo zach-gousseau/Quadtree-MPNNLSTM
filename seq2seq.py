@@ -65,7 +65,7 @@ class Encoder(torch.nn.Module):
         return hidden, cell
 
 class Decoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=2, convolution_type='GCNConv', n_conv_layers=3, binary=False, dummy=False):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=3, convolution_type='GCNConv', n_conv_layers=3, binary=False, dummy=False):
         super().__init__()
         
         self.input_features = input_features
@@ -299,7 +299,7 @@ class Seq2Seq(torch.nn.Module):
                     print('CPU memory usage:', memoryUse, 'GB', end='\r')
             
             if skip is not None:
-                skip_t = torch.cat([skip[t].unsqueeze(0), self.graph.persistence], dim=-1)
+                skip_t = torch.cat([skip[t].unsqueeze(0), self.graph.persistence, torch.ones_like(self.graph.persistence) * t], dim=-1)
             else:
                 skip_t = self.graph.persistence
 

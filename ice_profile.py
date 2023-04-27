@@ -30,8 +30,11 @@ if __name__ == '__main__':
 
     month = 6
     convolution_type = 'TransformerConv'
+    # convolution_type = 'GCNConv'
+    generate_predictions = True
 
-    ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
+    # ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
+    ds = xr.open_dataset('data/era5_hb_daily_coarsened_2.zarr')
     # ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
     # ds = xr.open_zarr('/home/zgoussea/scratch/era5_arctic_daily.zarr')
     # ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5/*/*.nc'))
@@ -55,9 +58,11 @@ if __name__ == '__main__':
     binary = False
     binary_thresh = 0.15
 
+    truncated_backprop = 0
+
     # Number of frames to read as input
     input_timesteps = 10
-    output_timesteps= 90
+    output_timesteps= 10
 
     start = time.time()
 
@@ -87,7 +92,7 @@ if __name__ == '__main__':
         hidden_size=32,
         dropout=0.1,
         n_layers=1,
-        n_conv_layers=3,
+        n_conv_layers=1,
         transform_func=dist_from_05,
         dummy=False,
         convolution_type=convolution_type,
@@ -123,7 +128,7 @@ if __name__ == '__main__':
         loader_test,
         climatology,
         lr=lr, 
-        n_epochs=1, 
+        n_epochs=10, 
         mask=mask, 
         truncated_backprop=truncated_backprop
         )
@@ -131,6 +136,41 @@ if __name__ == '__main__':
     pr.disable()
     stats = pstats.Stats(pr).sort_stats('time')
     stats.print_stats(10)
+
+    if generate_predictions:
+
+        data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
+        loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
+
+        # Generate predictions
+        model.model.eval()
+        val_preds = model.predict(loader_val, climatology, mask=mask)
+        
+        # Save results
+        launch_dates = loader_val.dataset.launch_dates
+        
+        ds = xr.Dataset(
+            data_vars=dict(
+                y_hat=(["launch_date", "timestep", "latitude", "longitude"], val_preds.squeeze(-1)),
+                y_true=(["launch_date", "timestep", "latitude", "longitude"], loader_val.dataset.y.squeeze(-1)),
+            ),
+            coords=dict(
+                longitude=ds.longitude,
+                latitude=ds.latitude,
+                launch_date=launch_dates,
+                timestep=np.arange(1, output_timesteps+1),
+            ),
+        )
+
+        results_dir = f'ice_results_profile'
+
+        if not os.path.exists(results_dir):
+            os.makedirs(results_dir)
+        
+        ds.to_netcdf(f'{results_dir}/valpredictions_{experiment_name}.nc')
+
+        model.loss.to_csv(f'{results_dir}/loss_{experiment_name}.csv')
+        model.save(results_dir)
 
 
 """
