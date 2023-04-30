@@ -46,7 +46,7 @@ if __name__ == '__main__':
     convolution_type = 'TransformerConv'
     lr = 0.01
     multires_training = False
-    dropout = 0
+    truncated_backprop = 0
 
     if exp == 1:
         convolution_type = 'GCNConv'
@@ -56,8 +56,12 @@ if __name__ == '__main__':
         multires_training = True
     elif exp == 4:
         lr = 0.0001
+    elif exp == 5:
+        truncated_backprop = 45
+    elif exp == 6:
+        truncated_backprop = 30
 
-    training_years = range(2015, 2016)
+    training_years = range(2011, 2016)
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
     input_features = len(x_vars)
@@ -67,7 +71,7 @@ if __name__ == '__main__':
 
     if multires_training:
         # Half resolution dataset
-        ds_half = xr.open_dataset('data/era5_hb_daily_coarsened_2.zarr') # ln -s /home/zgoussea/scratch/era5_hb_daily_coarsen_2.zarr data/era5_hb_daily_coarsen_2.zarr
+        ds_half = xr.open_dataset('data/era5_hb_daily_coarsened_2.zarr') # ln -s /home/zgoussea/scratch/era5_hb_daily_coarsened_2.zarr data/era5_hb_daily_coarsened_2.zarr
         
         mask_half = np.isnan(ds_half.siconc.isel(time=0)).values
 
@@ -117,11 +121,11 @@ if __name__ == '__main__':
     # Arguments passed to Seq2Seq constructor
     model_kwargs = dict(
         hidden_size=32,
-        dropout=dropout,
+        dropout=0.1,
         n_layers=1,
         transform_func=dist_from_05,
         dummy=False,
-        n_conv_layers=2,
+        n_conv_layers=1,
         convolution_type=convolution_type,
     )
 
@@ -161,8 +165,10 @@ if __name__ == '__main__':
         loader_test,
         climatology,
         lr=lr,
-        n_epochs=5,
-        mask=mask) 
+        n_epochs=15 if not multires_training else 10,
+        mask=mask,
+        truncated_backprop=truncated_backprop,
+        ) 
     
     # Generate predictions
     model.model.eval()
@@ -184,7 +190,7 @@ if __name__ == '__main__':
         ),
     )
 
-    results_dir = f'ice_results_{convolution_type}_apr26'
+    results_dir = f'ice_results_{convolution_type}_apr26_exp_{exp}'
 
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
