@@ -314,12 +314,18 @@ class NextFramePredictorS2S(NextFramePredictor):
             running_loss = running_loss / (step + 1)
             running_loss_test = running_loss_test / (step_test + 1)
 
+            if np.isnan(running_loss_test):
+                raise ValueError('NaN loss :(')
+
+            if running_loss_test > 4:
+                raise ValueError('Diverged :(')
+
             self.scheduler.step()
 
             self.train_loss.append(running_loss)
             self.test_loss.append(running_loss_test.item())
             
-            print(f"Epoch {epoch} train {self.loss_func_name}: {running_loss:.4f}, "+ \
+            print(f"{self.experiment_name} | Epoch {epoch} train {self.loss_func_name}: {running_loss:.4f}, "+ \
                 f"test {self.loss_func_name}: {running_loss_test.item():.4f}, lr: {self.scheduler.get_last_lr()[0]:.4f}, time_per_epoch: {(time.time() - st) / (epoch+1):.1f}")
         
         print(f'Finished in {(time.time() - st)/60} minutes')
