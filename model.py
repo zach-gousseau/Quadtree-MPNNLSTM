@@ -122,8 +122,12 @@ class GConvGRU(torch.nn.Module):
     ):
         super(GConvGRU, self).__init__()
 
+        assert convolution_type in CONVOLUTIONS
+
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.n_conv_layers = n_conv_layers
+        self.convolution_type = convolution_type
         self._create_parameters_and_layers()
 
     def _create_update_gate_parameters_and_layers(self):
@@ -137,7 +141,7 @@ class GConvGRU(torch.nn.Module):
 
         self.conv_h_z = GraphConv(
             convolution_type=self.convolution_type,
-            in_channels=self.in_channels,
+            in_channels=self.out_channels,
             out_channels=self.out_channels,
             n_layers = self.n_conv_layers
         )
@@ -153,7 +157,7 @@ class GConvGRU(torch.nn.Module):
 
         self.conv_h_r = GraphConv(
             convolution_type=self.convolution_type,
-            in_channels=self.in_channels,
+            in_channels=self.out_channels,
             out_channels=self.out_channels,
             n_layers = self.n_conv_layers
         )
@@ -169,7 +173,7 @@ class GConvGRU(torch.nn.Module):
 
         self.conv_h_h = GraphConv(
             convolution_type=self.convolution_type,
-            in_channels=self.in_channels,
+            in_channels=self.out_channels,
             out_channels=self.out_channels,
             n_layers = self.n_conv_layers
         )
@@ -235,7 +239,7 @@ class GConvGRU(torch.nn.Module):
         R = self._calculate_reset_gate(X, edge_index, edge_weight, H)
         H_tilde = self._calculate_candidate_state(X, edge_index, edge_weight, H, R)
         H = self._calculate_hidden_state(Z, H, H_tilde)
-        return H, None, None
+        return H, H, None
     
 
 
