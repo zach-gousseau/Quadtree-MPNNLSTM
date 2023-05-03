@@ -15,21 +15,31 @@ import numpy as np
 import psutil
 import os
 
-from model import GConvLSTM, DummyLSTM, CONVOLUTION_KWARGS, CONVOLUTIONS
+from model import GConvLSTM, GConvGRU, DummyLSTM, CONVOLUTION_KWARGS, CONVOLUTIONS
 
 
 class Encoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1, convolution_type='GCNConv', n_conv_layers=3, dummy=False):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, convolution_type='GCNConv', rnn_type='LSTM', n_conv_layers=3, dummy=False):
         super().__init__()
+
+        assert rnn_type in ['GRU', 'LSTM']
+
+        if rnn_type == 'LSTM':
+            rnn = GConvLSTM
+        elif rnn_type == 'GRU':
+            rnn = GConvGRU
+        else:
+            raise ValueError
         
+        self.rnn_type = rnn_type
         self.hidden_size = hidden_size
         self.n_layers = n_layers
         self.dummy = dummy
 
         if not self.dummy:
             self.rnns = nn.ModuleList(
-                [GConvLSTM(input_features, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers)] + \
-                [GConvLSTM(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers) for _ in range(n_layers-1)]
+                [rnn(input_features, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers)] + \
+                [rnn(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers) for _ in range(n_layers-1)]
             )
         
         self.dropout = nn.Dropout(dropout)
@@ -46,28 +56,40 @@ class Encoder(torch.nn.Module):
 
         _, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H, C=C)
 
-        hidden_layer, cell_layer = hidden_layer.squeeze(0), cell_layer.squeeze(0)
+        # hidden_layer, cell_layer = hidden_layer.squeeze(0), cell_layer.squeeze(0)
         hidden_layer = self.norm_h(hidden_layer)
-        cell_layer = self.norm_c(cell_layer)
+        if self.rnn_type == 'LSTM':
+            cell_layer = self.norm_c(cell_layer)
 
         hidden, cell = [hidden_layer], [cell_layer]
         for i in range(1, self.n_layers):
             _, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=None, C=None)
 
             hidden_layer = self.norm_h(hidden_layer)
-            cell_layer = self.norm_c(cell_layer)
+            if self.rnn_type == 'LSTM':
+                cell_layer = self.norm_c(cell_layer)
 
             hidden.append(hidden_layer)
             cell.append(cell_layer)
 
         hidden = torch.stack(hidden)
-        cell = torch.stack(cell)
+        cell = torch.stack(cell) if self.rnn_type == 'LSTM' else [None]*len(hidden)
         return hidden, cell
 
 class Decoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=3, convolution_type='GCNConv', n_conv_layers=3, binary=False, dummy=False):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=3, convolution_type='GCNConv', rnn_type='LSTM', n_conv_layers=3, binary=False, dummy=False):
         super().__init__()
+
+        assert rnn_type in ['GRU', 'LSTM']
+
+        if rnn_type == 'LSTM':
+            rnn = GConvLSTM
+        elif rnn_type == 'GRU':
+            rnn = GConvGRU
+        else:
+            raise ValueError
         
+        self.rnn_type = rnn_type
         self.input_features = input_features
         self.hidden_size = hidden_size
         self.n_layers = n_layers
@@ -78,8 +100,8 @@ class Decoder(torch.nn.Module):
 
         if not self.dummy:
             self.rnns = nn.ModuleList(
-                [GConvLSTM(input_features, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers)] + \
-                [GConvLSTM(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers) for _ in range(n_layers-1)]
+                [rnn(input_features, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers)] + \
+                [rnn(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers) for _ in range(n_layers-1)]
                 )
 
         convolution_type = 'TransformerConv'
@@ -114,22 +136,27 @@ class Decoder(torch.nn.Module):
         output, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H[0], C=C[0])
 
         hidden_layer = self.norm_h(hidden_layer)
-        cell_layer = self.norm_c(cell_layer)
+        if self.rnn_type == 'LSTM':
+            cell_layer = self.norm_c(cell_layer)
+
         hidden, cell = [hidden_layer], [cell_layer]
 
         for i in range(1, self.n_layers):
             output, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=H[i], C=C[i])
 
             hidden_layer = self.norm_h(hidden_layer)
-            cell_layer = self.norm_c(cell_layer)
+            if self.rnn_type == 'LSTM':
+                cell_layer = self.norm_c(cell_layer)
 
             hidden.append(hidden_layer)
             cell.append(cell_layer)
 
         hidden = torch.stack(hidden)
-        cell = torch.stack(cell)
+        cell = torch.stack(cell) if self.rnn_type == 'LSTM' else [None]*len(hidden)
+
         
-        output = output.squeeze(0)  # Use top layer's output
+        # output = output.squeeze(0)  
+        # Use top layer's output
         output = self.norm_o(output)
         output = F.relu(output)
 
@@ -146,14 +173,7 @@ class Decoder(torch.nn.Module):
         x = self.fc_out1(x, edge_index, edge_weight)
         x = F.relu(x)
         x = self.fc_out2(x, edge_index, edge_weight)
-        # x = F.relu(x)
-        # x = self.fc_out3(x, edge_index, edge_weight)
-        # x = F.relu(x)
-        # x = self.fc_out4(x, edge_index, edge_weight)
-        # x = torch.sigmoid(x)#F.relu(x)
-        # x = self.fc_out3(x, edge_index, edge_weight)
-        # x = torch.sigmoid(x)#F.relu(x)
-        # x = self.fc_out4(x, edge_index, edge_weight)
+
 
         if self.binary:
             x = torch.sigmoid(x)
@@ -174,6 +194,7 @@ class Seq2Seq(torch.nn.Module):
                  condition='max_larger_than',
                  remesh_input=False,
                  convolution_type='ChebConv',
+                 rnn_type='LSTM',
                  binary=False,
                  dummy=False,
                  device=None,
@@ -186,6 +207,7 @@ class Seq2Seq(torch.nn.Module):
             dropout,
             n_layers=n_layers,
             convolution_type=convolution_type,
+            rnn_type=rnn_type,
             n_conv_layers=n_conv_layers,
             dummy=dummy,
             )
@@ -195,6 +217,7 @@ class Seq2Seq(torch.nn.Module):
             dropout,
             n_layers=n_layers,
             convolution_type=convolution_type,
+            rnn_type=rnn_type,
             n_conv_layers=n_conv_layers,
             binary=binary,
             dummy=dummy,
@@ -254,7 +277,7 @@ class Seq2Seq(torch.nn.Module):
                 edge_index=self.graph.pyg.edge_index, 
                 edge_weight=self.graph.pyg.edge_attr, 
                 H=self.graph.hidden[-1] if self.graph.hidden is not None else None, 
-                C=self.graph.cell[-1] if self.graph.hidden is not None else None
+                C=self.graph.cell[-1] if self.graph.cell is not None else None
                 )
 
             if t < self.input_timesteps:
