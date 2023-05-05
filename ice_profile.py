@@ -25,6 +25,7 @@ from torch.utils.data import Dataset, DataLoader
 if __name__ == '__main__':
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = 'cpu'
     # device = torch.device('mps')
     print('device:', device)
 
@@ -35,8 +36,8 @@ if __name__ == '__main__':
     generate_predictions = True
 
     # ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
-    ds = xr.open_dataset('data/era5_hb_daily_coarsened_2.zarr')
-    # ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
+    # ds = xr.open_dataset('data/era5_hb_daily_coarsened_2.zarr')
+    ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
     # ds = xr.open_zarr('/home/zgoussea/scratch/era5_arctic_daily.zarr')
     # ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5/*/*.nc'))
 
@@ -98,7 +99,6 @@ if __name__ == '__main__':
         dummy=False,
         convolution_type=convolution_type,
         rnn_type='LSTM',
-        debug=False,
     )
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
@@ -111,6 +111,7 @@ if __name__ == '__main__':
         output_timesteps=output_timesteps,
         transform_func=dist_from_05,
         device=device,
+        debug=True,
         model_kwargs=model_kwargs)
 
     print('Num. parameters:', model.get_n_params())

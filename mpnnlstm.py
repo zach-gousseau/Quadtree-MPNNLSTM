@@ -119,6 +119,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                  condition='max_larger_than',
                  remesh_input=False,
                  binary=False,
+                 debug=False,
                  model_kwargs={}):
         
         super().__init__(
@@ -133,6 +134,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         self.input_timesteps = input_timesteps
         self.output_timesteps = output_timesteps
         self.binary = binary
+        self.debug = debug
         
         self.model = Seq2Seq(
             input_features=input_features + 3,  # 3 (node_size)
@@ -142,6 +144,7 @@ class NextFramePredictorS2S(NextFramePredictor):
             device=device,
             remesh_input=remesh_input,
             binary=binary,
+            debug = debug,
             **model_kwargs
         ).to(device)
 
@@ -226,17 +229,18 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                     self.optimizer.step()
 
-                    # decoder_params = [p for p in self.model.decoder.parameters()]
-                    # decoder_grads = [p.grad.mean().cpu() for p in decoder_params if p.grad is not None]
-                    # decoder_param_means = [p.mean().abs().detach().cpu() for p in decoder_params]
-                    # self.writer.add_scalar("Grad/decoder/mean", np.mean(np.abs(decoder_grads)), epoch)
-                    # self.writer.add_scalar("Param/decoder/mean", np.mean(decoder_param_means), epoch)
+                    if self.debug:
+                        decoder_params = [p for p in self.model.decoder.parameters()]
+                        decoder_grads = [p.grad.mean().cpu() for p in decoder_params if p.grad is not None]
+                        decoder_param_means = [p.mean().abs().detach().cpu() for p in decoder_params]
+                        self.writer.add_scalar("Grad/decoder/mean", np.mean(np.abs(decoder_grads)), epoch)
+                        self.writer.add_scalar("Param/decoder/mean", np.mean(decoder_param_means), epoch)
 
-                    # encoder_params = [p for p in self.model.encoder.parameters()]
-                    # encoder_grads = [p.grad.mean().cpu() for p in encoder_params if p.grad is not None]
-                    # encoder_param_means = [p.mean().abs().detach().cpu() for p in encoder_params]
-                    # self.writer.add_scalar("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), epoch)
-                    # self.writer.add_scalar("Param/encoder/mean", np.mean(encoder_param_means), epoch)
+                        encoder_params = [p for p in self.model.encoder.parameters()]
+                        encoder_grads = [p.grad.mean().cpu() for p in encoder_params if p.grad is not None]
+                        encoder_param_means = [p.mean().abs().detach().cpu() for p in encoder_params]
+                        self.writer.add_scalar("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), epoch)
+                        self.writer.add_scalar("Param/encoder/mean", np.mean(encoder_param_means), epoch)
 
                     del y_hat
                     del y_hat_mappings
@@ -314,10 +318,10 @@ class NextFramePredictorS2S(NextFramePredictor):
             running_loss = running_loss / (step + 1)
             running_loss_test = running_loss_test / (step_test + 1)
 
-            if np.isnan(running_loss_test):
+            if np.isnan(running_loss_test.item()):
                 raise ValueError('NaN loss :(')
 
-            if running_loss_test > 4:
+            if running_loss_test.item() > 4:
                 raise ValueError('Diverged :(')
 
             self.scheduler.step()
