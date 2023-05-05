@@ -46,7 +46,7 @@ CONVOLUTIONS = {
 
 CONVOLUTION_KWARGS = {
     'GCNConv': dict(add_self_loops=False),
-    'TransformerConv': dict(heads=3, edge_dim=2, dropout=0.1, concat=False),
+    'TransformerConv': dict(heads=1, edge_dim=2, dropout=0.1, concat=False),
     'MHTransformerConv': dict(heads=3, edge_dim=2, dropout=0.1),
     'ChebConv': dict(K=3, normalization='sym', bias=True),
     'GATConv': dict(heads=1, edge_dim=2),
@@ -65,7 +65,7 @@ class GraphConv(nn.Module):
         conv_func = CONVOLUTIONS[convolution_type]
         conv_kwargs = CONVOLUTION_KWARGS[convolution_type]
 
-        if convolution_type is not 'Dummy':
+        if convolution_type != 'Dummy':
             self.convolutions = nn.ModuleList(
                 [conv_func(in_channels, out_channels, **conv_kwargs)] + \
                 [conv_func(out_channels, out_channels, **conv_kwargs) for  _ in range(n_layers - 1)]

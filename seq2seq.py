@@ -104,7 +104,7 @@ class Decoder(torch.nn.Module):
                 [rnn(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers) for _ in range(n_layers-1)]
                 )
 
-        convolution_type = 'TransformerConv'
+        # convolution_type = 'GCNConv'#'TransformerConv'
         conv_func = CONVOLUTIONS[convolution_type]
         conv_func_kwargs = CONVOLUTION_KWARGS[convolution_type]
 
@@ -410,7 +410,7 @@ class Seq2Seq(torch.nn.Module):
             teacher_input = add_positional_encoding(teacher_input)
             graph_structure = image_to_graph(teacher_input, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
         else:
-            data_img = add_positional_encoding(data_img)  # Add pos. embedding
+            data_img = add_positional_encoding(data_img.unsqueeze(0))  # Add pos. embedding
             graph_structure = image_to_graph(data_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
 
         # skip = graph_structure['data'][:, :, [0]]
@@ -422,8 +422,10 @@ class Seq2Seq(torch.nn.Module):
         hidden, cell = torch.swapaxes(hidden, 0, -1), torch.swapaxes(cell, 0, -1)
 
         # Create a graph object for input into next rollout
-        self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
-        self.graph.pyg.x = graph_structure['data']
+        # self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
+        self.graph.pyg.edge_index = graph_structure['edge_index']
+        self.graph.pyg.edge_attr = graph_structure['edge_attrs']
+        self.graph.pyg.x = graph_structure['data'].squeeze(0)
         # self.graph.skip = skip
         self.graph.mapping = graph_structure['mapping']
         self.graph.n_pixels_per_node = graph_structure['n_pixels_per_node']
