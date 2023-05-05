@@ -30,7 +30,8 @@ if __name__ == '__main__':
 
     month = 6
     convolution_type = 'TransformerConv'
-    # convolution_type = 'GCNConv'
+    convolution_type = 'GCNConv'
+    # convolution_type = 'Dummy'
     generate_predictions = True
 
     # ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
@@ -81,7 +82,7 @@ if __name__ == '__main__':
     loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(15)))
     loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
 
-    # thresh = 0.15
+    thresh = 0.15
     thresh = -np.inf
 
     def dist_from_05(arr):
@@ -129,7 +130,7 @@ if __name__ == '__main__':
         loader_test,
         climatology,
         lr=lr, 
-        n_epochs=10, 
+        n_epochs=1, 
         mask=mask, 
         truncated_backprop=truncated_backprop
         )
