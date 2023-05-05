@@ -317,7 +317,7 @@ def get_adj(labels, xx=None, yy=None, calculate_distances=False, edges_at_corner
         edge_attrs = torch.stack((
             dist_angle(edge_sources, edge_targets, xx, yy),
             dist(edge_sources, edge_targets, xx, yy)
-        ))
+        )).T
     else:
         edge_attrs = dist(edge_sources, edge_targets, xx, yy)
 

@@ -516,6 +516,47 @@ class MPNNLSTM(nn.Module):
         # H = F.relu(H)
         return H
 
+class SplitGConvLSTM(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        n_conv_layers: int = 1, 
+        convolution_type='GCNConv'
+    ):
+        super(SplitGConvLSTM, self).__init__()
+
+        assert convolution_type in CONVOLUTIONS
+
+        self.convolution_type = convolution_type
+        self.n_conv_layers = n_conv_layers
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+
+        self.rnn = nn.LSTM(out_channels, out_channels, 1)
+
+        self.conv = GraphConv(
+            convolution_type=self.convolution_type,
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
+            n_layers = self.n_conv_layers
+        )
+
+    def forward(
+        self,
+        X: torch.FloatTensor,
+        edge_index: torch.LongTensor,
+        edge_weight: torch.FloatTensor = None,
+        H: torch.FloatTensor = None,
+        C: torch.FloatTensor = None,
+        ) -> torch.FloatTensor:
+        X = self.conv(X, edge_index, edge_weight)
+
+        outputs, (hidden, cell) = self.rnn(X, (H, C)) if H is not None else self.rnn(X)
+        return outputs, hidden, cell
+
+
 class MPNNLSTMI(nn.Module):
     def __init__(self, hidden_size, dropout, input_timesteps=3, input_features=4, n_layers=2, output_features=1):
         super(MPNNLSTMI, self).__init__()
