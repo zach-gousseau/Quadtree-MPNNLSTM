@@ -110,7 +110,7 @@ class Decoder(torch.nn.Module):
 
         in_channels = hidden_size + skip_dim if not (dummy or convolution_type=='Dummy') else 3 + skip_dim
 
-        convolution_type = 'GCNConv'#'TransformerConv'
+        convolution_type = 'TransformerConv'
         conv_func = CONVOLUTIONS[convolution_type]
         conv_func_kwargs = CONVOLUTION_KWARGS[convolution_type]
         
@@ -170,7 +170,10 @@ class Decoder(torch.nn.Module):
 
         output = self.gnn_out(output, edge_index, edge_weight)
 
-        output += X[:, [0]]
+        # output += X[:, [0]]
+        output = torch.tanh(output)
+        # output = output + X[:, [0]]
+        output = output + skip[:, [0]]
 
         return output, hidden, cell
 
@@ -178,6 +181,7 @@ class Decoder(torch.nn.Module):
         x = self.fc_out1(x, edge_index, edge_weight)
         x = F.relu(x)
         x = self.fc_out2(x, edge_index, edge_weight)
+        # x = torch.sigmoid(x)
 
 
         if self.binary:
@@ -328,7 +332,7 @@ class Seq2Seq(torch.nn.Module):
                     print('CPU memory usage:', memoryUse, 'GB', end='\r')
             
             if skip is not None:
-                skip_t = torch.cat([skip[t].unsqueeze(0), self.graph.persistence, torch.ones_like(self.graph.persistence) * t], dim=-1)
+                skip_t = torch.cat([self.graph.persistence, skip[t].unsqueeze(0), torch.ones_like(self.graph.persistence) * t], dim=-1)
             else:
                 skip_t = self.graph.persistence
 
@@ -387,7 +391,7 @@ class Seq2Seq(torch.nn.Module):
         if teacher_force:
             teacher_input = add_positional_encoding(teacher_input)  # Add positional encoding
             self.graph.pyg.x = flatten(teacher_input, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
-            self.graph.pyg.x = torch.cat([self.graph.pyg.x, self.graph.n_pixels_per_node.unsqueeze(0).unsqueeze(-1)], dim=-1)  # Add node sizes
+            self.graph.pyg.x = torch.cat([self.graph.pyg.x, self.graph.n_pixels_per_node.unsqueeze(-1)], dim=-1)  # Add node sizes
         else:
             # Add positional encoding
             pos_encoding = self.graph.pyg.x[..., 1:]
