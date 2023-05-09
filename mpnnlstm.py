@@ -160,7 +160,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
         # scaler = amp.GradScaler()
         
-        self.writer = SummaryWriter()
+        self.writer = SummaryWriter(self.experiment_name)
 
         self.test_loss = []
         self.train_loss = []
@@ -234,7 +234,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                     # with profiler.profile(enabled=True, use_cuda=True) as prof:
                     loss.backward()
 
-                    # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10)
 
                     # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
                     # prof.export_chrome_trace("profiling_results.json")
@@ -266,8 +266,8 @@ class NextFramePredictorS2S(NextFramePredictor):
                         self.writer.add_scalar("Grad/encoder/grad_norms", en_grad_norms, batch_step)
                         self.writer.add_scalar("Grad/decoder/grad_norms", de_grad_norms, batch_step)
 
-                        print("Grad/encoder/grad_norms", en_grad_norms, batch_step)
-                        print("Grad/decoder/grad_norms", de_grad_norms, batch_step)
+                        # print("Grad/encoder/grad_norms", en_grad_norms, batch_step)
+                        # print("Grad/decoder/grad_norms", de_grad_norms, batch_step)
 
                     del y_hat
                     del y_hat_mappings
@@ -308,7 +308,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                     self.optimizer.step()
 
                 self.writer.add_scalar("Loss/train", loss.item(), batch_step)
-                print("Loss/train", loss.item(), batch_step)
+                # print("Loss/train", loss.item(), batch_step)
 
                 step += 1
                 batch_step += 1
@@ -348,8 +348,8 @@ class NextFramePredictorS2S(NextFramePredictor):
             if np.isnan(running_loss_test.item()):
                 raise ValueError('NaN loss :(')
 
-            # if running_loss_test.item() > 4:
-            #     raise ValueError('Diverged :(')
+            if running_loss_test.item() > 4:
+                raise ValueError('Diverged :(')
 
             self.writer.add_scalar("Loss/test", running_loss_test.item(), epoch)
 

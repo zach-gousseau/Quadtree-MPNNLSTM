@@ -44,7 +44,7 @@ if __name__ == '__main__':
 
     # Defaults
     convolution_type = 'TransformerConv'
-    lr = 0.01
+    lr = 0.001
     multires_training = False
     truncated_backprop = 0
 
@@ -54,6 +54,8 @@ if __name__ == '__main__':
     input_features = len(x_vars)
     input_timesteps = 10
     output_timesteps= 90
+
+    binary=True
 
     if exp == 1:
         convolution_type = 'GCNConv'
@@ -100,7 +102,7 @@ if __name__ == '__main__':
     # ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))  # ln -s /home/zgoussea/scratch/hb_era5_glorys_nc data/hb_era5_glorys_nc
     # ds = xr.open_zarr('data/hb_era5_glorys.zarr')  # ln -s /home/zgoussea/scratch/hb_era5_glorys.zarr/  data/hb_era5_glorys.zarr
 
-    ds = ds.isel(latitude=slice(50, 100), longitude=slice(50, 100))
+    # ds = ds.isel(latitude=slice(50, 100), longitude=slice(50, 100))
     
 
     mask = np.isnan(ds.siconc.isel(time=0)).values
@@ -128,13 +130,13 @@ if __name__ == '__main__':
 
     # Arguments passed to Seq2Seq constructor
     model_kwargs = dict(
-        hidden_size=64,
+        hidden_size=32,
         dropout=0.1,
         n_layers=1,
         transform_func=dist_from_05,
         dummy=False,
-        n_conv_layers=1,
-        rnn_type='GRU',
+        n_conv_layers=3,
+        rnn_type='LSTM',
         convolution_type=convolution_type,
     )
 
@@ -148,13 +150,12 @@ if __name__ == '__main__':
         output_timesteps=output_timesteps,
         transform_func=dist_from_05,
         device=device,
+        binary=binary,
         debug=True, 
         model_kwargs=model_kwargs)
 
     print('Num. parameters:', model.get_n_params())
     print('Model:\n', model.model)
-
-    lr = 0.01
 
     # Train model
     model.model.train()
@@ -200,7 +201,7 @@ if __name__ == '__main__':
         ),
     )
 
-    results_dir = f'ice_results_{convolution_type}_may3_exp_{exp}_without_norm_without_delta'
+    results_dir = f'ice_results_may8_exp_binary'
 
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)

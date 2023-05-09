@@ -170,10 +170,12 @@ class Decoder(torch.nn.Module):
 
         output = self.gnn_out(output, edge_index, edge_weight)
 
-        # output += X[:, [0]]
         output = torch.tanh(output)
         # output = output + X[:, [0]]
         output = output + skip[:, [0]]
+
+        if self.binary:
+            output = torch.sigmoid(output)
 
         return output, hidden, cell
 
@@ -183,9 +185,7 @@ class Decoder(torch.nn.Module):
         x = self.fc_out2(x, edge_index, edge_weight)
         # x = torch.sigmoid(x)
 
-
-        if self.binary:
-            x = torch.sigmoid(x)
+        # x = self.dropout(x)
         return x
         
 
@@ -318,13 +318,14 @@ class Seq2Seq(torch.nn.Module):
 
             if self.debug:
                 if self.device.type == 'cuda':
-                    print(
-                        f'Decoder step {t} \n' + \
-                        f"torch.cuda.memory_allocated: {torch.cuda.memory_allocated(0)/1024/1024/1024}GB\n" + \
-                        f"torch.cuda.memory_reserved: {torch.cuda.memory_reserved(0)/1024/1024/1024}GB\n" + \
-                        f"torch.cuda.max_memory_reserved: {torch.cuda.max_memory_reserved(0)/1024/1024/1024}GB",
-                        end='\033[A\033[A\033[A'
-                    )
+                    pass
+                    # print(
+                    #     f'Decoder step {t} \n' + \
+                    #     f"torch.cuda.memory_allocated: {torch.cuda.memory_allocated(0)/1024/1024/1024}GB\n" + \
+                    #     f"torch.cuda.memory_reserved: {torch.cuda.memory_reserved(0)/1024/1024/1024}GB\n" + \
+                    #     f"torch.cuda.max_memory_reserved: {torch.cuda.max_memory_reserved(0)/1024/1024/1024}GB",
+                    #     end='\033[A\033[A\033[A'
+                    # )
                 else:
                     pid = os.getpid()
                     python_process = psutil.Process(pid)
