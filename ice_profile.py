@@ -98,7 +98,7 @@ if __name__ == '__main__':
         transform_func=dist_from_05,
         dummy=False,
         convolution_type=convolution_type,
-        rnn_type='GRU',
+        rnn_type='LSTM',
     )
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
