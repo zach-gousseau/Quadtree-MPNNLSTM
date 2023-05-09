@@ -20,7 +20,17 @@ from ice_test import IceDataset
 
 from torch.utils.data import Dataset, DataLoader
 
-torch.autograd.set_detect_anomaly(True)
+# torch.autograd.set_detect_anomaly(True)
+
+def remove_lone_pixels(arr):
+    # Create a padded version of the arr with False values around the edges
+    padded_arr = np.pad(~arr, ((1, 1), (1, 1)), mode='constant', constant_values=False)
+    # Create a mask that is True for any element that is True and has False neighbors
+    mask = ~arr & ~padded_arr[:-2,:-2] & ~padded_arr[:-2,1:-1] & ~padded_arr[:-2,2:] & \
+           ~padded_arr[1:-1,:-2] & ~padded_arr[1:-1,2:] & \
+           ~padded_arr[2:,:-2] & ~padded_arr[2:,1:-1] & ~padded_arr[2:,2:]
+    # Return the indices of the True elements in the mask
+    return arr + mask
 
 if __name__ == '__main__':
 
@@ -31,9 +41,9 @@ if __name__ == '__main__':
 
     month = 6
     convolution_type = 'TransformerConv'
-    # convolution_type = 'GCNConv'
+    convolution_type = 'GCNConv'
     # convolution_type = 'Dummy'
-    generate_predictions = True
+    generate_predictions = False
 
     ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
     # ds = xr.open_dataset('data/era5_hb_daily_coarsened_2.zarr')
@@ -52,6 +62,10 @@ if __name__ == '__main__':
         ds = ds.interp(latitude=newlat, longitude=newlon, method='nearest')
 
     mask = np.isnan(ds.siconc.isel(time=0)).values
+    mask = remove_lone_pixels(mask)
+
+
+    # mask = np.zeros_like(ds.siconc.isel(time=0).values).astype(bool)
 
     np.random.seed(42)
     random.seed(42)
@@ -64,7 +78,7 @@ if __name__ == '__main__':
 
     # Number of frames to read as input
     input_timesteps = 10
-    output_timesteps= 90
+    output_timesteps= 10
 
     start = time.time()
 
@@ -80,10 +94,11 @@ if __name__ == '__main__':
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, y_binary_thresh=binary_thresh if binary else None)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, y_binary_thresh=binary_thresh if binary else None)
 
-    loader_profile = DataLoader(data_train, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(15)))
-    loader_test = DataLoader(data_train, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
+    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(25)))
+    loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
 
     thresh = 0.15
+    # thresh = -1
     thresh = -np.inf
 
     def dist_from_05(arr):
@@ -94,11 +109,11 @@ if __name__ == '__main__':
         hidden_size=32,
         dropout=0.1,
         n_layers=1,
-        n_conv_layers=1,
+        n_conv_layers=3,
         transform_func=dist_from_05,
         dummy=False,
         convolution_type=convolution_type,
-        rnn_type='GRU',
+        rnn_type='LSTM',
     )
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
@@ -131,7 +146,7 @@ if __name__ == '__main__':
         loader_test,
         climatology,
         lr=lr, 
-        n_epochs=1, 
+        n_epochs=10, 
         mask=mask, 
         truncated_backprop=truncated_backprop
         )

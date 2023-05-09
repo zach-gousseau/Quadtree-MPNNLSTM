@@ -372,32 +372,32 @@ class GConvLSTM(nn.Module):
         return C
 
     def _calculate_input_gate(self, X, edge_index, edge_weight, H, C):
-        I = nn.ReLU(self.conv_x_i(X, edge_index, edge_weight))
-        I = I + nn.ReLU(self.conv_h_i(H, edge_index, edge_weight))
+        I = self.conv_x_i(X, edge_index, edge_weight)
+        I = I + self.conv_h_i(H, edge_index, edge_weight)
         I = I + (self.w_c_i * C)
         I = I + self.b_i
         I = torch.sigmoid(I)
         return I
 
     def _calculate_forget_gate(self, X, edge_index, edge_weight, H, C):
-        F = nn.ReLU(self.conv_x_f(X, edge_index, edge_weight))
-        F = F + nn.ReLU(self.conv_h_f(H, edge_index, edge_weight))
+        F = self.conv_x_f(X, edge_index, edge_weight)
+        F = F + self.conv_h_f(H, edge_index, edge_weight)
         F = F + (self.w_c_f * C)
         F = F + self.b_f
         F = torch.sigmoid(F)
         return F
 
     def _calculate_cell_state(self, X, edge_index, edge_weight, H, C, I, F):
-        T = nn.ReLU(self.conv_x_c(X, edge_index, edge_weight))
-        T = T + nn.ReLU(self.conv_h_c(H, edge_index, edge_weight))
+        T = self.conv_x_c(X, edge_index, edge_weight)
+        T = T + self.conv_h_c(H, edge_index, edge_weight)
         T = T + self.b_c
         T = torch.tanh(T)
         C = F * C + I * T
         return C
 
     def _calculate_output_gate(self, X, edge_index, edge_weight, H, C):
-        O = nn.ReLU(self.conv_x_o(X, edge_index, edge_weight))
-        O = O + nn.ReLU(self.conv_h_o(H, edge_index, edge_weight))
+        O = self.conv_x_o(X, edge_index, edge_weight)
+        O = O + self.conv_h_o(H, edge_index, edge_weight)
         O = O + (self.w_c_o * C)
         O = O + self.b_o
         O = torch.sigmoid(O)

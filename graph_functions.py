@@ -297,17 +297,17 @@ def get_adj(labels, xx=None, yy=None, calculate_distances=False, edges_at_corner
                     neighbors.add(labels[i+1][j+1])
 
             # Remove self-loop if it exists
-            # try:
-            #     neighbors.remove(node)
-            # except KeyError:
-            #     pass
+            try:
+                neighbors.remove(node)
+            except KeyError:
+                pass
 
             # Remove links to invalid nodes (-1) if it exists
             try:
                 neighbors.remove(-1)
             except KeyError:
                 pass
-    
+
             for neighbor in neighbors:
                 if neighbor not in adj_dict[node]:
                     edge_sources.append(node)

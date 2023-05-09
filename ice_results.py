@@ -75,14 +75,14 @@ def create_heatmap(ds, accuracy=False):
 mask = np.isnan(xr.open_zarr('data/era5_hb_daily.zarr').siconc.isel(time=0)).values
 # mask = np.isnan(xr.open_zarr('data/era5_hb_daily_coarsened_2.zarr').siconc.isel(time=0)).values
 
-results_dir = 'ice_results_profile'
+results_dir = 'ice_results_may7_exp_0'
 accuracy = False
 
 months = range(1, 13)
 ds = []
 for month in months:
     try:
-        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y2015_Y2015_I10O90.nc', engine='netcdf4'))
+        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y2011_Y2015_I10O90.nc', engine='netcdf4'))
     except Exception as e: #FileNotFoundError:
         print(e)
         pass
@@ -97,7 +97,7 @@ months = range(1, 13)
 losses = {}
 for month in months:
     try:
-        losses[month] = pd.read_csv(f'{results_dir}/loss_M{month}_Y2011_Y2015_I5O30.csv')
+        losses[month] = pd.read_csv(f'{results_dir}/loss_M{month}_Y2011_Y2015_I10O90.csv')
     except FileNotFoundError:
         pass
 
@@ -219,3 +219,42 @@ plt.title('Blue -> Model outperforms persistence')
 plt.xlabel('Lead time (days)')
 plt.savefig(f'{results_dir}/heatmap_diff_pers.png')
 plt.close()
+
+# ld = np.random.randint(0, ds.launch_date.size)
+if not os.path.exists(f'{results_dir}/gif/'):
+    os.makedirs(f'{results_dir}/gif/')
+for mm in range(12):
+    ld = 15 + 30*mm
+
+    fns = []
+    for ts in range(1, 90):
+        
+        fig, axs = plt.subplots(1, 2, figsize=(8, 3))
+        
+        ds.sel(launch_date=ds.launch_date[ld], timestep=ts).where(~mask).y_true.plot(ax=axs[0], vmin=0, vmax=1)
+        ds.sel(launch_date=ds.launch_date[ld], timestep=ts).where(~mask).y_hat.plot(ax=axs[1], vmin=0, vmax=1)
+        axs[0].set_title(f'True ({str(ds.launch_date[ld].values)[:10]}, step {ts})')
+        axs[1].set_title(f'Pred ({str(ds.launch_date[ld].values)[:10]}, step {ts})')
+        plt.tight_layout()
+        fn = f'{results_dir}/gif/{str(ds.launch_date[ld].values)[:10]}_{ts}.png'
+        fns.append(fn)
+        plt.savefig(fn)
+        plt.close()
+
+
+
+    from PIL import Image
+    frames = []
+    for fn in fns:
+        new_frame = Image.open(fn)
+        frames.append(new_frame)
+
+    frames[0].save(f'{results_dir}/gif/{str(ds.launch_date[ld].values)[:10]}.gif',
+                format='GIF',
+                append_images=frames[1:],
+                save_all=True,
+                duration=300,
+                loop=0)
+
+    for fn in fns:
+        os.remove(fn)
