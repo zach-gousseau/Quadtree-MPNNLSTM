@@ -4,6 +4,7 @@ import pandas as pd
 import pickle
 import matplotlib.pyplot as plt
 import os 
+import datetime
 from tqdm import tqdm
 import warnings
 
@@ -160,7 +161,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
         # scaler = amp.GradScaler()
         
-        self.writer = SummaryWriter(self.experiment_name)
+        self.writer = SummaryWriter('runs/' + self.experiment_name + '_' + datetime.datetime.now().strftime("%Y%m%d_%H_%M_%S"))
 
         self.test_loss = []
         self.train_loss = []

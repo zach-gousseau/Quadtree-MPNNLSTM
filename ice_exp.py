@@ -48,14 +48,14 @@ if __name__ == '__main__':
     multires_training = False
     truncated_backprop = 0
 
-    training_years = range(2011, 2016)
+    training_years = range(2002, 2010)
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
     input_features = len(x_vars)
     input_timesteps = 10
     output_timesteps= 90
 
-    binary=True
+    binary=False
 
     if exp == 1:
         convolution_type = 'GCNConv'
@@ -86,7 +86,7 @@ if __name__ == '__main__':
         # Half resolution datasets
         data_train_half = IceDataset(ds_half, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
         data_test_half = IceDataset(ds_half, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
-        data_val_half = IceDataset(ds_half, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
+        data_val_half = IceDataset(ds_half, [training_years[-1]+5], month, input_timesteps, output_timesteps, x_vars, y_vars)
 
         loader_train_half = DataLoader(data_train_half, batch_size=1, shuffle=True)
         loader_test_half = DataLoader(data_test_half, batch_size=1, shuffle=True)
@@ -110,7 +110,7 @@ if __name__ == '__main__':
     # Full resolution datasets
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
-    data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
+    data_val = IceDataset(ds, [training_years[-1]+5], month, input_timesteps, output_timesteps, x_vars, y_vars)
 
     loader_train = DataLoader(data_train, batch_size=1, shuffle=True)
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)
@@ -201,7 +201,7 @@ if __name__ == '__main__':
         ),
     )
 
-    results_dir = f'ice_results_may8_exp_binary'
+    results_dir = f'ice_results_may10_exp_8y_train_5y_'
 
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)

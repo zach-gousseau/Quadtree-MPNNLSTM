@@ -324,7 +324,7 @@ class Seq2Seq(torch.nn.Module):
                     #     f"torch.cuda.memory_allocated: {torch.cuda.memory_allocated(0)/1024/1024/1024}GB\n" + \
                     #     f"torch.cuda.memory_reserved: {torch.cuda.memory_reserved(0)/1024/1024/1024}GB\n" + \
                     #     f"torch.cuda.max_memory_reserved: {torch.cuda.max_memory_reserved(0)/1024/1024/1024}GB",
-                    #     end='\033[A\033[A\033[A'
+                    #     # end='\033[A\033[A\033[A'
                     # )
                 else:
                     pid = os.getpid()

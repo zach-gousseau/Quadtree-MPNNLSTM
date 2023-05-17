@@ -20,7 +20,7 @@ from ice_test import IceDataset
 
 from torch.utils.data import Dataset, DataLoader
 
-torch.autograd.set_detect_anomaly(True)
+# torch.autograd.set_detect_anomaly(True)
 
 if __name__ == '__main__':
 
@@ -33,13 +33,15 @@ if __name__ == '__main__':
     convolution_type = 'TransformerConv'
     # convolution_type = 'GCNConv'
     # convolution_type = 'Dummy'
-    generate_predictions = True
+    generate_predictions = False
 
-    ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
+    # ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
     # ds = xr.open_dataset('data/era5_hb_daily_coarsened_2.zarr')
     # ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
     # ds = xr.open_zarr('/home/zgoussea/scratch/era5_arctic_daily.zarr')
     # ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5/*/*.nc'))
+    # ds = xr.open_zarr('data/hb_era5_glorys.zarr')  # ln -s /home/zgoussea/scratch/hb_era5_glorys.zarr/  data/hb_era5_glorys.zarr
+    ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))  # ln -s /home/zgoussea/scratch/hb_era5_glorys.zarr/  data/hb_era5_glorys.zarr
 
     coarsen = 1
 
@@ -60,7 +62,7 @@ if __name__ == '__main__':
     binary = False
     binary_thresh = 0.15
 
-    truncated_backprop = 0
+    truncated_backprop = 30
 
     # Number of frames to read as input
     input_timesteps = 10
@@ -80,8 +82,8 @@ if __name__ == '__main__':
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, y_binary_thresh=binary_thresh if binary else None)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, y_binary_thresh=binary_thresh if binary else None)
 
-    loader_profile = DataLoader(data_train, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(15)))
-    loader_test = DataLoader(data_train, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
+    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(15)))
+    loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
 
     thresh = 0.15
     thresh = -np.inf
@@ -94,7 +96,7 @@ if __name__ == '__main__':
         hidden_size=32,
         dropout=0.1,
         n_layers=1,
-        n_conv_layers=1,
+        n_conv_layers=3,
         transform_func=dist_from_05,
         dummy=False,
         convolution_type=convolution_type,
