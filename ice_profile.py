@@ -4,6 +4,7 @@ import torch
 import random
 import datetime
 import glob
+import pickle
 import os
 import time
 import pandas as pd
@@ -38,6 +39,12 @@ if __name__ == '__main__':
     # ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
     # ds = xr.open_zarr('/home/zgoussea/scratch/era5_arctic_daily.zarr')
     # ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5/*/*.nc'))
+    ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
+
+    # with open(f'data/hb_era5_glorys_nc/graph_data', 'rb') as handle:
+    #     graph_structure = pickle.load(handle)
+
+    graph_structure = None
 
     coarsen = 1
 
@@ -62,11 +69,11 @@ if __name__ == '__main__':
 
     # Number of frames to read as input
     input_timesteps = 10
-    output_timesteps= 90
+    output_timesteps= 10
 
     start = time.time()
 
-    x_vars = ['siconc', 't2m', 'v10', 'u10']#, 'slhf']
+    x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
     training_years = range(2015, 2016)
 
@@ -89,7 +96,7 @@ if __name__ == '__main__':
 
     # Add 3 to the number of input features since weadd positional encoding (x, y) and node size (s)
     model_kwargs = dict(
-        hidden_size=32,
+        hidden_size=8,
         dropout=0.1,
         n_layers=1,
         n_conv_layers=1,
@@ -131,6 +138,7 @@ if __name__ == '__main__':
         lr=lr, 
         n_epochs=10, 
         mask=mask, 
+        graph_structure=graph_structure, 
         truncated_backprop=truncated_backprop
         )
 
