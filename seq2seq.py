@@ -253,19 +253,27 @@ class Seq2Seq(torch.nn.Module):
 
         self.device = device
 
-    def process_inputs(self, x, mask=None):
+    def process_inputs(self, x, mask=None, graph_structure=None):
 
         num_samples, w, h, c = x.shape
         image_shape = (w, h)
 
         self.mask = mask
         
-        if self.remesh_input:
-            x0 = add_positional_encoding(x[[0]])
-            graph_structure = image_to_graph(x0, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
+        if graph_structure is None:
+            if self.remesh_input:
+                x0 = add_positional_encoding(x[[0]])
+                graph_structure = image_to_graph(x0, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
+            else:
+                x = add_positional_encoding(x)
+                graph_structure = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
         else:
             x = add_positional_encoding(x)
-            graph_structure = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
+            data = flatten(x, graph_structure['mapping'], graph_structure['n_pixels_per_node'], mask)
+            node_sizes = torch.Tensor(graph_structure['n_pixels_per_node']) / ((4/2)**2)  # TODO: Don't assume 4 !!
+            node_sizes = node_sizes.repeat((x.shape[0], *[1]*len(node_sizes.shape)))
+            data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
+            graph_structure['data'] = data
 
         self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
 
@@ -371,10 +379,10 @@ class Seq2Seq(torch.nn.Module):
         
 
         
-    def forward(self, x, y=None, skip=None, teacher_forcing_ratio=0.5, mask=None, remesh_every=1):
+    def forward(self, x, y=None, skip=None, teacher_forcing_ratio=0.5, mask=None, graph_structure=None, remesh_every=1):
 
         # Encoder
-        self.process_inputs(x, mask=mask)
+        self.process_inputs(x, mask=mask, graph_structure=graph_structure)
 
         # Decoder
         outputs, output_mappings = self.unroll_output(

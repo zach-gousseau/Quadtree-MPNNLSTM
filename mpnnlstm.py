@@ -179,6 +179,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         lr_decay=0.95,
         mask=None,
         truncated_backprop=45,
+        graph_structure=None,
         ):
 
         image_shape = loader_train.dataset.image_shape
@@ -209,7 +210,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                     self.optimizer.zero_grad()
                 
                     # with amp.autocast():
-                    y_hat, y_hat_mappings = self.model(x, y, skip, teacher_forcing_ratio=0, mask=mask)
+                    y_hat, y_hat_mappings = self.model(x, y, skip, teacher_forcing_ratio=0, mask=mask, graph_structure=graph_structure)
                     
                     y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
                     y_hat = torch.stack(y_hat, dim=0)
@@ -328,7 +329,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                     skip = None
 
                 with torch.no_grad():
-                    y_hat, y_hat_mappings = self.model(x, y, skip, teacher_forcing_ratio=0, mask=mask)
+                    y_hat, y_hat_mappings = self.model(x, y, skip, teacher_forcing_ratio=0, mask=mask, graph_structure=graph_structure)
 
                     y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
                     y_hat = torch.stack(y_hat, dim=0)
@@ -396,7 +397,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 skip = None
 
             with torch.no_grad():
-                y_hat, y_hat_mappings = self.model(x, skip=skip, teacher_forcing_ratio=0, mask=mask)
+                y_hat, y_hat_mappings = self.model(x, skip=skip, teacher_forcing_ratio=0, mask=mask, graph_structure=graph_structure)
                 
                 y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask).detach().cpu() for i in range(self.output_timesteps)]
                 
