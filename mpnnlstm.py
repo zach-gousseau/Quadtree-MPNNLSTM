@@ -4,6 +4,7 @@ import pandas as pd
 import pickle
 import matplotlib.pyplot as plt
 import os 
+import datetime
 from tqdm import tqdm
 import warnings
 
@@ -119,6 +120,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                  condition='max_larger_than',
                  remesh_input=False,
                  binary=False,
+                 debug=False,
                  model_kwargs={}):
         
         super().__init__(
@@ -133,6 +135,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         self.input_timesteps = input_timesteps
         self.output_timesteps = output_timesteps
         self.binary = binary
+        self.debug = debug
         
         self.model = Seq2Seq(
             input_features=input_features + 3,  # 3 (node_size)
@@ -142,6 +145,7 @@ class NextFramePredictorS2S(NextFramePredictor):
             device=device,
             remesh_input=remesh_input,
             binary=binary,
+            debug = debug,
             **model_kwargs
         ).to(device)
 
@@ -151,13 +155,13 @@ class NextFramePredictorS2S(NextFramePredictor):
     def initiate_training(self, lr, lr_decay):
         self.loss_func = torch.nn.MSELoss() if not self.binary else torch.nn.BCELoss()
         self.loss_func_name = 'MSE' if not self.binary else 'BCE'
-        # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9)
+        # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=0.001)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.scheduler = StepLR(self.optimizer, step_size=3, gamma=lr_decay)
 
         # scaler = amp.GradScaler()
         
-        self.writer = SummaryWriter()
+        self.writer = SummaryWriter('runs/' + self.experiment_name + '_' + datetime.datetime.now().strftime("%Y%m%d_%H_%M_%S"))
 
         self.test_loss = []
         self.train_loss = []
@@ -187,6 +191,8 @@ class NextFramePredictorS2S(NextFramePredictor):
             assert mask.shape == image_shape, f'Mask and image shapes do not match. Got {mask.shape} and {image_shape}'
 
         st = time.time()
+        batch_step = 0
+        batch_step_test = 0
         for epoch in range(n_epochs): 
             running_loss = 0
             step = 0
@@ -211,6 +217,17 @@ class NextFramePredictorS2S(NextFramePredictor):
                     
                     loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
 
+                    # loss = 0 
+                    # for t in range(len(y)):
+                    #     loss_step = self.loss_func(y_hat[t, ~mask], y[t, ~mask]) 
+
+                    #     loss_step.backward(retain_graph=True)
+
+                    #     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1)
+
+                    # loss += loss_step
+
+
 
                     # scaler.scale(loss).backward()
                     # scaler.step(self.optimizer)
@@ -219,7 +236,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                     # with profiler.profile(enabled=True, use_cuda=True) as prof:
                     loss.backward()
 
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10)
 
                     # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
                     # prof.export_chrome_trace("profiling_results.json")
@@ -227,17 +244,32 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                     self.optimizer.step()
 
-                    # decoder_params = [p for p in self.model.decoder.parameters()]
-                    # decoder_grads = [p.grad.mean().cpu() for p in decoder_params if p.grad is not None]
-                    # decoder_param_means = [p.mean().abs().detach().cpu() for p in decoder_params]
-                    # self.writer.add_scalar("Grad/decoder/mean", np.mean(np.abs(decoder_grads)), epoch)
-                    # self.writer.add_scalar("Param/decoder/mean", np.mean(decoder_param_means), epoch)
+                    if self.debug:
+                        # decoder_params = [p for p in self.model.decoder.parameters()]
+                        # decoder_grads = [p.grad.mean().cpu() for p in decoder_params if p.grad is not None]
+                        # decoder_param_means = [p.mean().abs().detach().cpu() for p in decoder_params]
+                        # self.writer.add_scalar("Grad/decoder/mean", np.mean(np.abs(decoder_grads)), batch_step)
+                        # self.writer.add_scalar("Param/decoder/mean", np.mean(decoder_param_means), batch_step)
 
-                    # encoder_params = [p for p in self.model.encoder.parameters()]
-                    # encoder_grads = [p.grad.mean().cpu() for p in encoder_params if p.grad is not None]
-                    # encoder_param_means = [p.mean().abs().detach().cpu() for p in encoder_params]
-                    # self.writer.add_scalar("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), epoch)
-                    # self.writer.add_scalar("Param/encoder/mean", np.mean(encoder_param_means), epoch)
+                        # encoder_params = [p for p in self.model.encoder.parameters()]
+                        # encoder_grads = [p.grad.mean().cpu() for p in encoder_params if p.grad is not None]
+                        # encoder_param_means = [p.mean().abs().detach().cpu() for p in encoder_params]
+                        # self.writer.add_scalar("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), batch_step)
+                        # self.writer.add_scalar("Param/encoder/mean", np.mean(encoder_param_means), batch_step)
+
+                        # print("Grad/decoder/mean", np.mean(np.abs(decoder_grads)), batch_step)
+                        # print("Param/decoder/mean", np.mean(decoder_param_means), batch_step)
+                        # print("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), batch_step)
+                        # print("Param/encoder/mean", np.mean(encoder_param_means), batch_step)
+
+                        en_grad_norms = torch.norm(torch.stack([torch.norm(param.grad.detach()) for param in self.model.encoder.parameters() if param.grad is not None]))
+                        de_grad_norms = torch.norm(torch.stack([torch.norm(param.grad.detach()) for param in self.model.decoder.parameters() if param.grad is not None]))
+
+                        self.writer.add_scalar("Grad/encoder/grad_norms", en_grad_norms, batch_step)
+                        self.writer.add_scalar("Grad/decoder/grad_norms", de_grad_norms, batch_step)
+
+                        # print("Grad/encoder/grad_norms", en_grad_norms, batch_step)
+                        # print("Grad/decoder/grad_norms", de_grad_norms, batch_step)
 
                     del y_hat
                     del y_hat_mappings
@@ -271,15 +303,17 @@ class NextFramePredictorS2S(NextFramePredictor):
                         loss = self.loss_func(y_hat[:, ~mask], y[output_timestep-truncated_backprop:output_timestep, ~mask])  
                         loss.backward(retain_graph=True)
 
-                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1)
+                        # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=.5)
 
                         del y_hat, y_hat_mappings
 
                     self.optimizer.step()
 
-                self.writer.add_scalar("Loss/train", loss.item(), epoch)
+                self.writer.add_scalar("Loss/train", loss.item(), batch_step)
+                # print("Loss/train", loss.item(), batch_step)
 
                 step += 1
+                batch_step += 1
                 running_loss += loss.item()
                 torch.cuda.empty_cache()
 
@@ -301,8 +335,6 @@ class NextFramePredictorS2S(NextFramePredictor):
                     y_hat = torch.stack(y_hat, dim=0)
                 
                     loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
-                    
-                    self.writer.add_scalar("Loss/test", loss, epoch)
 
                 step_test += 1
                 running_loss_test += loss
@@ -315,11 +347,13 @@ class NextFramePredictorS2S(NextFramePredictor):
             running_loss = running_loss / (step + 1)
             running_loss_test = running_loss_test / (step_test + 1)
 
-            if np.isnan(running_loss_test):
+            if np.isnan(running_loss_test.item()):
                 raise ValueError('NaN loss :(')
 
-            if running_loss_test > 4:
+            if running_loss_test.item() > 4:
                 raise ValueError('Diverged :(')
+
+            self.writer.add_scalar("Loss/test", running_loss_test.item(), epoch)
 
             self.scheduler.step()
 

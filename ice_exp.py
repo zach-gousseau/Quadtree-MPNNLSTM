@@ -44,9 +44,18 @@ if __name__ == '__main__':
 
     # Defaults
     convolution_type = 'TransformerConv'
-    lr = 0.01
+    lr = 0.001
     multires_training = False
     truncated_backprop = 0
+
+    training_years = range(2002, 2010)
+    x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
+    y_vars = ['siconc']  # ['siconc', 't2m']
+    input_features = len(x_vars)
+    input_timesteps = 10
+    output_timesteps= 90
+
+    binary=False
 
     if exp == 1:
         convolution_type = 'GCNConv'
@@ -60,13 +69,12 @@ if __name__ == '__main__':
         truncated_backprop = 45
     elif exp == 6:
         truncated_backprop = 30
-
-    training_years = range(2011, 2016)
-    x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
-    y_vars = ['siconc']  # ['siconc', 't2m']
-    input_features = len(x_vars)
-    input_timesteps = 10
-    output_timesteps= 90
+    elif exp == 7:
+        lr = 0.001
+        input_timesteps = 30
+    elif exp == 8:
+        lr = 0.001
+        input_timesteps = 90
 
 
     if multires_training:
@@ -78,7 +86,7 @@ if __name__ == '__main__':
         # Half resolution datasets
         data_train_half = IceDataset(ds_half, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
         data_test_half = IceDataset(ds_half, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
-        data_val_half = IceDataset(ds_half, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
+        data_val_half = IceDataset(ds_half, [training_years[-1]+5], month, input_timesteps, output_timesteps, x_vars, y_vars)
 
         loader_train_half = DataLoader(data_train_half, batch_size=1, shuffle=True)
         loader_test_half = DataLoader(data_test_half, batch_size=1, shuffle=True)
@@ -89,10 +97,12 @@ if __name__ == '__main__':
 
 
     # Full resolution dataset
-    ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
-    # ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
+    # ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
+    ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
     # ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))  # ln -s /home/zgoussea/scratch/hb_era5_glorys_nc data/hb_era5_glorys_nc
     # ds = xr.open_zarr('data/hb_era5_glorys.zarr')  # ln -s /home/zgoussea/scratch/hb_era5_glorys.zarr/  data/hb_era5_glorys.zarr
+
+    # ds = ds.isel(latitude=slice(50, 100), longitude=slice(50, 100))
     
 
     mask = np.isnan(ds.siconc.isel(time=0)).values
@@ -100,7 +110,7 @@ if __name__ == '__main__':
     # Full resolution datasets
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
-    data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
+    data_val = IceDataset(ds, [training_years[-1]+5], month, input_timesteps, output_timesteps, x_vars, y_vars)
 
     loader_train = DataLoader(data_train, batch_size=1, shuffle=True)
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)
@@ -125,7 +135,8 @@ if __name__ == '__main__':
         n_layers=1,
         transform_func=dist_from_05,
         dummy=False,
-        n_conv_layers=1,
+        n_conv_layers=3,
+        rnn_type='LSTM',
         convolution_type=convolution_type,
     )
 
@@ -139,12 +150,12 @@ if __name__ == '__main__':
         output_timesteps=output_timesteps,
         transform_func=dist_from_05,
         device=device,
+        binary=binary,
+        debug=True, 
         model_kwargs=model_kwargs)
 
     print('Num. parameters:', model.get_n_params())
     print('Model:\n', model.model)
-
-    lr = 0.01
 
     # Train model
     model.model.train()
@@ -190,7 +201,7 @@ if __name__ == '__main__':
         ),
     )
 
-    results_dir = f'ice_results_{convolution_type}_apr26_exp_{exp}'
+    results_dir = f'ice_results_may10_exp_8y_train_5y_'
 
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)

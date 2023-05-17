@@ -15,19 +15,21 @@ import numpy as np
 import psutil
 import os
 
-from model import GConvLSTM, GConvGRU, DummyLSTM, CONVOLUTION_KWARGS, CONVOLUTIONS
+from model import GConvLSTM, GConvGRU, SplitGConvLSTM, DummyLSTM, CONVOLUTION_KWARGS, CONVOLUTIONS
 
 
 class Encoder(torch.nn.Module):
     def __init__(self, input_features, hidden_size, dropout, n_layers=1, convolution_type='GCNConv', rnn_type='LSTM', n_conv_layers=3, dummy=False):
         super().__init__()
 
-        assert rnn_type in ['GRU', 'LSTM']
+        assert rnn_type in ['GRU', 'LSTM', 'SplitLSTM']
 
         if rnn_type == 'LSTM':
             rnn = GConvLSTM
         elif rnn_type == 'GRU':
             rnn = GConvGRU
+        elif rnn_type == 'SplitLSTM':
+            rnn = SplitGConvLSTM
         else:
             raise ValueError
         
@@ -58,7 +60,7 @@ class Encoder(torch.nn.Module):
 
         # hidden_layer, cell_layer = hidden_layer.squeeze(0), cell_layer.squeeze(0)
         hidden_layer = self.norm_h(hidden_layer)
-        if self.rnn_type == 'LSTM':
+        if self.rnn_type != 'GRU':
             cell_layer = self.norm_c(cell_layer)
 
         hidden, cell = [hidden_layer], [cell_layer]
@@ -66,26 +68,28 @@ class Encoder(torch.nn.Module):
             _, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=None, C=None)
 
             hidden_layer = self.norm_h(hidden_layer)
-            if self.rnn_type == 'LSTM':
+            if self.rnn_type != 'GRU':
                 cell_layer = self.norm_c(cell_layer)
 
             hidden.append(hidden_layer)
             cell.append(cell_layer)
 
         hidden = torch.stack(hidden)
-        cell = torch.stack(cell) if self.rnn_type == 'LSTM' else [None]*len(hidden)
+        cell = torch.stack(cell) if self.rnn_type != 'GRU' else [None]*len(hidden)
         return hidden, cell
 
 class Decoder(torch.nn.Module):
     def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=3, convolution_type='GCNConv', rnn_type='LSTM', n_conv_layers=3, binary=False, dummy=False):
         super().__init__()
 
-        assert rnn_type in ['GRU', 'LSTM']
+        assert rnn_type in ['GRU', 'LSTM', 'SplitLSTM']
 
         if rnn_type == 'LSTM':
             rnn = GConvLSTM
         elif rnn_type == 'GRU':
             rnn = GConvGRU
+        elif rnn_type == 'SplitLSTM':
+            rnn = SplitGConvLSTM
         else:
             raise ValueError
         
@@ -104,11 +108,12 @@ class Decoder(torch.nn.Module):
                 [rnn(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers) for _ in range(n_layers-1)]
                 )
 
+        in_channels = hidden_size + skip_dim if not (dummy or convolution_type=='Dummy') else 3 + skip_dim
+
         convolution_type = 'TransformerConv'
         conv_func = CONVOLUTIONS[convolution_type]
         conv_func_kwargs = CONVOLUTION_KWARGS[convolution_type]
-
-        in_channels = hidden_size + skip_dim if not dummy else 3 + skip_dim
+        
 
         self.fc_out1 = conv_func(in_channels=in_channels, out_channels=hidden_size, heads=1, edge_dim=2, dropout=0.1, concat=False)#**conv_func_kwargs)
         # self.fc_out2 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
@@ -136,7 +141,7 @@ class Decoder(torch.nn.Module):
         output, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H[0], C=C[0])
 
         hidden_layer = self.norm_h(hidden_layer)
-        if self.rnn_type == 'LSTM':
+        if self.rnn_type != 'GRU':
             cell_layer = self.norm_c(cell_layer)
 
         hidden, cell = [hidden_layer], [cell_layer]
@@ -145,14 +150,14 @@ class Decoder(torch.nn.Module):
             output, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=H[i], C=C[i])
 
             hidden_layer = self.norm_h(hidden_layer)
-            if self.rnn_type == 'LSTM':
+            if self.rnn_type != 'GRU':
                 cell_layer = self.norm_c(cell_layer)
 
             hidden.append(hidden_layer)
             cell.append(cell_layer)
 
         hidden = torch.stack(hidden)
-        cell = torch.stack(cell) if self.rnn_type == 'LSTM' else [None]*len(hidden)
+        cell = torch.stack(cell) if self.rnn_type != 'GRU' else [None]*len(hidden)
 
         
         # output = output.squeeze(0)  
@@ -165,7 +170,12 @@ class Decoder(torch.nn.Module):
 
         output = self.gnn_out(output, edge_index, edge_weight)
 
-        output += X[:, [0]]
+        output = torch.tanh(output)
+        # output = output + X[:, [0]]
+        output = output + skip[:, [0]]
+
+        if self.binary:
+            output = torch.sigmoid(output)
 
         return output, hidden, cell
 
@@ -173,10 +183,9 @@ class Decoder(torch.nn.Module):
         x = self.fc_out1(x, edge_index, edge_weight)
         x = F.relu(x)
         x = self.fc_out2(x, edge_index, edge_weight)
+        # x = torch.sigmoid(x)
 
-
-        if self.binary:
-            x = torch.sigmoid(x)
+        # x = self.dropout(x)
         return x
         
 
@@ -317,13 +326,14 @@ class Seq2Seq(torch.nn.Module):
 
             if self.debug:
                 if self.device.type == 'cuda':
-                    print(
-                        f'Decoder step {t} \n' + \
-                        f"torch.cuda.memory_allocated: {torch.cuda.memory_allocated(0)/1024/1024/1024}GB\n" + \
-                        f"torch.cuda.memory_reserved: {torch.cuda.memory_reserved(0)/1024/1024/1024}GB\n" + \
-                        f"torch.cuda.max_memory_reserved: {torch.cuda.max_memory_reserved(0)/1024/1024/1024}GB",
-                        end='\033[A\033[A\033[A'
-                    )
+                    pass
+                    # print(
+                    #     f'Decoder step {t} \n' + \
+                    #     f"torch.cuda.memory_allocated: {torch.cuda.memory_allocated(0)/1024/1024/1024}GB\n" + \
+                    #     f"torch.cuda.memory_reserved: {torch.cuda.memory_reserved(0)/1024/1024/1024}GB\n" + \
+                    #     f"torch.cuda.max_memory_reserved: {torch.cuda.max_memory_reserved(0)/1024/1024/1024}GB",
+                    #     # end='\033[A\033[A\033[A'
+                    # )
                 else:
                     pid = os.getpid()
                     python_process = psutil.Process(pid)
@@ -331,7 +341,7 @@ class Seq2Seq(torch.nn.Module):
                     print('CPU memory usage:', memoryUse, 'GB', end='\r')
             
             if skip is not None:
-                skip_t = torch.cat([skip[t].unsqueeze(0), self.graph.persistence, torch.ones_like(self.graph.persistence) * t], dim=-1)
+                skip_t = torch.cat([self.graph.persistence, skip[t].unsqueeze(0), torch.ones_like(self.graph.persistence) * t], dim=-1)
             else:
                 skip_t = self.graph.persistence
 
@@ -390,7 +400,7 @@ class Seq2Seq(torch.nn.Module):
         if teacher_force:
             teacher_input = add_positional_encoding(teacher_input)  # Add positional encoding
             self.graph.pyg.x = flatten(teacher_input, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
-            self.graph.pyg.x = torch.cat([self.graph.pyg.x, self.graph.n_pixels_per_node.unsqueeze(0).unsqueeze(-1)], dim=-1)  # Add node sizes
+            self.graph.pyg.x = torch.cat([self.graph.pyg.x, self.graph.n_pixels_per_node.unsqueeze(-1)], dim=-1)  # Add node sizes
         else:
             # Add positional encoding
             pos_encoding = self.graph.pyg.x[..., 1:]
@@ -418,7 +428,7 @@ class Seq2Seq(torch.nn.Module):
             teacher_input = add_positional_encoding(teacher_input)
             graph_structure = image_to_graph(teacher_input, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
         else:
-            data_img = add_positional_encoding(data_img)  # Add pos. embedding
+            data_img = add_positional_encoding(data_img.unsqueeze(0))  # Add pos. embedding
             graph_structure = image_to_graph(data_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
 
         # skip = graph_structure['data'][:, :, [0]]
@@ -430,8 +440,10 @@ class Seq2Seq(torch.nn.Module):
         hidden, cell = torch.swapaxes(hidden, 0, -1), torch.swapaxes(cell, 0, -1)
 
         # Create a graph object for input into next rollout
-        self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
-        self.graph.pyg.x = graph_structure['data']
+        # self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
+        self.graph.pyg.edge_index = graph_structure['edge_index']
+        self.graph.pyg.edge_attr = graph_structure['edge_attrs']
+        self.graph.pyg.x = graph_structure['data'].squeeze(0)
         # self.graph.skip = skip
         self.graph.mapping = graph_structure['mapping']
         self.graph.n_pixels_per_node = graph_structure['n_pixels_per_node']

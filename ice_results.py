@@ -12,6 +12,7 @@ from calendar import monthrange, month_name
 import xarray as xr
 import rioxarray
 from dateutil.relativedelta import relativedelta
+from tqdm import tqdm
 from sklearn.metrics import accuracy_score
 
 import warnings
@@ -48,15 +49,24 @@ def masked_RMSE(mask):
         return np.sqrt(np.mean(sq_diff))
     return loss
 
+def masked_RMSE_along_axis(mask):
+    def loss(y_true, y_pred):
+        sq_diff = np.multiply((y_pred - y_true)**2, mask)
+        return np.sqrt(np.mean(sq_diff, (1, 2)))
+    return loss
+
 def create_heatmap(ds, accuracy=False):
     heatmap = pd.DataFrame(0.0, index=range(1, 13), columns=ds.timestep)
     heatmap_n = pd.DataFrame(0.0, index=range(1, 13), columns=ds.timestep)
 
-    for timestep in ds.timestep:
+    for timestep in tqdm(ds.timestep):
         timestep = int(timestep.values)
         for launch_date in ds.launch_date:
-            arr = ds.sel(timestep=timestep, launch_date=launch_date).to_array().values
-            arr = np.nan_to_num(arr)
+            try:
+                arr = ds.sel(timestep=timestep, launch_date=launch_date).to_array().values
+                arr = np.nan_to_num(arr)
+            except ValueError:
+                continue
 
             if accuracy:
                 arr = arr > 0.5
@@ -72,17 +82,43 @@ def create_heatmap(ds, accuracy=False):
     heatmap = heatmap.div(heatmap_n)
     return heatmap
 
-# mask = np.isnan(xr.open_zarr('data/era5_hb_daily.zarr').siconc.isel(time=0)).values
-mask = np.isnan(xr.open_zarr('data/era5_hb_daily_coarsened_2.zarr').siconc.isel(time=0)).values
+def create_heatmap_fast(ds, accuracy=False):
+    timestep_values = ds.timestep.values.astype(int)
+    launch_date_values = ds.launch_date.values
+    launch_months = pd.DatetimeIndex(launch_date_values).month
 
-results_dir = 'ice_results_profile'
+    heatmap = np.zeros((12, len(timestep_values)))
+    heatmap_n = np.zeros_like(heatmap)
+
+    for i, timestep in enumerate(tqdm(timestep_values)):
+        arr = ds.sel(timestep=timestep).to_array().values
+        arr = np.nan_to_num(arr)
+
+        if accuracy:
+            arr = arr > 0.5
+            err = masked_accuracy(~mask)(arr[0], arr[1])
+        else:
+            err = masked_RMSE_along_axis(~mask)(arr[0], arr[1])
+
+        for j, e in enumerate(err):
+            heatmap[launch_months[j]-1, i] += e
+            heatmap_n[launch_months[j]-1, i] += 1
+
+    heatmap /= heatmap_n
+    heatmap = pd.DataFrame(heatmap, index=range(1, 13), columns=ds.timestep.values)
+    return heatmap
+
+mask = np.isnan(xr.open_zarr('data/era5_hb_daily.zarr').siconc.isel(time=0)).values
+# mask = np.isnan(xr.open_zarr('data/era5_hb_daily_coarsened_2.zarr').siconc.isel(time=0)).values
+
+results_dir = 'ice_results_may10_exp_8y_train_5y_'
 accuracy = False
 
 months = range(1, 13)
 ds = []
 for month in months:
     try:
-        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y2015_Y2015_I10O90.nc', engine='netcdf4'))
+        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y2002_Y2009_I10O90.nc', engine='netcdf4'))
     except Exception as e: #FileNotFoundError:
         print(e)
         pass
@@ -97,7 +133,7 @@ months = range(1, 13)
 losses = {}
 for month in months:
     try:
-        losses[month] = pd.read_csv(f'{results_dir}/loss_M{month}_Y2011_Y2015_I5O30.csv')
+        losses[month] = pd.read_csv(f'{results_dir}/loss_M{month}_Y2002_Y2009_I10O90.csv')
     except FileNotFoundError:
         pass
 
@@ -157,7 +193,7 @@ plt.xlabel('Lead time (days)')
 plt.savefig(f'{results_dir}/heatmap_pers.png')
 plt.close()
 
-climatology = xr.open_zarr('data/era5_hb_daily_coarsened_2.zarr')
+climatology = xr.open_zarr('data/era5_hb_daily.zarr')
 climatology = climatology['siconc'].groupby('time.dayofyear').mean('time', skipna=True).values
 climatology = np.nan_to_num(climatology)
 
@@ -175,8 +211,11 @@ for timestep in ds.timestep:
         forecast_doy = forecast_date.dayofyear
         launch_month = pd.Timestamp(launch_date.values).month
         
-        arr_true = ds.sel(timestep=timestep, launch_date=launch_date).y_true.values
-        arr_clim = climatology[forecast_doy-1]
+        try:
+            arr_true = ds.sel(timestep=timestep, launch_date=launch_date).y_true.values
+            arr_clim = climatology[forecast_doy-1]
+        except ValueError:
+            continue
         
         if accuracy:
             arr_true = arr_true > 0.15
@@ -198,7 +237,7 @@ plt.close()
 
 
         
-heatmap = create_heatmap(ds)
+heatmap = create_heatmap_fast(ds)
 
 plt.figure(dpi=80)
 sns.heatmap(heatmap, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.18, vmin=0.02)
@@ -220,33 +259,6 @@ plt.xlabel('Lead time (days)')
 plt.savefig(f'{results_dir}/heatmap_diff_pers.png')
 plt.close()
 
-
-
-
-
-
-heatmap = pd.DataFrame(0.0, index=range(1, 13), columns=ds.timestep)
-heatmap_n = pd.DataFrame(0.0, index=range(1, 13), columns=ds.timestep)
-
-for timestep in ds.timestep:
-    timestep = int(timestep.values)
-    for launch_date in ds.launch_date:
-        arr = ds.sel(timestep=timestep, launch_date=launch_date).to_array().values
-        
-        if accuracy:
-            arr = arr > 0.5
-            err = masked_accuracy(~mask)(arr[0], arr[1])
-        else:
-            err = masked_RMSE(~mask)(arr[0], arr[1])
-        
-        launch_month = pd.Timestamp(launch_date.values).month
-        
-        heatmap[timestep][launch_month] += err
-        heatmap_n[timestep][launch_month] += 1
-        
-heatmap = heatmap.div(heatmap_n)
-
-plt.figure(dpi=80)
-sns.heatmap(heatmap, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=None, vmin=None)
-plt.xlabel('Lead time (days)')
-plt.savefig(f'{results_dir}/heatmap.png')
+heatmap.to_csv(f'{results_dir}/heatmap.csv')
+heatmap_clim.to_csv(f'{results_dir}/heatmap_clim.csv')
+heatmap_pers.to_csv(f'{results_dir}/heatmap_pers.csv')

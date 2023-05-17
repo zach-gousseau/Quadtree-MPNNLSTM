@@ -14,6 +14,7 @@ runs/
 scratch/
 .DS_Store
 mprofile*
+*/events*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

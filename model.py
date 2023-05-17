@@ -46,7 +46,7 @@ CONVOLUTIONS = {
 
 CONVOLUTION_KWARGS = {
     'GCNConv': dict(add_self_loops=False),
-    'TransformerConv': dict(heads=3, edge_dim=2, dropout=0.1, concat=False),
+    'TransformerConv': dict(heads=1, edge_dim=2, dropout=0.1, concat=False),
     'MHTransformerConv': dict(heads=3, edge_dim=2, dropout=0.1),
     'ChebConv': dict(K=3, normalization='sym', bias=True),
     'GATConv': dict(heads=1, edge_dim=2),
@@ -65,7 +65,7 @@ class GraphConv(nn.Module):
         conv_func = CONVOLUTIONS[convolution_type]
         conv_kwargs = CONVOLUTION_KWARGS[convolution_type]
 
-        if convolution_type is not 'Dummy':
+        if convolution_type != 'Dummy':
             self.convolutions = nn.ModuleList(
                 [conv_func(in_channels, out_channels, **conv_kwargs)] + \
                 [conv_func(out_channels, out_channels, **conv_kwargs) for  _ in range(n_layers - 1)]
@@ -353,9 +353,9 @@ class GConvLSTM(nn.Module):
         self._create_output_gate_parameters_and_layers()
 
     def _set_parameters(self):
-        glorot(self.w_c_i)
-        glorot(self.w_c_f)
-        glorot(self.w_c_o)
+        zeros(self.w_c_i)
+        zeros(self.w_c_f)
+        zeros(self.w_c_o)
         zeros(self.b_i)
         zeros(self.b_f)
         zeros(self.b_c)
@@ -515,6 +515,47 @@ class MPNNLSTM(nn.Module):
         H = torch.sigmoid(H)
         # H = F.relu(H)
         return H
+
+class SplitGConvLSTM(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        n_conv_layers: int = 1, 
+        convolution_type='GCNConv'
+    ):
+        super(SplitGConvLSTM, self).__init__()
+
+        assert convolution_type in CONVOLUTIONS
+
+        self.convolution_type = convolution_type
+        self.n_conv_layers = n_conv_layers
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+
+        self.rnn = nn.LSTM(out_channels, out_channels, 1)
+
+        self.conv = GraphConv(
+            convolution_type=self.convolution_type,
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
+            n_layers = self.n_conv_layers
+        )
+
+    def forward(
+        self,
+        X: torch.FloatTensor,
+        edge_index: torch.LongTensor,
+        edge_weight: torch.FloatTensor = None,
+        H: torch.FloatTensor = None,
+        C: torch.FloatTensor = None,
+        ) -> torch.FloatTensor:
+        X = self.conv(X, edge_index, edge_weight)
+
+        outputs, (hidden, cell) = self.rnn(X, (H, C)) if H is not None else self.rnn(X)
+        return outputs, hidden, cell
+
 
 class MPNNLSTMI(nn.Module):
     def __init__(self, hidden_size, dropout, input_timesteps=3, input_features=4, n_layers=2, output_features=1):

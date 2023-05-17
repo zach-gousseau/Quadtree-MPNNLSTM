@@ -317,7 +317,7 @@ def get_adj(labels, xx=None, yy=None, calculate_distances=False, edges_at_corner
         edge_attrs = torch.stack((
             dist_angle(edge_sources, edge_targets, xx, yy),
             dist(edge_sources, edge_targets, xx, yy)
-        ))
+        )).T
     else:
         edge_attrs = dist(edge_sources, edge_targets, xx, yy)
 
@@ -589,7 +589,7 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func
     # xx, yy = xx.detach().cpu(), yy.detach().cpu()
     
     # # Get sizes for each graph node (TODO: scale by latitude)
-    # node_sizes = n_pixels_per_node
+    node_sizes = n_pixels_per_node
 
     # # Make sure nothing has gone wrong 
     # assert len(node_sizes) == len(graph_nodes)
@@ -598,10 +598,10 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func
     
     # TODO: Use resolution argument to scale the node sizes -- currently only done for pixelwise modelling
     
-    # node_sizes = torch.Tensor(node_sizes) / ((max_grid_size/2)**2)
-    # node_sizes = node_sizes.repeat((n_samples, *[1]*len(node_sizes.shape)))
+    node_sizes = torch.Tensor(node_sizes) / ((max_grid_size/2)**2)
+    node_sizes = node_sizes.repeat((n_samples, *[1]*len(node_sizes.shape)))
 
-    # data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
+    data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
 
     edge_index, edge_attrs = get_adj(labels, xx=xx, yy=yy, calculate_distances=False, use_edge_attrs=use_edge_attrs)
 
