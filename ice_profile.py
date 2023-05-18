@@ -21,6 +21,8 @@ from ice_test import IceDataset
 
 from torch.utils.data import Dataset, DataLoader
 
+from graph_functions import create_static_heterogeneous_graph
+
 # torch.autograd.set_detect_anomaly(True)
 
 if __name__ == '__main__':
@@ -43,11 +45,6 @@ if __name__ == '__main__':
     # ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5/*/*.nc'))
     ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
 
-    # with open(f'data/hb_era5_glorys_nc/graph_data', 'rb') as handle:
-    #     graph_structure = pickle.load(handle)
-
-    graph_structure = None
-
     coarsen = 1
 
     if coarsen > 1:
@@ -60,6 +57,11 @@ if __name__ == '__main__':
 
     mask = np.isnan(ds.siconc.isel(time=0)).values
 
+    image_shape = mask.shape
+    graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=0.25)
+
+    graph_structure = None
+
     np.random.seed(42)
     random.seed(42)
     torch.manual_seed(42)
@@ -67,7 +69,7 @@ if __name__ == '__main__':
     binary = False
     binary_thresh = 0.15
 
-    truncated_backprop = 30
+    truncated_backprop = 0
 
     # Number of frames to read as input
     input_timesteps = 10

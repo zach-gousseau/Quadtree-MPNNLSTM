@@ -10,7 +10,7 @@ from collections import defaultdict
 import numba as nb
 from functools import lru_cache
 
-from utils import minmax
+from utils import minmax, add_positional_encoding
 
 CONDITIONS = [
     'max_larger_than',
@@ -615,6 +615,13 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func
     )
 
     return out
+
+def create_static_heterogeneous_graph(image_shape, max_grid_size, mask, use_edge_attrs=True, resolution=0.25):
+    arr = torch.zeros(size=(1, *image_shape, 1))
+    arr = add_positional_encoding(arr)
+    graph_structure = image_to_graph(arr, thresh=np.inf, max_grid_size=max_grid_size, mask=mask, use_edge_attrs=use_edge_attrs, resolution=resolution)
+    del graph_structure['data']
+    return graph_structure
 
 """
 import torch 
