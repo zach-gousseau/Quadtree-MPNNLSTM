@@ -21,6 +21,8 @@ from torch.utils.data import Dataset, DataLoader
 
 from ice_test import IceDataset
 
+from graph_functions import create_static_heterogeneous_graph
+
 
 if __name__ == '__main__':
 
@@ -48,7 +50,8 @@ if __name__ == '__main__':
     multires_training = False
     truncated_backprop = 0
 
-    training_years = range(2002, 2010)
+    # training_years = range(2002, 2010)
+    training_years = range(2010, 2015)
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
     input_features = len(x_vars)
@@ -86,7 +89,7 @@ if __name__ == '__main__':
         # Half resolution datasets
         data_train_half = IceDataset(ds_half, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
         data_test_half = IceDataset(ds_half, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
-        data_val_half = IceDataset(ds_half, [training_years[-1]+5], month, input_timesteps, output_timesteps, x_vars, y_vars)
+        data_val_half = IceDataset(ds_half, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
 
         loader_train_half = DataLoader(data_train_half, batch_size=1, shuffle=True)
         loader_test_half = DataLoader(data_test_half, batch_size=1, shuffle=True)
@@ -98,19 +101,24 @@ if __name__ == '__main__':
 
     # Full resolution dataset
     # ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
-    ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
+    # ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
     # ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))  # ln -s /home/zgoussea/scratch/hb_era5_glorys_nc data/hb_era5_glorys_nc
     # ds = xr.open_zarr('data/hb_era5_glorys.zarr')  # ln -s /home/zgoussea/scratch/hb_era5_glorys.zarr/  data/hb_era5_glorys.zarr
+    ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
 
     # ds = ds.isel(latitude=slice(50, 100), longitude=slice(50, 100))
     
 
     mask = np.isnan(ds.siconc.isel(time=0)).values
+
+    image_shape = mask.shape
+    graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
+    # graph_structure = None
     
     # Full resolution datasets
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
-    data_val = IceDataset(ds, [training_years[-1]+5], month, input_timesteps, output_timesteps, x_vars, y_vars)
+    data_val = IceDataset(ds, range(training_years[-1]+2, training_years[-1]+2+2), month, input_timesteps, output_timesteps, x_vars, y_vars)
 
     loader_train = DataLoader(data_train, batch_size=1, shuffle=True)
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)
@@ -136,7 +144,7 @@ if __name__ == '__main__':
         transform_func=dist_from_05,
         dummy=False,
         n_conv_layers=3,
-        rnn_type='LSTM',
+        rnn_type='GRU',
         convolution_type=convolution_type,
     )
 
@@ -179,11 +187,12 @@ if __name__ == '__main__':
         n_epochs=15 if not multires_training else 10,
         mask=mask,
         truncated_backprop=truncated_backprop,
+        graph_structure=graph_structure,
         ) 
     
     # Generate predictions
     model.model.eval()
-    val_preds = model.predict(loader_val, climatology, mask=mask)
+    val_preds = model.predict(loader_val, climatology, mask=mask, graph_structure=graph_structure)
     
     # Save results
     launch_dates = loader_val.dataset.launch_dates
@@ -201,7 +210,7 @@ if __name__ == '__main__':
         ),
     )
 
-    results_dir = f'ice_results_may10_exp_8y_train_5y_'
+    results_dir = f'ice_results_may17_hetero'
 
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)

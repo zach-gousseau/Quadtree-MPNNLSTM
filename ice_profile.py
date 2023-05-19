@@ -58,9 +58,9 @@ if __name__ == '__main__':
     mask = np.isnan(ds.siconc.isel(time=0)).values
 
     image_shape = mask.shape
-    graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=0.25)
+    graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=0.25, device=device)
 
-    graph_structure = None
+    # graph_structure = None
 
     np.random.seed(42)
     random.seed(42)
@@ -69,11 +69,12 @@ if __name__ == '__main__':
     binary = False
     binary_thresh = 0.15
 
+    # truncated_backprop = 45
     truncated_backprop = 0
 
     # Number of frames to read as input
     input_timesteps = 10
-    output_timesteps= 10
+    output_timesteps= 90
 
     start = time.time()
 
@@ -100,14 +101,14 @@ if __name__ == '__main__':
 
     # Add 3 to the number of input features since weadd positional encoding (x, y) and node size (s)
     model_kwargs = dict(
-        hidden_size=8,
+        hidden_size=32,
         dropout=0.1,
         n_layers=1,
-        n_conv_layers=3,
         transform_func=dist_from_05,
         dummy=False,
+        n_conv_layers=3,
+        rnn_type='GRU',
         convolution_type=convolution_type,
-        rnn_type='LSTM',
     )
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'

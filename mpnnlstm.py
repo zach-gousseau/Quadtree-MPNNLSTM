@@ -285,7 +285,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                         self.optimizer.zero_grad()
 
                         # Encoder
-                        self.model.process_inputs(x, mask=mask)
+                        self.model.process_inputs(x, mask=mask, graph_structure=graph_structure)
 
                         # Decoder
                         y_hat, y_hat_mappings = self.model.unroll_output(
@@ -380,7 +380,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         skip = torch.moveaxis(skip, 0, -1)
         return skip
         
-    def predict(self, loader, climatology=None, mask=None):
+    def predict(self, loader, climatology=None, mask=None, graph_structure=None):
         
         image_shape = loader.dataset.image_shape
             

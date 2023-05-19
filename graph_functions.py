@@ -372,8 +372,8 @@ def flatten(img, mapping, n_pixels_per_node, mask=None):
     
     # Compute mean values for each graph node
     while True:
-        data = img_flattened @ mapping.T.to_dense() / n_pixels_per_node
-        # data = img_flattened @ mapping.T / n_pixels_per_node
+        # data = img_flattened @ mapping.T.to_dense() / n_pixels_per_node
+        data = img_flattened @ mapping.T / n_pixels_per_node
 
         if data.isnan().any():
             warnings.warn('Matrix multiplication in flatten() failed, trying again.')
@@ -420,8 +420,8 @@ def unflatten(data, mapping, image_shape, mask=None):
     if mapping is None:
         return unflatten_pixelwise(data, mask, image_shape)
     data = torch.moveaxis(data, -1, 0)
-    img = (data @ mapping.to_dense()).reshape(*data.shape[:-1], *image_shape)
-    # img = (data @ mapping).reshape(*data.shape[:-1], *image_shape)
+    # img = (data @ mapping.to_dense()).reshape(*data.shape[:-1], *image_shape)
+    img = (data @ mapping).reshape(*data.shape[:-1], *image_shape)
     return torch.moveaxis(img, 0, -1)
 
 def unflatten_pixelwise(data, mask, image_shape):
@@ -578,6 +578,7 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func
         )
 
     mapping, graph_nodes, n_pixels_per_node = get_mapping(labels)
+    mapping = mapping.to_dense()
     mapping, n_pixels_per_node = mapping.to(img.device), n_pixels_per_node.to(img.device)
     
     data = flatten(img, mapping, n_pixels_per_node)
@@ -616,8 +617,8 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func
 
     return out
 
-def create_static_heterogeneous_graph(image_shape, max_grid_size, mask, use_edge_attrs=True, resolution=0.25):
-    arr = torch.zeros(size=(1, *image_shape, 1))
+def create_static_heterogeneous_graph(image_shape, max_grid_size, mask, use_edge_attrs=True, resolution=0.25, device=None):
+    arr = torch.zeros(size=(1, *image_shape, 1)).to(device)
     arr = add_positional_encoding(arr)
     graph_structure = image_to_graph(arr, thresh=np.inf, max_grid_size=max_grid_size, mask=mask, use_edge_attrs=use_edge_attrs, resolution=resolution)
     del graph_structure['data']
