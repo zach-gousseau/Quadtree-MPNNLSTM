@@ -21,7 +21,7 @@ from ice_test import IceDataset
 
 from torch.utils.data import Dataset, DataLoader
 
-from graph_functions import create_static_heterogeneous_graph
+from graph_functions import create_static_heterogeneous_graph, create_static_homogeneous_graph
 
 # torch.autograd.set_detect_anomaly(True)
 
@@ -36,7 +36,7 @@ if __name__ == '__main__':
     convolution_type = 'TransformerConv'
     # convolution_type = 'GCNConv'
     # convolution_type = 'Dummy'
-    generate_predictions = False
+    generate_predictions = True
 
     # ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
     # ds = xr.open_dataset('data/era5_hb_daily_coarsened_2.zarr')
@@ -44,6 +44,8 @@ if __name__ == '__main__':
     # ds = xr.open_zarr('/home/zgoussea/scratch/era5_arctic_daily.zarr')
     # ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5/*/*.nc'))
     ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
+
+    # ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 
     coarsen = 1
 
@@ -58,7 +60,11 @@ if __name__ == '__main__':
     mask = np.isnan(ds.siconc.isel(time=0)).values
 
     image_shape = mask.shape
-    graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=0.25, device=device)
+    graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=0.25)
+    # graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=0.25)
+
+    print(f'Num nodes: {len(graph_structure["graph_nodes"])}')
+
 
     # graph_structure = None
 
@@ -69,18 +75,17 @@ if __name__ == '__main__':
     binary = False
     binary_thresh = 0.15
 
-    # truncated_backprop = 45
     truncated_backprop = 0
 
     # Number of frames to read as input
-    input_timesteps = 10
-    output_timesteps= 90
+    input_timesteps = 3
+    output_timesteps= 10
 
     start = time.time()
 
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
-    training_years = range(2015, 2016)
+    training_years = range(2013, 2016)
 
     climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
     climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
@@ -90,8 +95,8 @@ if __name__ == '__main__':
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, y_binary_thresh=binary_thresh if binary else None)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, y_binary_thresh=binary_thresh if binary else None)
 
-    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(15)))
-    loader_test = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
+    loader_profile = DataLoader(data_train, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(15)))
+    loader_test = DataLoader(data_test, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
 
     thresh = 0.15
     thresh = -np.inf
@@ -104,11 +109,11 @@ if __name__ == '__main__':
         hidden_size=32,
         dropout=0.1,
         n_layers=1,
+        n_conv_layers=3,
         transform_func=dist_from_05,
         dummy=False,
-        n_conv_layers=3,
-        rnn_type='GRU',
         convolution_type=convolution_type,
+        rnn_type='GRU',
     )
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
@@ -121,7 +126,7 @@ if __name__ == '__main__':
         output_timesteps=output_timesteps,
         transform_func=dist_from_05,
         device=device,
-        debug=True,
+        debug=False,
         model_kwargs=model_kwargs)
 
     print('Num. parameters:', model.get_n_params())
@@ -141,7 +146,7 @@ if __name__ == '__main__':
         loader_test,
         climatology,
         lr=lr, 
-        n_epochs=1, 
+        n_epochs=5, 
         mask=mask, 
         graph_structure=graph_structure, 
         truncated_backprop=truncated_backprop
@@ -158,7 +163,7 @@ if __name__ == '__main__':
 
         # Generate predictions
         model.model.eval()
-        val_preds = model.predict(loader_val, climatology, mask=mask)
+        val_preds = model.predict(loader_val, climatology, mask=mask, graph_structure=graph_structure)
         
         # Save results
         launch_dates = loader_val.dataset.launch_dates

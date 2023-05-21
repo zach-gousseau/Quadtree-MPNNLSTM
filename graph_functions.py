@@ -273,7 +273,7 @@ def get_adj(labels, xx=None, yy=None, calculate_distances=False, edges_at_corner
                 continue
 
             if node not in adj_dict:
-                adj_dict[node] = {}
+                adj_dict[node] = []
 
             neighbors = set()
 
@@ -310,6 +310,7 @@ def get_adj(labels, xx=None, yy=None, calculate_distances=False, edges_at_corner
     
             for neighbor in neighbors:
                 if neighbor not in adj_dict[node]:
+                    adj_dict[node].append(neighbor)
                     edge_sources.append(node)
                     edge_targets.append(neighbor)
 
@@ -622,6 +623,41 @@ def create_static_heterogeneous_graph(image_shape, max_grid_size, mask, use_edge
     arr = add_positional_encoding(arr)
     graph_structure = image_to_graph(arr, thresh=np.inf, max_grid_size=max_grid_size, mask=mask, use_edge_attrs=use_edge_attrs, resolution=resolution)
     del graph_structure['data']
+    return graph_structure
+
+def get_nan_nodes(mask, graph_structure):
+    return np.where(~mask.flatten() @ graph_structure['mapping'].to_dense().numpy().T == 0)[0]
+
+def replace_with_map(arr, map_):
+    return np.vectorize(map_.get)(arr)
+
+def create_static_homogeneous_graph(image_shape, max_grid_size, mask, use_edge_attrs=True, resolution=0.25, device=None):
+    
+    # First create a heterogeneous graph without a mask (homogeneous other than at the borders)
+    graph_structure = create_static_heterogeneous_graph(image_shape, max_grid_size, None, use_edge_attrs, resolution, device)
+    
+    # Remove any nodes which entirely overlap the mask
+    nodes_to_delete = get_nan_nodes(mask, graph_structure)
+
+    edge_mask = [not (node.item() in nodes_to_delete or neighbor.item() in nodes_to_delete) for node, neighbor in graph_structure['edge_index'].T]
+    graph_structure['edge_index'] = graph_structure['edge_index'][:, edge_mask]
+    graph_structure['edge_attrs'] = graph_structure['edge_attrs'][edge_mask]
+
+    node_mask = np.array(list(set(graph_structure['graph_nodes']) - set(nodes_to_delete)))
+    graph_structure['graph_nodes'] = graph_structure['graph_nodes'][node_mask]
+    graph_structure['mapping'] = graph_structure['mapping'][node_mask]
+    graph_structure['n_pixels_per_node'] = graph_structure['n_pixels_per_node'][node_mask]
+    
+    # Since we removed nodes, "rename" them so they are from (0, n) for n nodes
+    node_mapping = {old_node: new_node for new_node, old_node in enumerate(graph_structure['graph_nodes'])}
+
+    graph_structure['graph_nodes'] = replace_with_map(graph_structure['graph_nodes'], node_mapping)
+    graph_structure['edge_index'] = replace_with_map(graph_structure['edge_index'], node_mapping)
+
+    # Back to Tensors
+    graph_structure['edge_index'] = torch.Tensor(graph_structure['edge_index']).type(torch.int64)
+    graph_structure['edge_attrs'] = torch.Tensor(graph_structure['edge_attrs'])
+    
     return graph_structure
 
 """

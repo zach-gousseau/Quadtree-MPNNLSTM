@@ -111,14 +111,19 @@ def create_heatmap_fast(ds, accuracy=False):
 mask = np.isnan(xr.open_zarr('data/era5_hb_daily.zarr').siconc.isel(time=0)).values
 # mask = np.isnan(xr.open_zarr('data/era5_hb_daily_coarsened_2.zarr').siconc.isel(time=0)).values
 
-results_dir = 'ice_results_may10_exp_8y_train_5y_'
+import glob
+ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
+ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
+mask = np.isnan(ds.siconc.isel(time=0)).values
+
+results_dir = 'ice_results_profile'
 accuracy = False
 
 months = range(1, 13)
 ds = []
 for month in months:
     try:
-        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y2002_Y2009_I10O90.nc', engine='netcdf4'))
+        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y2015_Y2015_I3O10.nc', engine='netcdf4'))
     except Exception as e: #FileNotFoundError:
         print(e)
         pass
@@ -126,6 +131,44 @@ for month in months:
 ds = xr.concat(ds, dim='launch_date')
 ds = ds.rio.set_crs(4326)
 ds['launch_date'] = [int_to_datetime(dt) for dt in ds.launch_date.values]
+
+# GIF 
+
+# ld = np.random.randint(0, ds.launch_date.size)
+ld = 15
+
+fns = []
+for ts in range(1, 11):
+    
+    fig, axs = plt.subplots(1, 2, figsize=(8, 3))
+    
+    ds.sel(launch_date=ds.launch_date[ld], timestep=ts).where(~mask).y_true.plot(ax=axs[0], vmin=0, vmax=1)
+    ds.sel(launch_date=ds.launch_date[ld], timestep=ts).where(~mask).y_hat.plot(ax=axs[1], vmin=0, vmax=1)
+    axs[0].set_title(f'True ({str(ds.launch_date[ld].values)[:10]}, step {ts})')
+    axs[1].set_title(f'Pred ({str(ds.launch_date[ld].values)[:10]}, step {ts})')
+    plt.tight_layout()
+    fn = f'{results_dir}/gif/{str(ds.launch_date[ld].values)[:10]}_{ts}.png'
+    fns.append(fn)
+    plt.savefig(fn)
+    plt.close()
+
+
+
+from PIL import Image
+frames = []
+for fn in fns:
+    new_frame = Image.open(fn)
+    frames.append(new_frame)
+
+frames[0].save(f'{results_dir}/gif/{str(ds.launch_date[ld].values)[:10]}.gif',
+               format='GIF',
+               append_images=frames[1:],
+               save_all=True,
+               duration=300,
+               loop=0)
+
+for fn in fns:
+    os.remove(fn)
 
 
 # LOSSES ----------------------------
@@ -193,7 +236,9 @@ plt.xlabel('Lead time (days)')
 plt.savefig(f'{results_dir}/heatmap_pers.png')
 plt.close()
 
-climatology = xr.open_zarr('data/era5_hb_daily.zarr')
+# climatology = xr.open_zarr('data/era5_hb_daily.zarr')
+climatology = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
+climatology = climatology.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 climatology = climatology['siconc'].groupby('time.dayofyear').mean('time', skipna=True).values
 climatology = np.nan_to_num(climatology)
 
