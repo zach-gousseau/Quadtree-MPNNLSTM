@@ -113,17 +113,17 @@ mask = np.isnan(xr.open_zarr('data/era5_hb_daily.zarr').siconc.isel(time=0)).val
 
 import glob
 ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
-ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
+# ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 mask = np.isnan(ds.siconc.isel(time=0)).values
 
-results_dir = 'ice_results_profile'
+results_dir = 'ice_results_may21_10'
 accuracy = False
 
 months = range(1, 13)
 ds = []
 for month in months:
     try:
-        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y2015_Y2015_I3O10.nc', engine='netcdf4'))
+        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y2008_Y2012_I10O90.nc', engine='netcdf4'))
     except Exception as e: #FileNotFoundError:
         print(e)
         pass
@@ -176,7 +176,7 @@ months = range(1, 13)
 losses = {}
 for month in months:
     try:
-        losses[month] = pd.read_csv(f'{results_dir}/loss_M{month}_Y2002_Y2009_I10O90.csv')
+        losses[month] = pd.read_csv(f'{results_dir}/loss_M{month}_Y2008_Y2012_I10O90.csv')
     except FileNotFoundError:
         pass
 
@@ -238,7 +238,7 @@ plt.close()
 
 # climatology = xr.open_zarr('data/era5_hb_daily.zarr')
 climatology = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
-climatology = climatology.isel(latitude=slice(175, 275), longitude=slice(125, 225))
+# climatology = climatology.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 climatology = climatology['siconc'].groupby('time.dayofyear').mean('time', skipna=True).values
 climatology = np.nan_to_num(climatology)
 

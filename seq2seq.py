@@ -15,7 +15,7 @@ import numpy as np
 import psutil
 import os
 
-from model import GConvLSTM, GConvGRU, SplitGConvLSTM, DummyLSTM, CONVOLUTION_KWARGS, CONVOLUTIONS
+from model import GConvLSTM, GConvLSTM_Simple, GConvGRU, SplitGConvLSTM, DummyLSTM, CONVOLUTION_KWARGS, CONVOLUTIONS
 
 
 class Encoder(torch.nn.Module):
@@ -25,7 +25,7 @@ class Encoder(torch.nn.Module):
         assert rnn_type in ['GRU', 'LSTM', 'SplitLSTM']
 
         if rnn_type == 'LSTM':
-            rnn = GConvLSTM
+            rnn = GConvLSTM_Simple
         elif rnn_type == 'GRU':
             rnn = GConvGRU
         elif rnn_type == 'SplitLSTM':
@@ -185,7 +185,7 @@ class Decoder(torch.nn.Module):
         x = self.fc_out2(x, edge_index, edge_weight)
         # x = torch.sigmoid(x)
 
-        # x = self.dropout(x)
+        x = self.dropout(x)
         return x
         
 

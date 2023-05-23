@@ -21,6 +21,8 @@ from torch.utils.data import Dataset, DataLoader
 
 from ice_test import IceDataset
 
+from graph_functions import create_static_heterogeneous_graph
+
 
 if __name__ == '__main__':
 
@@ -40,7 +42,7 @@ if __name__ == '__main__':
     multires_training = False
     truncated_backprop = 0
 
-    training_years = range(2002, 2010)
+    training_years = range(2008, 2013)
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
     input_features = len(x_vars)
@@ -49,12 +51,18 @@ if __name__ == '__main__':
 
     binary=False
 
-    for month in range(11, 13):
+    for month in range(3, 9):
 
         # Full resolution dataset
-        ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
-        
+        # ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
+        # mask = np.isnan(ds.siconc.isel(time=0)).values
+
+        ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
         mask = np.isnan(ds.siconc.isel(time=0)).values
+
+        image_shape = mask.shape
+        graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
+        # graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
 
         climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
         climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
@@ -80,7 +88,7 @@ if __name__ == '__main__':
         )
 
         print(month)
-        data_val = IceDataset(ds, range(training_years[-1]+2, training_years[-1]+2+7), month, input_timesteps, output_timesteps, x_vars, y_vars)
+        data_val = IceDataset(ds, range(training_years[-1]+2, training_years[-1]+2+2), month, input_timesteps, output_timesteps, x_vars, y_vars)
         loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
 
         experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
@@ -99,7 +107,7 @@ if __name__ == '__main__':
 
         # print('Num. parameters:', model.get_n_params())
 
-        results_dir = f'ice_results_may10_exp_8y_train_5y_'
+        results_dir = f'ice_results_may21_9'
 
         model.load(results_dir)
         

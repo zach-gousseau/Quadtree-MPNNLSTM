@@ -626,7 +626,7 @@ def create_static_heterogeneous_graph(image_shape, max_grid_size, mask, use_edge
     return graph_structure
 
 def get_nan_nodes(mask, graph_structure):
-    return np.where(~mask.flatten() @ graph_structure['mapping'].to_dense().numpy().T == 0)[0]
+    return np.where(~mask.flatten() @ graph_structure['mapping'].to_dense().cpu().numpy().T == 0)[0]
 
 def replace_with_map(arr, map_):
     return np.vectorize(map_.get)(arr)
@@ -655,8 +655,10 @@ def create_static_homogeneous_graph(image_shape, max_grid_size, mask, use_edge_a
     graph_structure['edge_index'] = replace_with_map(graph_structure['edge_index'], node_mapping)
 
     # Back to Tensors
-    graph_structure['edge_index'] = torch.Tensor(graph_structure['edge_index']).type(torch.int64)
-    graph_structure['edge_attrs'] = torch.Tensor(graph_structure['edge_attrs'])
+    graph_structure['edge_index'] = torch.Tensor(graph_structure['edge_index']).type(torch.int64).to(device)
+    graph_structure['edge_attrs'] = torch.Tensor(graph_structure['edge_attrs']).to(device)
+    graph_structure['n_pixels_per_node'] = torch.Tensor(graph_structure['n_pixels_per_node']).to(device)
+    graph_structure['mapping'] = torch.Tensor(graph_structure['mapping']).to(device)
     
     return graph_structure
 

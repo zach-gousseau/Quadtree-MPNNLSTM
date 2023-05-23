@@ -85,7 +85,7 @@ if __name__ == '__main__':
 
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
-    training_years = range(2013, 2016)
+    training_years = range(2015, 2016)
 
     climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
     climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
@@ -95,8 +95,8 @@ if __name__ == '__main__':
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, y_binary_thresh=binary_thresh if binary else None)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, y_binary_thresh=binary_thresh if binary else None)
 
-    loader_profile = DataLoader(data_train, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(15)))
-    loader_test = DataLoader(data_test, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
+    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(15)))
+    loader_test = DataLoader(data_test, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
 
     thresh = 0.15
     thresh = -np.inf
@@ -106,14 +106,14 @@ if __name__ == '__main__':
 
     # Add 3 to the number of input features since weadd positional encoding (x, y) and node size (s)
     model_kwargs = dict(
-        hidden_size=32,
+        hidden_size=16,
         dropout=0.1,
         n_layers=1,
-        n_conv_layers=3,
+        n_conv_layers=1,
         transform_func=dist_from_05,
         dummy=False,
         convolution_type=convolution_type,
-        rnn_type='GRU',
+        rnn_type='LSTM',
     )
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
