@@ -25,7 +25,7 @@ class Encoder(torch.nn.Module):
         assert rnn_type in ['GRU', 'LSTM', 'SplitLSTM']
 
         if rnn_type == 'LSTM':
-            rnn = GConvLSTM_Simple
+            rnn = GConvLSTM
         elif rnn_type == 'GRU':
             rnn = GConvGRU
         elif rnn_type == 'SplitLSTM':
