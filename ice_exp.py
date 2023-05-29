@@ -12,7 +12,7 @@ from dateutil.relativedelta import relativedelta
 
 import argparse
 
-from utils import normalize
+from utils import normalize, int_to_datetime
 
 from mpnnlstm import NextFramePredictorS2S
 from seq2seq import Seq2Seq
@@ -51,7 +51,7 @@ if __name__ == '__main__':
     truncated_backprop = 0
 
     # training_years = range(2002, 2010)
-    training_years = range(2008, 2014)
+    training_years = range(2007, 2013)
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
     input_features = len(x_vars)
@@ -78,11 +78,14 @@ if __name__ == '__main__':
     elif exp == 8:
         lr = 0.001
         input_timesteps = 90
+    elif (exp == 9) or (exp == 10):
+        multires_training = True
 
     if multires_training:
         # Half resolution dataset
         ds_half = xr.open_dataset('data/era5_hb_daily_coarsened_2.zarr') # ln -s /home/zgoussea/scratch/era5_hb_daily_coarsened_2.zarr data/era5_hb_daily_coarsened_2.zarr
-        
+        ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc_2x/*.nc'))
+
         mask_half = np.isnan(ds_half.siconc.isel(time=0)).values
 
         # Half resolution datasets
@@ -94,8 +97,13 @@ if __name__ == '__main__':
         loader_test_half = DataLoader(data_test_half, batch_size=1, shuffle=True)
         loader_val_half = DataLoader(data_val_half, batch_size=1, shuffle=False)
 
-        climatology_half = ds_half[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
+        climatology_half = ds_half[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
         climatology_half = torch.tensor(np.nan_to_num(climatology_half)).to(device)
+
+        if exp == 9:
+            graph_structure_half = create_static_heterogeneous_graph(mask_half.shape, 4, mask_half, use_edge_attrs=True, resolution=1/6, device=device)
+        elif exp == 10:
+            graph_structure_half = create_static_homogeneous_graph(mask_half.shape, 4, mask_half, use_edge_attrs=True, resolution=1/6, device=device)
 
 
     # Full resolution dataset
@@ -126,7 +134,7 @@ if __name__ == '__main__':
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)
     loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
 
-    climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
+    climatology = ds[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
     climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
 
     # Set threshold 
@@ -178,7 +186,9 @@ if __name__ == '__main__':
             climatology_half,
             lr=lr,
             n_epochs=5,
-            mask=mask_half) 
+            mask=mask_half,
+            truncated_backprop=truncated_backprop,
+            graph_structure=graph_structure_half) 
 
     # Train with full resolution 
     model.train(
@@ -191,13 +201,22 @@ if __name__ == '__main__':
         truncated_backprop=truncated_backprop,
         graph_structure=graph_structure,
         ) 
+
+    # Save model and losses
+    results_dir = f'ice_results_may26_{exp}_multires'
+
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
+
+    model.loss.to_csv(f'{results_dir}/loss_{experiment_name}.csv')
+    model.save(results_dir)
     
     # Generate predictions
     model.model.eval()
     val_preds = model.predict(loader_val, climatology, mask=mask, graph_structure=graph_structure)
     
     # Save results
-    launch_dates = loader_val.dataset.launch_dates
+    launch_dates = [int_to_datetime(t) for t in loader_val.dataset.launch_dates]
     
     ds = xr.Dataset(
         data_vars=dict(
@@ -211,15 +230,5 @@ if __name__ == '__main__':
             timestep=np.arange(1, output_timesteps+1),
         ),
     )
-
-    results_dir = f'ice_results_may21_{exp}'
-
-    if not os.path.exists(results_dir):
-        os.makedirs(results_dir)
-    
     ds.to_netcdf(f'{results_dir}/valpredictions_{experiment_name}.nc')
-
-    model.loss.to_csv(f'{results_dir}/loss_{experiment_name}.csv')
-    model.save(results_dir)
-
     print(f'Finished model {month} in {((time.time() - start) / 60)} minutes')

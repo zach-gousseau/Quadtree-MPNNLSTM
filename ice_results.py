@@ -30,6 +30,8 @@ from torch.utils.data import Dataset, DataLoader
 from ice_test import IceDataset
 from utils import int_to_datetime
 
+from graph_functions import create_static_heterogeneous_graph, create_static_homogeneous_graph, flatten, unflatten
+
 def masked_accuracy(mask):
     def loss(y_true, y_pred):
         y_true_masked = np.multiply(y_true, mask)
@@ -108,6 +110,13 @@ def create_heatmap_fast(ds, accuracy=False):
     heatmap = pd.DataFrame(heatmap, index=range(1, 13), columns=ds.timestep.values)
     return heatmap
 
+def round_to_day(dt):
+    return datetime.datetime(*dt.timetuple()[:3])
+
+def flatten_unflatten(arr, graph_structure, mask):
+    arr = flatten(arr, graph_structure['mapping'], graph_structure['n_pixels_per_node'], mask=~mask)
+    arr = unflatten(arr, graph_structure['mapping'], mask.shape, mask=~mask)
+
 mask = np.isnan(xr.open_zarr('data/era5_hb_daily.zarr').siconc.isel(time=0)).values
 # mask = np.isnan(xr.open_zarr('data/era5_hb_daily_coarsened_2.zarr').siconc.isel(time=0)).values
 
@@ -116,67 +125,81 @@ ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
 # ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 mask = np.isnan(ds.siconc.isel(time=0)).values
 
-results_dir = 'ice_results_may21_10'
+results_dir = 'ice_results_may23b_9'
 accuracy = False
 
-months = range(1, 13)
-ds = []
-for month in months:
+months, ds = [], []
+for month in range(1, 13):
     try:
-        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y2008_Y2012_I10O90.nc', engine='netcdf4'))
+        ds_ = xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y2008_Y2013_I10O90.nc', engine='netcdf4')
+        ds_['launch_date'] = [round_to_day(int_to_datetime(dt+1e9*60*60*24)) for dt in ds_.launch_date.values]
+        ds_ = ds_.sel(launch_date=ds_.launch_date.dt.year!=2018)
+        ds.append(ds_)
+        months.append(month)
     except Exception as e: #FileNotFoundError:
         print(e)
         pass
     
 ds = xr.concat(ds, dim='launch_date')
 ds = ds.rio.set_crs(4326)
-ds['launch_date'] = [int_to_datetime(dt) for dt in ds.launch_date.values]
+# ds['launch_date'] = [round_to_day(int_to_datetime(dt+1e9*60*60*24)) for dt in ds.launch_date.values]
+# ds['launch_date'] = [int_to_datetime(dt) for dt in ds.launch_date.values]
+
+image_shape = mask.shape
+graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12)
+# graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
+
+# ds = ds.sel(ds.launch_date.dt.year!=2018)
 
 # GIF 
 
 # ld = np.random.randint(0, ds.launch_date.size)
-ld = 15
+generate_gif = True
+if generate_gif:
+    ld = 15
 
-fns = []
-for ts in range(1, 11):
-    
-    fig, axs = plt.subplots(1, 2, figsize=(8, 3))
-    
-    ds.sel(launch_date=ds.launch_date[ld], timestep=ts).where(~mask).y_true.plot(ax=axs[0], vmin=0, vmax=1)
-    ds.sel(launch_date=ds.launch_date[ld], timestep=ts).where(~mask).y_hat.plot(ax=axs[1], vmin=0, vmax=1)
-    axs[0].set_title(f'True ({str(ds.launch_date[ld].values)[:10]}, step {ts})')
-    axs[1].set_title(f'Pred ({str(ds.launch_date[ld].values)[:10]}, step {ts})')
-    plt.tight_layout()
-    fn = f'{results_dir}/gif/{str(ds.launch_date[ld].values)[:10]}_{ts}.png'
-    fns.append(fn)
-    plt.savefig(fn)
-    plt.close()
+    for month in months:
+        fns = []
+        for ts in range(1, 91):
+            
+            fig, axs = plt.subplots(1, 2, figsize=(8, 3))
+            
+            ds.sel(launch_date=datetime.datetime(2018, month, 15), timestep=ts).where(~mask).y_true.plot(ax=axs[0], vmin=0, vmax=1)
+            ds.sel(launch_date=datetime.datetime(2018, month, 15), timestep=ts).where(~mask).y_hat.plot(ax=axs[1], vmin=0, vmax=1)
+            axs[0].set_title(f'True ({str(ds.launch_date[ld].values)[:10]}, step {ts})')
+            axs[1].set_title(f'Pred ({str(ds.launch_date[ld].values)[:10]}, step {ts})')
+            plt.tight_layout()
+            fn = f'{results_dir}/gif/{str(ds.launch_date[ld].values)[:10]}_{ts}.png'
+            fns.append(fn)
+            plt.savefig(fn)
+            plt.close()
 
 
 
-from PIL import Image
-frames = []
-for fn in fns:
-    new_frame = Image.open(fn)
-    frames.append(new_frame)
+        from PIL import Image
+        frames = []
+        for fn in fns:
+            new_frame = Image.open(fn)
+            frames.append(new_frame)
 
-frames[0].save(f'{results_dir}/gif/{str(ds.launch_date[ld].values)[:10]}.gif',
-               format='GIF',
-               append_images=frames[1:],
-               save_all=True,
-               duration=300,
-               loop=0)
+        frames[0].save(f'{results_dir}/gif/{str(datetime.datetime(2018, month, 15))[:10]}.gif',
+                    format='GIF',
+                    append_images=frames[1:],
+                    save_all=True,
+                    duration=300,
+                    loop=0)
 
-for fn in fns:
-    os.remove(fn)
+        for fn in fns:
+            os.remove(fn)
 
+quit()
 
 # LOSSES ----------------------------
 months = range(1, 13)
 losses = {}
 for month in months:
     try:
-        losses[month] = pd.read_csv(f'{results_dir}/loss_M{month}_Y2008_Y2012_I10O90.csv')
+        losses[month] = pd.read_csv(f'{results_dir}/loss_M{month}_Y2008_Y2013_I10O90.csv')
     except FileNotFoundError:
         pass
 
@@ -199,6 +222,14 @@ plt.savefig(f'{results_dir}/losses.png')
 
 # HEATMAP ----------------------
 
+heatmap = create_heatmap_fast(ds)
+
+plt.figure(dpi=80)
+sns.heatmap(heatmap, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.18, vmin=0.02)
+plt.xlabel('Lead time (days)')
+plt.savefig(f'{results_dir}/heatmap.png')
+plt.close()
+
 
 heatmap_pers = pd.DataFrame(0.0, index=range(1, 13), columns=ds.timestep)
 heatmap_pers_n = pd.DataFrame(0.0, index=range(1, 13), columns=ds.timestep)
@@ -214,7 +245,8 @@ for timestep in ds.timestep:
         
         try:
             arr_true = ds.sel(timestep=timestep, launch_date=launch_date).y_true.values
-            arr_pers = ds.sel(timestep=1, launch_date=launch_date-86400000000000).y_true.values
+            arr_pers = ds.sel(timestep=1, launch_date=launch_date).y_true.values
+            arr_pers = flatten_unflatten(arr_pers, graph_structure, mask)
         except:
             continue
         
@@ -258,7 +290,8 @@ for timestep in ds.timestep:
         
         try:
             arr_true = ds.sel(timestep=timestep, launch_date=launch_date).y_true.values
-            arr_clim = climatology[forecast_doy-1]
+            arr_clim = torch.Tensor(np.expand_dims(climatology[forecast_doy-1], (0, -1)))
+            arr_clim = flatten_unflatten(arr_clim, graph_structure, mask)
         except ValueError:
             continue
         
@@ -280,15 +313,6 @@ plt.xlabel('Lead time (days)')
 plt.savefig(f'{results_dir}/heatmap_clim.png')
 plt.close()
 
-
-        
-heatmap = create_heatmap_fast(ds)
-
-plt.figure(dpi=80)
-sns.heatmap(heatmap, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.18, vmin=0.02)
-plt.xlabel('Lead time (days)')
-plt.savefig(f'{results_dir}/heatmap.png')
-plt.close()
 
 plt.figure(dpi=80)
 sns.heatmap((heatmap - heatmap_clim), yticklabels=[month_name[i][:3] for i in range(1, 13)], cmap='coolwarm', center=0)
