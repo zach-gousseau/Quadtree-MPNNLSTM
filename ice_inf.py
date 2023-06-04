@@ -12,7 +12,7 @@ from dateutil.relativedelta import relativedelta
 
 import argparse
 
-from utils import normalize
+from utils import normalize, int_to_datetime
 
 from mpnnlstm import NextFramePredictorS2S
 from seq2seq import Seq2Seq
@@ -42,7 +42,7 @@ if __name__ == '__main__':
     multires_training = False
     truncated_backprop = 0
 
-    training_years = range(2008, 2013)
+    training_years = range(2007, 2013)
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
     input_features = len(x_vars)
@@ -51,7 +51,7 @@ if __name__ == '__main__':
 
     binary=False
 
-    for month in range(3, 9):
+    for month in [4, 5]:#range(3, 9):
 
         # Full resolution dataset
         # ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
@@ -88,7 +88,7 @@ if __name__ == '__main__':
         )
 
         print(month)
-        data_val = IceDataset(ds, range(training_years[-1]+2, training_years[-1]+2+2), month, input_timesteps, output_timesteps, x_vars, y_vars)
+        data_val = IceDataset(ds, range(training_years[-1]+2, training_years[-1]+2+4), month, input_timesteps, output_timesteps, x_vars, y_vars)
         loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
 
         experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
@@ -107,7 +107,7 @@ if __name__ == '__main__':
 
         # print('Num. parameters:', model.get_n_params())
 
-        results_dir = f'ice_results_may21_9'
+        results_dir = f'ice_results_may26_9_multires'
 
         model.load(results_dir)
         
@@ -116,7 +116,7 @@ if __name__ == '__main__':
         val_preds = model.predict(loader_val, climatology, mask=mask)
         
         # Save results
-        launch_dates = loader_val.dataset.launch_dates
+        launch_dates = [int_to_datetime(t) for t in loader_val.dataset.launch_dates]
         
         ds_pred = xr.Dataset(
             data_vars=dict(
