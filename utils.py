@@ -74,3 +74,6 @@ def normalize(arr):
 
 def int_to_datetime(x):
     return datetime.datetime.fromtimestamp(x / 1e9)
+
+def round_to_day(dt):
+    return datetime.datetime(*dt.timetuple()[:3])

@@ -12,7 +12,7 @@ from dateutil.relativedelta import relativedelta
 
 import argparse
 
-from utils import normalize
+from utils import normalize, int_to_datetime
 
 from mpnnlstm import NextFramePredictorS2S
 from seq2seq import Seq2Seq

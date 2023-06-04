@@ -46,7 +46,7 @@ if __name__ == '__main__':
 
     # Defaults
     convolution_type = 'TransformerConv'
-    lr = 0.001
+    lr = 0.0001
     multires_training = False
     truncated_backprop = 0
 
@@ -97,8 +97,8 @@ if __name__ == '__main__':
         loader_test_half = DataLoader(data_test_half, batch_size=1, shuffle=True)
         loader_val_half = DataLoader(data_val_half, batch_size=1, shuffle=False)
 
-        climatology_half = ds_half[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
-        climatology_half = torch.tensor(np.nan_to_num(climatology_half)).to(device)
+        # climatology_half = ds_half[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
+        # climatology_half = torch.tensor(np.nan_to_num(climatology_half)).to(device)
 
         if exp == 9:
             graph_structure_half = create_static_heterogeneous_graph(mask_half.shape, 4, mask_half, use_edge_attrs=True, resolution=1/6, device=device)
@@ -134,8 +134,8 @@ if __name__ == '__main__':
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)
     loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
 
-    climatology = ds[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
-    climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
+    # climatology = ds[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
+    # climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
 
     # Set threshold 
     # thresh = 0.15
@@ -183,7 +183,7 @@ if __name__ == '__main__':
         model.train(
             loader_train_half,
             loader_test_half,
-            climatology_half,
+            # climatology_half,
             lr=lr,
             n_epochs=5,
             mask=mask_half,
@@ -194,7 +194,7 @@ if __name__ == '__main__':
     model.train(
         loader_train,
         loader_test,
-        climatology,
+        # climatology,
         lr=lr,
         n_epochs=15 if not multires_training else 10,
         mask=mask,
@@ -203,7 +203,7 @@ if __name__ == '__main__':
         ) 
 
     # Save model and losses
-    results_dir = f'ice_results_may26_{exp}_multires'
+    results_dir = f'ice_results_jun3_{exp}_multires_noclim'
 
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
@@ -213,7 +213,12 @@ if __name__ == '__main__':
     
     # Generate predictions
     model.model.eval()
-    val_preds = model.predict(loader_val, climatology, mask=mask, graph_structure=graph_structure)
+    val_preds = model.predict(
+        loader_val,
+        # climatology,
+        mask=mask,
+        graph_structure=graph_structure
+        )
     
     # Save results
     launch_dates = [int_to_datetime(t) for t in loader_val.dataset.launch_dates]
