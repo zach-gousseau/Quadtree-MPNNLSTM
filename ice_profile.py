@@ -104,7 +104,6 @@ if __name__ == '__main__':
     def dist_from_05(arr):
         return abs(abs(arr - 0.5) - 0.5)
 
-    # Add 3 to the number of input features since weadd positional encoding (x, y) and node size (s)
     model_kwargs = dict(
         hidden_size=16,
         dropout=0.1,

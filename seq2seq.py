@@ -6,7 +6,7 @@ from torch_geometric.nn import GCNConv, ChebConv, TransformerConv
 from torch_geometric.nn.dense.linear import Linear
 from torch_geometric.nn.inits import glorot, zeros
 
-from graph_functions import image_to_graph, flatten, create_graph_structure, unflatten
+from graph_functions import image_to_graph, flatten, Graph, unflatten
 from utils import add_positional_encoding
 
 import gc 
@@ -59,27 +59,30 @@ class Encoder(torch.nn.Module):
         _, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H, C=C)
 
         # hidden_layer, cell_layer = hidden_layer.squeeze(0), cell_layer.squeeze(0)
+
+        # First layer
         hidden_layer = self.norm_h(hidden_layer)
         if self.rnn_type != 'GRU':
-            cell_layer = self.norm_c(cell_layer)
+            cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
 
+        # Subsequent layers
         hidden, cell = [hidden_layer], [cell_layer]
         for i in range(1, self.n_layers):
             _, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=None, C=None)
 
             hidden_layer = self.norm_h(hidden_layer)
             if self.rnn_type != 'GRU':
-                cell_layer = self.norm_c(cell_layer)
+                cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
 
             hidden.append(hidden_layer)
             cell.append(cell_layer)
 
         hidden = torch.stack(hidden)
-        cell = torch.stack(cell) if self.rnn_type != 'GRU' else [None]*len(hidden)
+        cell = torch.stack(cell) if self.rnn_type != 'GRU' else [None]*len(hidden)  # GRU does not have a cell state
         return hidden, cell
 
 class Decoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1, skip_dim=3, convolution_type='GCNConv', rnn_type='LSTM', n_conv_layers=3, binary=False, dummy=False):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, concat_layers_dim=3, convolution_type='GCNConv', rnn_type='LSTM', n_conv_layers=3, binary=False, dummy=False):
         super().__init__()
 
         assert rnn_type in ['GRU', 'LSTM', 'SplitLSTM']
@@ -100,7 +103,7 @@ class Decoder(torch.nn.Module):
         self.binary = binary
         self.dummy = dummy
 
-        n_conv_layers = 1
+        n_conv_layers = 1  # Hard-coded single convolutional layer in the decoder (TODO: make this not hard coded.)
 
         if not self.dummy:
             self.rnns = nn.ModuleList(
@@ -108,21 +111,14 @@ class Decoder(torch.nn.Module):
                 [rnn(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers) for _ in range(n_layers-1)]
                 )
 
-        in_channels = hidden_size + skip_dim if not (dummy or convolution_type=='Dummy') else 3 + skip_dim
+        # Dummy convolutions don't project the data into a new dimensionality
+        in_channels = hidden_size + concat_layers_dim if not (dummy or convolution_type=='Dummy') else 3 + concat_layers_dim
 
-        convolution_type = 'TransformerConv'
         conv_func = CONVOLUTIONS[convolution_type]
         conv_func_kwargs = CONVOLUTION_KWARGS[convolution_type]
         
-
-        self.fc_out1 = conv_func(in_channels=in_channels, out_channels=hidden_size, heads=1, edge_dim=2, dropout=0.1, concat=False)#**conv_func_kwargs)
-        # self.fc_out2 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
-        # self.fc_out3 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
-        self.fc_out2 = conv_func(in_channels=hidden_size, out_channels=1, heads=1, edge_dim=2, dropout=0.1, concat=False)#**conv_func_kwargs)
-        # self.fc_out1 = Linear(in_channels=in_channels, out_channels=hidden_size)
-        # self.fc_out2 = Linear(in_channels=hidden_size, out_channels=hidden_size)
-        # self.fc_out3 = Linear(in_channels=hidden_size, out_channels=hidden_size)
-        # self.fc_out4 = Linear(in_channels=hidden_size, out_channels=1)
+        self.fc_out1 = conv_func(in_channels=in_channels, out_channels=hidden_size, **conv_func_kwargs)
+        self.fc_out2 = conv_func(in_channels=hidden_size, out_channels=1, **conv_func_kwargs)
 
         self.norm_o = nn.LayerNorm(hidden_size)
         self.norm_h = nn.LayerNorm(hidden_size)
@@ -130,49 +126,53 @@ class Decoder(torch.nn.Module):
         
         self.dropout = nn.Dropout(dropout)
         
-    def forward(self, X, edge_index, edge_weight, skip, H, C):
+    def forward(self, X, edge_index, edge_weight, concat_layers, H, C):
 
         if self.dummy:
-            if skip is not None:
-                X = torch.cat([X, skip], dim=-1)
+            if concat_layers is not None:
+                X = torch.cat([X, concat_layers], dim=-1)
             X = self.gnn_out(X, edge_index, edge_weight)
             return X, H, C
-
+        
+        # First layer
         output, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H[0], C=C[0])
 
         hidden_layer = self.norm_h(hidden_layer)
         if self.rnn_type != 'GRU':
-            cell_layer = self.norm_c(cell_layer)
+            cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
 
+        # Subsequent layers
         hidden, cell = [hidden_layer], [cell_layer]
-
         for i in range(1, self.n_layers):
             output, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=H[i], C=C[i])
 
             hidden_layer = self.norm_h(hidden_layer)
             if self.rnn_type != 'GRU':
-                cell_layer = self.norm_c(cell_layer)
+                cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
 
             hidden.append(hidden_layer)
             cell.append(cell_layer)
 
         hidden = torch.stack(hidden)
-        cell = torch.stack(cell) if self.rnn_type != 'GRU' else [None]*len(hidden)
+        cell = torch.stack(cell) if self.rnn_type != 'GRU' else [None]*len(hidden)  # GRU does not have a cell state
 
-        
-        # output = output.squeeze(0)  
         # Use top layer's output
         output = self.norm_o(output)
         output = F.relu(output)
 
-        if skip is not None:
-            output = torch.cat([output, skip], dim=-1)
+        # Concatenate with the concat layers
+        if concat_layers is not None:
+            output = torch.cat([output, concat_layers], dim=-1)
 
+        # Pass output through the final GNN to reduce to desired dimensionality
         output = self.gnn_out(output, edge_index, edge_weight)
 
+        # Squeeze everything to (-1, 1)
         output = torch.tanh(output)
-        # output = output + X[:, [0]]
-        # output = output + skip[:, [0]]
+        
+        # Add to previous step's SIC map, OR to the launch date's SIC map (not used)
+        output = output + X[:, [0]]  
+        # output = output + concat_layers[:, [0]]
 
         if self.binary:
             output = torch.sigmoid(output)
@@ -183,8 +183,6 @@ class Decoder(torch.nn.Module):
         x = self.fc_out1(x, edge_index, edge_weight)
         x = F.relu(x)
         x = self.fc_out2(x, edge_index, edge_weight)
-        # x = torch.sigmoid(x)
-
         x = self.dropout(x)
         return x
         
@@ -225,7 +223,7 @@ class Seq2Seq(torch.nn.Module):
             hidden_size,
             dropout,
             n_layers=n_layers,
-            skip_dim=0,
+            concat_layers_dim=0,  # We've removed the persistence and climatology concatenations
             convolution_type=convolution_type,
             rnn_type=rnn_type,
             n_conv_layers=n_conv_layers,
@@ -242,6 +240,7 @@ class Seq2Seq(torch.nn.Module):
 
         self.convolution_type = convolution_type
 
+        # These convolutions can accept edge attributes, the others cannot.
         if convolution_type in ['MHTransformerConv', 'TransformerConv', 'GATConv']:
             self.use_edge_attrs = True
         else:
@@ -249,9 +248,7 @@ class Seq2Seq(torch.nn.Module):
 
         self.thresh = thresh
         self.transform_func = transform_func
-
         self.graph = None
-
         self.device = device
 
     def process_inputs(self, x, mask=None, graph_structure=None):
@@ -261,7 +258,11 @@ class Seq2Seq(torch.nn.Module):
 
         self.mask = mask
         
+        # Create the graph structure if one is not already pre-defined, otherwise use the pre-defined structure
+        # to transform the input images to their graph representations (and add node sizes as features)
         if graph_structure is None:
+
+            # Use only the first input if we want to re-mesh the input, otherwise create the graph by super-imposing all inputs
             if self.remesh_input:
                 x0 = add_positional_encoding(x[[0]])
                 graph_structure = image_to_graph(x0, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
@@ -276,10 +277,11 @@ class Seq2Seq(torch.nn.Module):
             data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
             graph_structure['data'] = data
 
-        self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
-
+        # Create Graph object, add data to pyg Data object
+        self.graph = Graph(graph_structure['edge_index'], graph_structure['edge_attrs'])
         self.graph.pyg.x = graph_structure['data']
 
+        # Store mapping, n_pixels_per_node, image_shape in the Graph object
         self.graph.mapping = graph_structure['mapping']
         self.graph.n_pixels_per_node = graph_structure['n_pixels_per_node']
         self.graph.image_shape = image_shape
@@ -297,7 +299,9 @@ class Seq2Seq(torch.nn.Module):
                 H=self.graph.hidden[-1] if self.graph.hidden is not None else None, 
                 C=self.graph.cell[-1] if self.graph.cell is not None else None
                 )
-
+            
+            # If the threshold is -np.inf (no quadtree decomposition), re-meshing is not relevant
+            # since we use the same mesh every step.
             if t < self.input_timesteps:
                 if self.thresh != -np.inf:
                     if self.remesh_input:
@@ -309,15 +313,14 @@ class Seq2Seq(torch.nn.Module):
                     self.graph.hidden = hidden
                     self.graph.cell = cell
 
-        # Persistance
+        # Persistance (removed for now)
         # self.graph.persistence = x[[-1]][:, :, :, [0]]
         
         # First input to the decoder is the last input to the encoder 
-        self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -3, -2, -1]]#.unsqueeze(0)
-        # self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -2, -1]]  # node_size
+        self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -3, -2, -1]]
 
 
-    def unroll_output(self, unroll_steps, y, skip=None, teacher_forcing_ratio=0.5, mask=None, remesh_every=1):
+    def unroll_output(self, unroll_steps, y, concat_layers=None, teacher_forcing_ratio=0.5, mask=None, remesh_every=1):
 
         # Lists to store decoder outputs
         outputs = []
@@ -327,28 +330,28 @@ class Seq2Seq(torch.nn.Module):
 
             if self.debug:
                 if self.device.type == 'cuda':
-                    pass
-                    # print(
-                    #     f'Decoder step {t} \n' + \
-                    #     f"torch.cuda.memory_allocated: {torch.cuda.memory_allocated(0)/1024/1024/1024}GB\n" + \
-                    #     f"torch.cuda.memory_reserved: {torch.cuda.memory_reserved(0)/1024/1024/1024}GB\n" + \
-                    #     f"torch.cuda.max_memory_reserved: {torch.cuda.max_memory_reserved(0)/1024/1024/1024}GB",
-                    #     # end='\033[A\033[A\033[A'
-                    # )
+                    print(
+                        f'Decoder step {t} \n' + \
+                        f"torch.cuda.memory_allocated: {torch.cuda.memory_allocated(0)/1024/1024/1024}GB\n" + \
+                        f"torch.cuda.memory_reserved: {torch.cuda.memory_reserved(0)/1024/1024/1024}GB\n" + \
+                        f"torch.cuda.max_memory_reserved: {torch.cuda.max_memory_reserved(0)/1024/1024/1024}GB",
+                        # end='\033[A\033[A\033[A'
+                    )
                 else:
                     pid = os.getpid()
                     python_process = psutil.Process(pid)
-                    memoryUse = python_process.memory_info()[0]/2.**30  # memory use in GB...I think
+                    memoryUse = python_process.memory_info()[0]/2.**30  # memory use in GB
                     print('CPU memory usage:', memoryUse, 'GB', end='\r')
             
-            # if skip is not None:
-                # skip_t = torch.cat([self.graph.persistence, skip[t].unsqueeze(0), torch.ones_like(self.graph.persistence) * t], dim=-1)
+            # Note that we've removed the concatenation (for now), uncomment to add back in.
+            # if concat_layers is not None:
+                # concat_layers_t = torch.cat([self.graph.persistence, concat_layers[t].unsqueeze(0), torch.ones_like(self.graph.persistence) * t], dim=-1)
             # else:
-                # skip_t = self.graph.persistence
+                # concat_layers_t = self.graph.persistence
 
-            # skip_t = flatten(skip_t, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
+            # concat_layers_t = flatten(concat_layers_t, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
 
-            # self.graph.skip = skip_t
+            # self.graph.concat_layers = concat_layers_t
             self.graph.pyg.to(self.device)
 
             # Perform decoding step
@@ -356,7 +359,7 @@ class Seq2Seq(torch.nn.Module):
                 X=self.graph.pyg.x,
                 edge_index=self.graph.pyg.edge_index,
                 edge_weight=self.graph.pyg.edge_attr, 
-                skip=self.graph.skip if hasattr(self.graph, 'skip') else None,
+                concat_layers=self.graph.concat_layers if hasattr(self.graph, 'concat_layers') else None,
                 H=self.graph.hidden, 
                 C=self.graph.cell
                 )
@@ -365,12 +368,11 @@ class Seq2Seq(torch.nn.Module):
             outputs.append(output)
             output_mappings.append(self.graph.mapping)
 
-            output = output#.to(self.device)
-
             # Decide whether to use the prediction or ground truth for the input to the next rollout step
             teacher_force = random.random() < teacher_forcing_ratio
             teacher_input = y[[t]] if teacher_force else None
 
+            # Re-mesh only if we're using the quadtree decomposition, and only every remesh_every step.
             if (self.thresh != -np.inf) and ((t+1) % remesh_every == 0):
                 self.do_remesh(output, hidden, cell, mask, teacher_force=teacher_force, teacher_input=teacher_input)
             else:
@@ -380,7 +382,7 @@ class Seq2Seq(torch.nn.Module):
         
 
         
-    def forward(self, x, y=None, skip=None, teacher_forcing_ratio=0.5, mask=None, graph_structure=None, remesh_every=1):
+    def forward(self, x, y=None, concat_layers=None, teacher_forcing_ratio=0.5, mask=None, graph_structure=None, remesh_every=1):
 
         # Encoder
         self.process_inputs(x, mask=mask, graph_structure=graph_structure)
@@ -389,7 +391,7 @@ class Seq2Seq(torch.nn.Module):
         outputs, output_mappings = self.unroll_output(
             range(self.output_timesteps),
             y,
-            skip=skip,
+            concat_layers=concat_layers,
             teacher_forcing_ratio=teacher_forcing_ratio,
             mask=mask,
             remesh_every=remesh_every
@@ -424,7 +426,7 @@ class Seq2Seq(torch.nn.Module):
         del self.graph.mapping
 
         # Then we convert it back to a graph representation where the graph is determined by
-        # its own values (rather than the one created by the input images / previous step)
+        # its own data (rather than the one created by the input images / previous step)
         if teacher_force:
             teacher_input = add_positional_encoding(teacher_input)
             graph_structure = image_to_graph(teacher_input, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
@@ -432,7 +434,7 @@ class Seq2Seq(torch.nn.Module):
             data_img = add_positional_encoding(data_img.unsqueeze(0))  # Add pos. embedding
             graph_structure = image_to_graph(data_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
 
-        # skip = graph_structure['data'][:, :, [0]]
+        # concat_layers = graph_structure['data'][:, :, [0]]  # Removed for now
 
         # Use the graph structure to convert the hidden and cell states to their graph representations
         hidden_img, cell_img = torch.swapaxes(hidden_img, 0, -1), torch.swapaxes(cell_img, 0, -1)
@@ -440,12 +442,12 @@ class Seq2Seq(torch.nn.Module):
         cell = flatten(cell_img, graph_structure['mapping'], graph_structure['n_pixels_per_node'])
         hidden, cell = torch.swapaxes(hidden, 0, -1), torch.swapaxes(cell, 0, -1)
 
-        # Create a graph object for input into next rollout
-        # self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
+        # Update the graph for the next rollout 
+        # self.graph = Graph(graph_structure['edge_index'], graph_structure['edge_attrs'])
         self.graph.pyg.edge_index = graph_structure['edge_index']
         self.graph.pyg.edge_attr = graph_structure['edge_attrs']
         self.graph.pyg.x = graph_structure['data'].squeeze(0)
-        # self.graph.skip = skip
+        # self.graph.concat_layers = concat_layers  # Removed for now
         self.graph.mapping = graph_structure['mapping']
         self.graph.n_pixels_per_node = graph_structure['n_pixels_per_node']
 
@@ -472,7 +474,7 @@ class Seq2Seq(torch.nn.Module):
         hidden, cell = torch.swapaxes(hidden, 0, -1), torch.swapaxes(cell, 0, -1)
 
         # Create a graph object for input into next rollout
-        self.graph = create_graph_structure(graph_structure['edge_index'], graph_structure['edge_attrs'])
+        self.graph = Graph(graph_structure['edge_index'], graph_structure['edge_attrs'])
         self.graph.pyg.x = graph_structure['data']
         self.graph.mapping = graph_structure['mapping']
         self.graph.n_pixels_per_node = graph_structure['n_pixels_per_node']

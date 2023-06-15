@@ -35,6 +35,7 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print('device:', device)
 
+    # CLI arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--month')  # Month number
     parser.add_argument('-e', '--exp')
@@ -42,7 +43,6 @@ if __name__ == '__main__':
     args = vars(parser.parse_args())
     month = int(args['month'])
     exp = int(args['exp'])
-    
 
     # Defaults
     convolution_type = 'TransformerConv'
@@ -50,16 +50,17 @@ if __name__ == '__main__':
     multires_training = False
     truncated_backprop = 0
 
-    # training_years = range(2002, 2010)
     training_years = range(2007, 2013)
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
-    y_vars = ['siconc']  # ['siconc', 't2m']
+    y_vars = ['siconc']
     input_features = len(x_vars)
     input_timesteps = 10
     output_timesteps= 90
+    preset_mesh = False
 
     binary=False
 
+    # Experiment definitions --------------------
     if exp == 1:
         convolution_type = 'GCNConv'
     elif exp == 2:
@@ -78,17 +79,22 @@ if __name__ == '__main__':
     elif exp == 8:
         lr = 0.001
         input_timesteps = 90
-    elif (exp == 9) or (exp == 10):
+    elif exp == 9:
         multires_training = True
+        preset_mesh = 'heterogeneous'
+    elif exp == 10:
+        multires_training = True
+        preset_mesh = 'homogeneous'
+        
+    # -------------------------------------------
 
     if multires_training:
-        # Half resolution dataset
-        ds_half = xr.open_dataset('data/era5_hb_daily_coarsened_2.zarr') # ln -s /home/zgoussea/scratch/era5_hb_daily_coarsened_2.zarr data/era5_hb_daily_coarsened_2.zarr
-        ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc_2x/*.nc'))
 
+        # Half resolution dataset
+        # ds_half = xr.open_dataset('data/era5_hb_daily_coarsened_2.zarr') # ln -s /home/zgoussea/scratch/era5_hb_daily_coarsened_2.zarr data/era5_hb_daily_coarsened_2.zarr
+        ds_half = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc_2x/*.nc'))
         mask_half = np.isnan(ds_half.siconc.isel(time=0)).values
 
-        # Half resolution datasets
         data_train_half = IceDataset(ds_half, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
         data_test_half = IceDataset(ds_half, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
         data_val_half = IceDataset(ds_half, [training_years[-1]+5], month, input_timesteps, output_timesteps, x_vars, y_vars)
@@ -100,9 +106,9 @@ if __name__ == '__main__':
         # climatology_half = ds_half[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
         # climatology_half = torch.tensor(np.nan_to_num(climatology_half)).to(device)
 
-        if exp == 9:
+        if preset_mesh == 'heterogeneous':
             graph_structure_half = create_static_heterogeneous_graph(mask_half.shape, 4, mask_half, use_edge_attrs=True, resolution=1/6, device=device)
-        elif exp == 10:
+        elif preset_mesh == 'homogeneous':
             graph_structure_half = create_static_homogeneous_graph(mask_half.shape, 4, mask_half, use_edge_attrs=True, resolution=1/6, device=device)
 
 
@@ -112,17 +118,14 @@ if __name__ == '__main__':
     # ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))  # ln -s /home/zgoussea/scratch/hb_era5_glorys_nc data/hb_era5_glorys_nc
     # ds = xr.open_zarr('data/hb_era5_glorys.zarr')  # ln -s /home/zgoussea/scratch/hb_era5_glorys.zarr/  data/hb_era5_glorys.zarr
     ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
-
-    # ds = ds.isel(latitude=slice(50, 100), longitude=slice(50, 100))
-    
-
     mask = np.isnan(ds.siconc.isel(time=0)).values
 
     image_shape = mask.shape
     graph_structure = None
-    if exp == 9:
+
+    if preset_mesh == 'heterogeneous':
         graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
-    elif exp == 10:
+    elif preset_mesh == 'homogeneous':
         graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
     
     # Full resolution datasets
@@ -138,8 +141,7 @@ if __name__ == '__main__':
     # climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
 
     # Set threshold 
-    # thresh = 0.15
-    thresh = -np.inf
+    thresh = -np.inf  # 0.15
     print(f'Threshold is {thresh}')
 
     # Note: irrelevant if thresh = -np.inf
@@ -175,11 +177,10 @@ if __name__ == '__main__':
     print('Num. parameters:', model.get_n_params())
     print('Model:\n', model.model)
 
-    # Train model
     model.model.train()
 
+    # Train with half resolution first
     if multires_training:
-        # Train with half resolution first
         model.train(
             loader_train_half,
             loader_test_half,

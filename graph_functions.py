@@ -21,8 +21,11 @@ CONDITIONS = [
 
 
 class Graph:
+    """
+    Object to store the mesh state, including the graph (pyg), pixel mapping, hidden and cell states of the LSTM.
+    """
     def __init__(self, edge_index, edge_attr, **kwargs):
-        self.pyg = Data(edge_index=edge_index, edge_attr=edge_attr, **kwargs)
+        self.pyg = Data(edge_index=edge_index, edge_attr=edge_attr, **kwargs)  # pytorch-geometric graph object
         self.mapping = None
         self.n_pixels_per_node = None
 
@@ -30,6 +33,7 @@ class Graph:
         self.cell = None
 
 def quadtree_decompose_cuda(img, padding=0, thresh=0.05, max_size=8, mask=None, transform_func=None, condition='max_larger_than'):
+    """CUDA version of quadtree_decompose()"""
     assert max_size & (max_size - 1) == 0
     assert condition in CONDITIONS
     n, m = img.shape
@@ -93,6 +97,7 @@ def quadtree_decompose_cuda(img, padding=0, thresh=0.05, max_size=8, mask=None, 
 
 
 def plot_contours(ax, labels):
+    """Plot cell contours for a given set of pixel labels shape=(w, h)"""
     for i in range(labels.shape[0]):
         for j in range(labels.shape[1]):
             try:
@@ -107,20 +112,10 @@ def plot_contours(ax, labels):
             except IndexError:
                 pass
 
-def create_graph_structure(edge_index, edge_attrs):
-    return Graph(edge_index, edge_attrs)
-
-def create_blocks(M, N, B):
-    num_rows = -(M // -B)
-    num_cols = -(N // -B)
-    label = np.arange(num_rows * num_cols).reshape(num_rows, num_cols)
-    blocks = np.repeat(label, B, axis=0)
-    blocks = np.repeat(blocks, B, axis=1)
-    return blocks[:M, :N]
-
 def is_power_of_two(n):
     return (n != 0) and (n & (n-1) == 0)
 
+# These are just faster versions of any(), max() and min() for 2D arrays
 @nb.jit(nopython=True)
 def any_2d(arr):
     for i in range(arr.shape[0]):
@@ -167,6 +162,7 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, trans
     max_size (int, optional): Maximum grid cell size. Default is 8.
     mask (np.ndarray, optional): Boolean mask. 
     transform_func (optional): Function to apply to the input image used for criteria evaluation
+    condition (str, optional): Condition to use along with the threshold for splitting cells
 
     Returns:
     np.ndarray: Array of shape (height, width) containing the labels for each pixel in the image.
@@ -253,13 +249,38 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, trans
     
     return labels[:n, :m]
 
-def get_adj(labels, xx=None, yy=None, calculate_distances=False, edges_at_corners=False, use_edge_attrs=True):
-    """Get the adjacency matrix for a given label matrix (this could be more efficient)"""
+def get_adj(labels, xx, yy, edges_at_corners=False, use_edge_attrs=True):
+    """
+    Get the adjacency matrix for a given label matrix by connecting all adjacent cells (this could be more efficient).
+    Basically for a label matrix that looks (e.g.) like this: 
+
+    0, 0, 1
+    2, 3, 3
+    2, 3, 3
+
+    it would set edges between (0, 1); (0, 2); (0, 3); (1, 3); (2, 3) and create the corresponding adjacency matrix:
+
+        0  1  2  3  
+        ----------
+    0 | 0, 1, 1, 1
+    1 | 1, 0, 0, 1
+    2 | 1, 0, 0, 1
+    3 | 1, 1, 1, 0
+
+    The result is stored as a set of indices rather than an actual adjacency matrix, i.e.:
+    
+    0, 0, 0, 1, 2 
+    1, 2, 3, 3, 3
+
+    Parameters:
+    labels (np.ndarray): Labels array of shape (w, h). The labels must contain labels 0 through N for N cells.
+    xx (np.ndarray, optional): The x positions for each node of shape (1, N)
+    yy (np.ndarray, optional): The y positions for each node of shape (1, N)
+    edges_at_corners (bool, optional): Whether to add edges between any two cells which touch at the corners
+    use_edge_attrs (bool, optional): Whether to use edge attributes of shape (c, N) for c features, or only edge weights (1, N)
+    """
     w, h = labels.shape
     adj_dict = {}
-
-    if calculate_distances:
-        assert xx is not None and yy is not None, 'Provide x and y positions if distances are desired!'
 
     edge_sources, edge_targets, edge_attrs = [], [], []
 
@@ -326,30 +347,32 @@ def get_adj(labels, xx=None, yy=None, calculate_distances=False, edges_at_corner
     return edge_index, edge_attrs
 
 def dist(node0, node1, xx, yy):
+    """
+    Distance between two nodes. xx/yy are arrays of x/y positions for each node,
+    and node0, node1 are the index of the nodes of interest
+    """
     return torch.sqrt((yy[node0] - yy[node1])**2 + (xx[node0] - xx[node1])**2)
 
 def dist_angle(node0, node1, xx, yy):
+    """
+    Angle (bearing) from one node to another. xx/yy are arrays of x/y positions for each node,
+    and node0, node1 are the index of the nodes of interest
+    """
     return torch.atan2(xx[node0] - xx[node1], yy[node0] - yy[node1]) % (2*np.pi) / (2*np.pi)
 
 def dist_xy(node0, node1, xx, yy):
+    """Categorical <<distance>> which gives (0, 0.25, 0.5, 0.75, 1) if node1 is to (above, right, left, below) node0"""
     x = xx[node0] < xx[node1]
     y = yy[node0] < yy[node1]
     return (x*2 + y) / 3
-
-    # return np.array((xx[node0] - xx[node1], yy[node0] - yy[node1]))
+    # return np.array((xx[node0] - xx[node1], yy[node0] - yy[node1]))  # Or this just gives the x and y distances as a tuplre
 
 def get_graph_nodes(labels):
+    """Nodes are just 0 to N where N is the number of nodes"""
     graph_nodes = np.arange(torch.max(labels)+1)
-    return graph_nodes
-    graph_nodes = np.unique(labels)
-
-    # Remove -1 from the list of graph nodes if it exists (ie if a mask was provided)
-    if -1 in graph_nodes:
-        return graph_nodes[1:]
-    else:
-        return graph_nodes
     
 def flatten_pixelwise(img, mask):
+    """Shortcut flatten() if each pixel is treated as a node"""
     if mask is not None:
         data = img[:, ~mask, :]
     else:
@@ -426,6 +449,7 @@ def unflatten(data, mapping, image_shape, mask=None):
     return torch.moveaxis(img, 0, -1)
 
 def unflatten_pixelwise(data, mask, image_shape):
+    """unflatten() if each pixel is treated as a node"""
     _, c = data.shape
     if mask is not None:
         img = torch.full((*image_shape, c), np.nan).to(data.device)
@@ -436,6 +460,7 @@ def unflatten_pixelwise(data, mask, image_shape):
 
 
 def get_adj_pixelwise(labels, xx=None, yy=None, use_edge_attrs=True, resolution=0.25):
+    """get_adj() if each pixel is treated as a node"""
     rows, cols = labels.shape
 
     # Shift the array by one row and one column in each direction
@@ -470,7 +495,7 @@ def get_adj_pixelwise(labels, xx=None, yy=None, use_edge_attrs=True, resolution=
     
 
 def image_to_graph_pixelwise(img, mask=None, use_edge_attrs=True, resolution=0.25):
-
+    """image_to_graph() if each pixel is treated as a node"""
     img0, _ = torch.max(img[..., 0], 0)  # For multi-step inputs
     image_shape = img.shape[1:3]
 
@@ -484,8 +509,8 @@ def image_to_graph_pixelwise(img, mask=None, use_edge_attrs=True, resolution=0.2
     data = flatten_pixelwise(img, mask)
     xx, yy = data[0, ..., -2]*image_shape[1]*resolution, data[0, ..., -1]*image_shape[0]*resolution
 
-    node_sizes = torch.ones((data.shape[0], len(graph_nodes))).to(data.device) * (resolution ** 2)
-    data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
+    cell_sizes = torch.ones((data.shape[0], len(graph_nodes))).to(data.device) * (resolution ** 2)
+    data = torch.cat([data, cell_sizes.unsqueeze(-1)], -1)
 
     n_pixels_per_node = torch.ones((len(graph_nodes))).to(img.device)
     mapping = None
@@ -505,6 +530,7 @@ def image_to_graph_pixelwise(img, mask=None, use_edge_attrs=True, resolution=0.2
     return out
 
 def get_mapping_(labels):
+    """Slow version of get_mapping(), not used"""
     graph_nodes = get_graph_nodes(labels)
     labels_flat = labels.flatten()
     mapping = torch.zeros((graph_nodes[-1]+1, len(labels_flat)))
@@ -518,7 +544,27 @@ def get_mapping_(labels):
     return mapping, graph_nodes, n_pixels_per_node
 
 def get_mapping(labels):
-    # graph_nodes = get_graph_nodes(labels)
+    """
+    Create a NxP binary sparse matrix for N pixels and P graph nodes, where entry (n, p) 
+    is assigned 1 if the pth pixel (of the flattened grid) belongs to node n.
+
+    Basically for a label matrix that looks (e.g.) like this: 
+
+    0, 0, 1
+    2, 3, 3 -> flatten -> 0, 0, 1, 2, 3, 3, 2, 3, 3
+    2, 3, 3
+
+    the corresponding mapping would be:
+
+    0 |   1, 1, 0, 0, 0, 0, 0, 0, 0
+    1 |   0, 0, 1, 0, 0, 0, 0, 0, 0
+    2 |   0, 0, 0, 1, 0, 0, 1, 0, 0
+    3 |   0, 0, 0, 0, 1, 1, 0, 1, 1
+
+    This function also returns an array of nodes (e.g. [0, 1, 2, 3] in this case) and the number of pixels per node
+    (e.g. [2, 1, 2, 4] in this case).
+
+    """
     labels_flat = labels.flatten()
     mask = (labels_flat != -1)
     row = labels_flat[mask].tolist()
@@ -534,23 +580,33 @@ def get_mapping(labels):
 
 def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func=None, condition='max_larger_than', use_edge_attrs=True, resolution=0.25):
     """
-    Decomposes an image into a quadtree and then generates a graph representation of the image
-    using quadtree decomposition. The graph nodes are the centroids of the quadtree cells and the
-    edges between nodes represent the distances between the corresponding image patches.
+    Convert an image to its graph representation using quadtree decomposition.
+
+    The steps are:
+    1. Use quadtree_decompose() to decompose and assign cell labels to each pixel in the image
+    2. Use get_mapping() to get a transformation matrix which maps from pixel-space to cell-space and apply it to the image (and add cell sizes)
+    3. Use get_adj() to get the adjacecy matrix and edge attributes (as a set of edge indices and attributes rather than an actual adj. matrix)
 
     Parameters:
     img (np.ndarray): Input image with shape (batch_size, height, width, channels).
-    num_features (int, optional): Number of features to include in the data for each graph node. Default is 4.
     thresh (float, optional): Threshold for quadtree decomposition. Default is 0.05.
+    max_grid_size (int, optional): Cell size of the base grid which will be further divided using quadtree decomposition (acts as the maximum
+        cell size in the mesh)
+    mask (np.ndarray, optional): Pixels in img which should be ignored. Must be same shape as img
+    transform_func (optional): Function to apply to the input image used for criteria evaluation
+    condition (str, optional): Condition to use along with the threshold for splitting cells
+    use_edge_attrs (bool, optional): Whether to use edge attributes of shape (c, N) for c features, or only edge weights (1, N)
+    resolution (float, optional): The resolution of the image (i.e. the size of a single pixel)
+    ...
 
     Returns:
     dict: Dictionary containing the following information:
-        labels (np.ndarray): Array of shape (height, width) containing the labels for each pixel in the image.
-        distances (dict): Dictionary of distances between pairs of graph nodes.
+        edge_index (torch.Tensor): Edge connection tensor of shape (2, num_nodes)
+        edge_attrs (torch.Tensor): Edge attributes tensor of shape (edge_dim, num_nodes)
+        n_pixels_per_node (torch.Tensor):
         data (np.ndarray): Array of shape (batch_size, num_nodes, num_features+1) containing the data for each graph node. The last column is the size of the graph node.
         graph_nodes (list): List of graph nodes.
-        adj_dict (dict): Dictionary of adjacencies for each graph node.
-        mappings (dict): Dictionary mapping graph node labels to indices.
+        mapping (dict): Dictionary mapping graph node labels to indices.
 
     TODO: Add ability to choose which channel to use in the decomposition.
     """
@@ -587,25 +643,20 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func
     if torch.any(torch.isnan(data)):
         raise ValueError(f'Found NaNs in graph data {torch.sum(torch.isnan(data))} / {np.prod(data.shape)}')
     
-    xx, yy = data[0, ..., 1]*image_shape[1], data[0, ..., 2]*image_shape[0]
+    xx, yy = data[0, ..., -2]*image_shape[1]*resolution, data[0, ..., -1]*image_shape[0]*resolution
     # xx, yy = xx.detach().cpu(), yy.detach().cpu()
     
-    # # Get sizes for each graph node (TODO: scale by latitude)
-    node_sizes = n_pixels_per_node
+    # Get sizes for each graph node 
+    cell_sizes = n_pixels_per_node  # TODO: scale by latitude
 
-    # # Make sure nothing has gone wrong 
-    # assert len(node_sizes) == len(graph_nodes)
-
-    # # Pseudo-normalize and add node sizes as feature 
-    
+    # Pseudo-normalize and add node sizes as feature 
     # TODO: Use resolution argument to scale the node sizes -- currently only done for pixelwise modelling
-    
-    node_sizes = torch.Tensor(node_sizes) / ((max_grid_size/2)**2)
-    node_sizes = node_sizes.repeat((n_samples, *[1]*len(node_sizes.shape)))
+    cell_sizes = torch.Tensor(cell_sizes) / ((max_grid_size/2)**2)
+    cell_sizes = cell_sizes.repeat((n_samples, *[1]*len(cell_sizes.shape)))
 
-    data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
+    data = torch.cat([data, cell_sizes.unsqueeze(-1)], -1)
 
-    edge_index, edge_attrs = get_adj(labels, xx=xx, yy=yy, calculate_distances=False, use_edge_attrs=use_edge_attrs)
+    edge_index, edge_attrs = get_adj(labels, xx, yy, use_edge_attrs=use_edge_attrs)
 
     out = dict(
         edge_index=edge_index,
@@ -619,6 +670,10 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func
     return out
 
 def create_static_heterogeneous_graph(image_shape, max_grid_size, mask, use_edge_attrs=True, resolution=0.25, device=None):
+    """
+    Create a static heterogeneous graph which uses a higher density of points near edges (of a given mask). This is done
+    by using quadtree decomposition to recursively split a base grid (with cells of size max_grid_size) if they overlap the mask. 
+    """
     arr = torch.zeros(size=(1, *image_shape, 1)).to(device)
     arr = add_positional_encoding(arr)
     graph_structure = image_to_graph(arr, thresh=np.inf, max_grid_size=max_grid_size, mask=mask, use_edge_attrs=use_edge_attrs, resolution=resolution)
@@ -632,6 +687,7 @@ def replace_with_map(arr, map_):
     return np.vectorize(map_.get)(arr)
 
 def create_static_homogeneous_graph(image_shape, max_grid_size, mask, use_edge_attrs=True, resolution=0.25, device=None):
+    """Create a static homogeneous graph of a specified resolution"""
     
     # First create a heterogeneous graph without a mask (homogeneous other than at the borders)
     graph_structure = create_static_heterogeneous_graph(image_shape, max_grid_size, None, use_edge_attrs, resolution, device)
