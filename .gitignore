@@ -4,7 +4,7 @@ results/
 ice_results*/
 baseline_sifnet/
 test_results/
-data/
+data/*/
 pseudocode
 scrap*
 viz.ipynb
