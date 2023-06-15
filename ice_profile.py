@@ -45,7 +45,7 @@ if __name__ == '__main__':
     # ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5/*/*.nc'))
     ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
 
-    # ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
+    ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 
     coarsen = 1
 
@@ -75,11 +75,11 @@ if __name__ == '__main__':
     binary = False
     binary_thresh = 0.15
 
-    truncated_backprop = 0
+    truncated_backprop = 15
 
     # Number of frames to read as input
     input_timesteps = 3
-    output_timesteps= 10
+    output_timesteps= 45
 
     start = time.time()
 
@@ -104,7 +104,6 @@ if __name__ == '__main__':
     def dist_from_05(arr):
         return abs(abs(arr - 0.5) - 0.5)
 
-    # Add 3 to the number of input features since weadd positional encoding (x, y) and node size (s)
     model_kwargs = dict(
         hidden_size=16,
         dropout=0.1,

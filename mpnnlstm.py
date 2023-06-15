@@ -22,7 +22,7 @@ import torch.autograd.profiler as profiler
 
 from torch.optim.lr_scheduler import StepLR
 
-from graph_functions import image_to_graph, flatten, create_graph_structure, unflatten, plot_contours
+from graph_functions import image_to_graph, flatten, Graph, unflatten, plot_contours
 from model import MPNNLSTMI, MPNNLSTM
 from seq2seq import Seq2Seq
 from utils import get_n_params, add_positional_encoding, int_to_datetime
@@ -55,37 +55,7 @@ class NextFramePredictor(ABC):
         
         self.device = device
 
-    def test_threshold(self, x, thresh, mask=None, contours=True):
-        n_sample, w, h, c = x.shape
-        image_shape = (w, h)
 
-        x_with_pos_encoding = add_positional_encoding(x)
-
-        graph = image_to_graph(x_with_pos_encoding, thresh=thresh, mask=mask, transform_func=self.transform_func)
-        img_reconstructed = unflatten(graph['data'][..., [0]], graph['mapping'], image_shape)
-
-        num_nodes = len(np.unique(graph['labels']))
-        fig, axs = plt.subplots(1, n_sample, figsize=(5*n_sample, 4))
-
-        for i in range(n_sample):
-            axs[i].imshow(img_reconstructed[i, ..., 0])
-            if contours:
-                plot_contours(axs[i], graph['labels'])
-
-        plt.suptitle(f'Threshold: {thresh} | Num. nodes: {num_nodes}')
-        return fig, axs
-
-    def get_n_params(self):
-        return get_n_params(self.model)
-
-    def save(self, directory):
-        torch.save(self.model.state_dict(), os.path.join(directory, f'{self.experiment_name}.pth'))
-
-    def load(self, directory):
-        try:
-            self.model.load_state_dict(torch.load(os.path.join(directory, f'{self.experiment_name}.pth')))
-        except:
-            self.model.load_state_dict(torch.load(os.path.join(directory, f'{self.experiment_name}.pth'), map_location=torch.device('cpu')))
 
     @abstractmethod
     def train(
@@ -132,13 +102,25 @@ class NextFramePredictorS2S(NextFramePredictor):
                  transform_func=transform_func,
                  condition=condition)
         
+        # Model parameters
         self.input_timesteps = input_timesteps
         self.output_timesteps = output_timesteps
+        self.input_features = input_features 
         self.binary = binary
-        self.debug = debug
         
+        # Quadtree decomposition parameters
+        self.thresh = thresh if decompose else -np.inf
+        self.decompose = decompose
+        self.transform_func = transform_func
+        self.condition = condition
+
+        self.experiment_name = experiment_name
+        self.debug = debug
+        self.device = device
+        
+        # Model 
         self.model = Seq2Seq(
-            input_features=input_features + 3,  # 3 (node_size)
+            input_features=input_features + 3,  # Add 3 for the positional encoding (x, y) and node size features
             input_timesteps=input_timesteps,
             output_timesteps=output_timesteps,
             thresh=thresh,
@@ -149,17 +131,49 @@ class NextFramePredictorS2S(NextFramePredictor):
             **model_kwargs
         ).to(device)
 
+        # To allow calling train() multiple times
         self.training_initiated = False
 
+    def test_threshold(self, x, thresh, mask=None, contours=True):
+        n_sample, w, h, c = x.shape
+        image_shape = (w, h)
+
+        x_with_pos_encoding = add_positional_encoding(x)
+
+        graph = image_to_graph(x_with_pos_encoding, thresh=thresh, mask=mask, transform_func=self.transform_func)
+        img_reconstructed = unflatten(graph['data'][..., [0]], graph['mapping'], image_shape)
+
+        num_nodes = len(np.unique(graph['labels']))
+        fig, axs = plt.subplots(1, n_sample, figsize=(5*n_sample, 4))
+
+        for i in range(n_sample):
+            axs[i].imshow(img_reconstructed[i, ..., 0])
+            if contours:
+                plot_contours(axs[i], graph['labels'])
+
+        plt.suptitle(f'Threshold: {thresh} | Num. nodes: {num_nodes}')
+        return fig, axs
+
+    def get_n_params(self):
+        return get_n_params(self.model)
+
+    def save(self, directory):
+        torch.save(self.model.state_dict(), os.path.join(directory, f'{self.experiment_name}.pth'))
+
+    def load(self, directory):
+        try:
+            self.model.load_state_dict(torch.load(os.path.join(directory, f'{self.experiment_name}.pth')))
+        except:
+            self.model.load_state_dict(torch.load(os.path.join(directory, f'{self.experiment_name}.pth'), map_location=torch.device('cpu')))
 
     def initiate_training(self, lr, lr_decay):
         self.loss_func = torch.nn.MSELoss() if not self.binary else torch.nn.BCELoss()
-        self.loss_func_name = 'MSE' if not self.binary else 'BCE'
+        self.loss_func_name = 'MSE' if not self.binary else 'BCE'  # For printing
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=0.001)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.scheduler = StepLR(self.optimizer, step_size=3, gamma=lr_decay)
 
-        # scaler = amp.GradScaler()
+        # scaler = amp.GradScaler()  # Not used 
         
         self.writer = SummaryWriter('runs/' + self.experiment_name + '_' + datetime.datetime.now().strftime("%Y%m%d_%H_%M_%S"))
 
@@ -183,55 +197,43 @@ class NextFramePredictorS2S(NextFramePredictor):
         ):
 
         image_shape = loader_train.dataset.image_shape
-
+        
+        # Initialize training only if it's the first train() call
         if not self.training_initiated:
             self.initiate_training(lr, lr_decay)
 
         if mask is not None:
             assert mask.shape == image_shape, f'Mask and image shapes do not match. Got {mask.shape} and {image_shape}'
 
+        # Training loop
         st = time.time()
         batch_step = 0
         batch_step_test = 0
         for epoch in range(n_epochs): 
+
+            # Loop over training set
             running_loss = 0
             step = 0
-            
             for x, y, launch_date in tqdm(loader_train, leave=True):
 
                 x, y = x.squeeze(0).to(self.device), y.squeeze(0).to(self.device)
                 
                 if climatology is not None:
-                    skip = self.get_climatology_array(climatology, launch_date)
+                    concat_layers = self.get_climatology_array(climatology, launch_date)
                 else:
-                    skip = None
+                    concat_layers = None
                 
+                # Single-step forward/backward pass if no truncated backpropogation, otherwise split into truncated_backprop chunks
                 if truncated_backprop == 0:
                     self.optimizer.zero_grad()
                 
                     # with amp.autocast():
-                    y_hat, y_hat_mappings = self.model(x, y, skip, teacher_forcing_ratio=0, mask=mask, graph_structure=graph_structure)
+                    y_hat, y_hat_mappings = self.model(x, y, concat_layers, teacher_forcing_ratio=0, mask=mask, graph_structure=graph_structure)
                     
                     y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
                     y_hat = torch.stack(y_hat, dim=0)
                     
                     loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
-
-                    # loss = 0 
-                    # for t in range(len(y)):
-                    #     loss_step = self.loss_func(y_hat[t, ~mask], y[t, ~mask]) 
-
-                    #     loss_step.backward(retain_graph=True)
-
-                    #     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1)
-
-                    # loss += loss_step
-
-
-
-                    # scaler.scale(loss).backward()
-                    # scaler.step(self.optimizer)
-                    # scaler.update()
 
                     # with profiler.profile(enabled=True, use_cuda=True) as prof:
                     loss.backward()
@@ -257,19 +259,11 @@ class NextFramePredictorS2S(NextFramePredictor):
                         # self.writer.add_scalar("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), batch_step)
                         # self.writer.add_scalar("Param/encoder/mean", np.mean(encoder_param_means), batch_step)
 
-                        # print("Grad/decoder/mean", np.mean(np.abs(decoder_grads)), batch_step)
-                        # print("Param/decoder/mean", np.mean(decoder_param_means), batch_step)
-                        # print("Grad/encoder/mean", np.mean(np.abs(encoder_grads)), batch_step)
-                        # print("Param/encoder/mean", np.mean(encoder_param_means), batch_step)
-
                         en_grad_norms = torch.norm(torch.stack([torch.norm(param.grad.detach()) for param in self.model.encoder.parameters() if param.grad is not None]))
                         de_grad_norms = torch.norm(torch.stack([torch.norm(param.grad.detach()) for param in self.model.decoder.parameters() if param.grad is not None]))
 
                         self.writer.add_scalar("Grad/encoder/grad_norms", en_grad_norms, batch_step)
                         self.writer.add_scalar("Grad/decoder/grad_norms", de_grad_norms, batch_step)
-
-                        # print("Grad/encoder/grad_norms", en_grad_norms, batch_step)
-                        # print("Grad/decoder/grad_norms", de_grad_norms, batch_step)
 
                     del y_hat
                     del y_hat_mappings
@@ -291,7 +285,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                         y_hat, y_hat_mappings = self.model.unroll_output(
                             unroll_steps,
                             y,
-                            skip=skip,
+                            concat_layers=concat_layers,
                             teacher_forcing_ratio=0,
                             mask=mask,
                             remesh_every=1
@@ -310,13 +304,13 @@ class NextFramePredictorS2S(NextFramePredictor):
                     self.optimizer.step()
 
                 self.writer.add_scalar("Loss/train", loss.item(), batch_step)
-                # print("Loss/train", loss.item(), batch_step)
 
                 step += 1
                 batch_step += 1
                 running_loss += loss.item()
                 torch.cuda.empty_cache()
 
+            # Loop over test set
             running_loss_test = 0
             step_test = 0
             for x, y, launch_date in tqdm(loader_test, leave=True):
@@ -324,12 +318,12 @@ class NextFramePredictorS2S(NextFramePredictor):
                 x, y = x.squeeze(0).to(self.device), y.squeeze(0).to(self.device)
 
                 if climatology is not None:
-                    skip = self.get_climatology_array(climatology, launch_date)
+                    concat_layers = self.get_climatology_array(climatology, launch_date)
                 else:
-                    skip = None
+                    concat_layers = None
 
                 with torch.no_grad():
-                    y_hat, y_hat_mappings = self.model(x, y, skip, teacher_forcing_ratio=0, mask=mask, graph_structure=graph_structure)
+                    y_hat, y_hat_mappings = self.model(x, y, concat_layers, teacher_forcing_ratio=0, mask=mask, graph_structure=graph_structure)
 
                     y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
                     y_hat = torch.stack(y_hat, dim=0)
@@ -374,13 +368,22 @@ class NextFramePredictorS2S(NextFramePredictor):
         })
 
     def get_climatology_array(self, climatology, launch_date):
+        """
+        Get the daily climate normals for each day of the year in the output timesteps
+
+        climatology (np.ndarray): Climate normals tensor of shape (365, w, h)
+        launch_date (np.datetime64 (?)): The launch date
+        """
         doys = [int_to_datetime(launch_date.numpy()[0] + 8.640e13 * t).timetuple().tm_yday - 1 for t in range(0, self.output_timesteps)]
 
-        skip = climatology[:, doys]
-        skip = torch.moveaxis(skip, 0, -1)
-        return skip
+        out = climatology[:, doys]
+        out = torch.moveaxis(out, 0, -1)
+        return out
         
     def predict(self, loader, climatology=None, mask=None, graph_structure=None):
+        """
+        Use model in inference mode.
+        """
         
         image_shape = loader.dataset.image_shape
             
@@ -392,12 +395,12 @@ class NextFramePredictorS2S(NextFramePredictor):
             x = x.squeeze(0).to(self.device)
 
             if climatology is not None:
-                skip = self.get_climatology_array(climatology, launch_date)
+                concat_layers = self.get_climatology_array(climatology, launch_date)
             else:
-                skip = None
+                concat_layers = None
 
             with torch.no_grad():
-                y_hat, y_hat_mappings = self.model(x, skip=skip, teacher_forcing_ratio=0, mask=mask, graph_structure=graph_structure)
+                y_hat, y_hat_mappings = self.model(x, concat_layers=concat_layers, teacher_forcing_ratio=0, mask=mask, graph_structure=graph_structure)
                 
                 y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask).detach().cpu() for i in range(self.output_timesteps)]
                 
