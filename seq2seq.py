@@ -172,7 +172,7 @@ class Decoder(torch.nn.Module):
 
         output = torch.tanh(output)
         # output = output + X[:, [0]]
-        output = output + skip[:, [0]]
+        # output = output + skip[:, [0]]
 
         if self.binary:
             output = torch.sigmoid(output)
@@ -225,6 +225,7 @@ class Seq2Seq(torch.nn.Module):
             hidden_size,
             dropout,
             n_layers=n_layers,
+            skip_dim=0,
             convolution_type=convolution_type,
             rnn_type=rnn_type,
             n_conv_layers=n_conv_layers,
@@ -309,7 +310,7 @@ class Seq2Seq(torch.nn.Module):
                     self.graph.cell = cell
 
         # Persistance
-        self.graph.persistence = x[[-1]][:, :, :, [0]]
+        # self.graph.persistence = x[[-1]][:, :, :, [0]]
         
         # First input to the decoder is the last input to the encoder 
         self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -3, -2, -1]]#.unsqueeze(0)
@@ -340,14 +341,14 @@ class Seq2Seq(torch.nn.Module):
                     memoryUse = python_process.memory_info()[0]/2.**30  # memory use in GB...I think
                     print('CPU memory usage:', memoryUse, 'GB', end='\r')
             
-            if skip is not None:
-                skip_t = torch.cat([self.graph.persistence, skip[t].unsqueeze(0), torch.ones_like(self.graph.persistence) * t], dim=-1)
-            else:
-                skip_t = self.graph.persistence
+            # if skip is not None:
+                # skip_t = torch.cat([self.graph.persistence, skip[t].unsqueeze(0), torch.ones_like(self.graph.persistence) * t], dim=-1)
+            # else:
+                # skip_t = self.graph.persistence
 
-            skip_t = flatten(skip_t, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
+            # skip_t = flatten(skip_t, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
 
-            self.graph.skip = skip_t
+            # self.graph.skip = skip_t
             self.graph.pyg.to(self.device)
 
             # Perform decoding step

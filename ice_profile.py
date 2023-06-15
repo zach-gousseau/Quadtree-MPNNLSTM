@@ -87,8 +87,8 @@ if __name__ == '__main__':
     y_vars = ['siconc']  # ['siconc', 't2m']
     training_years = range(2015, 2016)
 
-    climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
-    climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
+    # climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
+    # climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
 
     input_features = len(x_vars)
     
@@ -144,7 +144,7 @@ if __name__ == '__main__':
     model.train(
         loader_profile,
         loader_test,
-        climatology,
+        # climatology,
         lr=lr, 
         n_epochs=5, 
         mask=mask, 
