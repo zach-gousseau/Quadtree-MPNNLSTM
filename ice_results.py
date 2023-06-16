@@ -20,17 +20,17 @@ warnings.filterwarnings("ignore")
 
 import argparse
 
-from utils import normalize
+from model.utils import normalize
 
-from mpnnlstm import NextFramePredictorS2S
-from seq2seq import Seq2Seq
+from model.mpnnlstm import NextFramePredictorS2S
+from model.seq2seq import Seq2Seq
 
 from torch.utils.data import Dataset, DataLoader
 
-from ice_test import IceDataset
-from utils import int_to_datetime
+from ice_dataset import IceDataset
+from model.utils import int_to_datetime
 
-from graph_functions import create_static_heterogeneous_graph, create_static_homogeneous_graph, flatten, unflatten
+from model.graph_functions import create_static_heterogeneous_graph, create_static_homogeneous_graph, flatten, unflatten
 
 def masked_accuracy(mask):
     def loss(y_true, y_pred):

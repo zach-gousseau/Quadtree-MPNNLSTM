@@ -13,15 +13,15 @@ from dateutil.relativedelta import relativedelta
 
 import argparse
 
-from utils import normalize
+from model.utils import normalize
 
-from mpnnlstm import NextFramePredictorS2S
-from seq2seq import Seq2Seq
-from ice_test import IceDataset
+from model.mpnnlstm import NextFramePredictorS2S
+from model.seq2seq import Seq2Seq
+from ice_dataset import IceDataset
 
 from torch.utils.data import Dataset, DataLoader
 
-from graph_functions import create_static_heterogeneous_graph, create_static_homogeneous_graph
+from model.graph_functions import create_static_heterogeneous_graph, create_static_homogeneous_graph
 
 # torch.autograd.set_detect_anomaly(True)
 

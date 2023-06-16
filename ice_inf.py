@@ -12,16 +12,16 @@ from dateutil.relativedelta import relativedelta
 
 import argparse
 
-from utils import normalize, int_to_datetime
+from model.utils import normalize, int_to_datetime
 
-from mpnnlstm import NextFramePredictorS2S
-from seq2seq import Seq2Seq
+from model.mpnnlstm import NextFramePredictorS2S
+from model.seq2seq import Seq2Seq
 
 from torch.utils.data import Dataset, DataLoader
 
-from ice_test import IceDataset
+from ice_dataset import IceDataset
 
-from graph_functions import create_static_heterogeneous_graph
+from model.graph_functions import create_static_heterogeneous_graph
 
 
 if __name__ == '__main__':
