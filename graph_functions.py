@@ -142,7 +142,7 @@ def min_2d(arr):
                 min_val = arr[i, j]
     return min_val
 
-def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, transform_func=None, condition='max_larger_than'):
+def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, high_interest_region=None, transform_func=None, condition='max_larger_than'):
     """
     Perform quadtree decomposition on an image.
 
@@ -154,13 +154,17 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, trans
     Optionally, provide a mask which will ensure not cell contains any value which 
     falls within the mask. Masked pixels are assigned a label of -1.
     
+    Optionally, provide a high interest region mask which will continue splitting the
+    image where it overlaps the region.
+    
  
     Parameters:
     img (np.ndarray): Input image with shape (height, width).
     padding (int, optional): Padding to add around each cell when checking the splitting criteria. Default is 0.
     thresh (float, optional): Threshold to use as splitting criteria. Default is 0.05.
     max_size (int, optional): Maximum grid cell size. Default is 8.
-    mask (np.ndarray, optional): Boolean mask. 
+    mask (np.ndarray, optional): Boolean mask. Masked out pixels will be set as invalid
+    high_interest_region (np.ndarray, optional): Boolean mask. Masked out pixels will be kept as valid.
     transform_func (optional): Function to apply to the input image used for criteria evaluation
     condition (str, optional): Condition to use along with the threshold for splitting cells
 
@@ -233,8 +237,8 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, trans
         
         # Even if it doesn't meet the criteria, split if the cell overlaps a masked area
         overlaps_mask = mask is not None and any_2d(mask[max(0, l-padding): min(r+padding, shape[1]), max(0, t-padding): min(b+padding, shape[1])])
-        # overlaps_mask = mask is not None and torch.any(mask[max(0, l-padding): min(r+padding, shape[1]), max(0, t-padding): min(b+padding, shape[1])])
-        split_cell = split_cell or (overlaps_mask)
+        overlaps_hir = high_interest_region is not None and any_2d(high_interest_region[max(0, l-padding): min(r+padding, shape[1]), max(0, t-padding): min(b+padding, shape[1])])
+        split_cell = split_cell or overlaps_mask or overlaps_hir
         
         # Perform splitting if criteria is met, otherwise set all pixels to the current label
         if split_cell:
@@ -578,7 +582,7 @@ def get_mapping(labels):
     return mapping, graph_nodes, n_pixels_per_node
 
 
-def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func=None, condition='max_larger_than', use_edge_attrs=True, resolution=0.25):
+def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, high_interest_region=None, transform_func=None, condition='max_larger_than', use_edge_attrs=True, resolution=0.25):
     """
     Convert an image to its graph representation using quadtree decomposition.
 
@@ -593,6 +597,7 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func
     max_grid_size (int, optional): Cell size of the base grid which will be further divided using quadtree decomposition (acts as the maximum
         cell size in the mesh)
     mask (np.ndarray, optional): Pixels in img which should be ignored. Must be same shape as img
+    high_interest_region (np.ndarray, optional): Pixels in img which are of high interest and will be split to its highest resolution. Must be same shape as img
     transform_func (optional): Function to apply to the input image used for criteria evaluation
     condition (str, optional): Condition to use along with the threshold for splitting cells
     use_edge_attrs (bool, optional): Whether to use edge attributes of shape (c, N) for c features, or only edge weights (1, N)
@@ -630,6 +635,7 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func
         thresh=thresh, 
         max_size=max_grid_size,
         mask=mask,
+        high_interest_region=high_interest_region,
         transform_func=transform_func,
         condition=condition
         )
@@ -669,14 +675,21 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, transform_func
 
     return out
 
-def create_static_heterogeneous_graph(image_shape, max_grid_size, mask, use_edge_attrs=True, resolution=0.25, device=None):
+def create_static_heterogeneous_graph(image_shape, max_grid_size, mask, high_interest_region=None, use_edge_attrs=True, resolution=0.25, device=None):
     """
     Create a static heterogeneous graph which uses a higher density of points near edges (of a given mask). This is done
     by using quadtree decomposition to recursively split a base grid (with cells of size max_grid_size) if they overlap the mask. 
     """
     arr = torch.zeros(size=(1, *image_shape, 1)).to(device)
     arr = add_positional_encoding(arr)
-    graph_structure = image_to_graph(arr, thresh=np.inf, max_grid_size=max_grid_size, mask=mask, use_edge_attrs=use_edge_attrs, resolution=resolution)
+    graph_structure = image_to_graph(
+        arr, thresh=np.inf, 
+        max_grid_size=max_grid_size, 
+        mask=mask, 
+        high_interest_region=high_interest_region, 
+        use_edge_attrs=use_edge_attrs, 
+        resolution=resolution
+        )
     del graph_structure['data']
     return graph_structure
 

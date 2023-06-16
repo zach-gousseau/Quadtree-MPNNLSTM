@@ -45,7 +45,7 @@ if __name__ == '__main__':
     # ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5/*/*.nc'))
     ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
 
-    ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
+    # ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 
     coarsen = 1
 
@@ -58,10 +58,11 @@ if __name__ == '__main__':
         ds = ds.interp(latitude=newlat, longitude=newlon, method='nearest')
 
     mask = np.isnan(ds.siconc.isel(time=0)).values
+    high_interest_region = xr.open_dataset('data/shipping_corridors/primary_route_mask.nc').band_data.values
 
     image_shape = mask.shape
-    graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=0.25)
-    # graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=0.25)
+    graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, high_interest_region, use_edge_attrs=True, resolution=0.25)
+    # graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, high_interest_region, use_edge_attrs=True, resolution=0.25)
 
     print(f'Num nodes: {len(graph_structure["graph_nodes"])}')
 
@@ -147,6 +148,7 @@ if __name__ == '__main__':
         lr=lr, 
         n_epochs=5, 
         mask=mask, 
+        high_interest_region=high_interest_region, 
         graph_structure=graph_structure, 
         truncated_backprop=truncated_backprop
         )
@@ -162,7 +164,13 @@ if __name__ == '__main__':
 
         # Generate predictions
         model.model.eval()
-        val_preds = model.predict(loader_val, climatology, mask=mask, graph_structure=graph_structure)
+        val_preds = model.predict(
+            loader_val, 
+            # climatology, 
+            mask=mask, 
+            high_interest_region=high_interest_region, 
+            graph_structure=graph_structure
+            )
         
         # Save results
         launch_dates = loader_val.dataset.launch_dates

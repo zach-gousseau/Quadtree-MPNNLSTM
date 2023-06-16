@@ -119,6 +119,7 @@ if __name__ == '__main__':
     # ds = xr.open_zarr('data/hb_era5_glorys.zarr')  # ln -s /home/zgoussea/scratch/hb_era5_glorys.zarr/  data/hb_era5_glorys.zarr
     ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
     mask = np.isnan(ds.siconc.isel(time=0)).values
+    high_interest_region = xr.open_dataset('data/shipping_corridors/primary_route_mask.nc').band_data.values
 
     image_shape = mask.shape
     graph_structure = None
@@ -179,7 +180,7 @@ if __name__ == '__main__':
 
     model.model.train()
 
-    # Train with half resolution first
+    # Train with half resolution first. Don't use the high interest region
     if multires_training:
         model.train(
             loader_train_half,
@@ -191,7 +192,7 @@ if __name__ == '__main__':
             truncated_backprop=truncated_backprop,
             graph_structure=graph_structure_half) 
 
-    # Train with full resolution 
+    # Train with full resolution. Use high interest region.
     model.train(
         loader_train,
         loader_test,
@@ -199,6 +200,7 @@ if __name__ == '__main__':
         lr=lr,
         n_epochs=15 if not multires_training else 10,
         mask=mask,
+        high_interest_region=high_interest_region,
         truncated_backprop=truncated_backprop,
         graph_structure=graph_structure,
         ) 

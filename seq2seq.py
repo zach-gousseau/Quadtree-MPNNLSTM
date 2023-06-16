@@ -251,7 +251,7 @@ class Seq2Seq(torch.nn.Module):
         self.graph = None
         self.device = device
 
-    def process_inputs(self, x, mask=None, graph_structure=None):
+    def process_inputs(self, x, mask=None, high_interest_region=None, graph_structure=None):
 
         num_samples, w, h, c = x.shape
         image_shape = (w, h)
@@ -265,10 +265,26 @@ class Seq2Seq(torch.nn.Module):
             # Use only the first input if we want to re-mesh the input, otherwise create the graph by super-imposing all inputs
             if self.remesh_input:
                 x0 = add_positional_encoding(x[[0]])
-                graph_structure = image_to_graph(x0, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
+                graph_structure = image_to_graph(
+                    x0,
+                    thresh=self.thresh,
+                    mask=mask,
+                    high_interest_region=high_interest_region,
+                    transform_func=self.transform_func,
+                    condition=self.condition,
+                    use_edge_attrs=self.use_edge_attrs
+                    )
             else:
                 x = add_positional_encoding(x)
-                graph_structure = image_to_graph(x, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
+                graph_structure = image_to_graph(
+                    x,
+                    thresh=self.thresh,
+                    mask=mask,
+                    high_interest_region=high_interest_region,
+                    transform_func=self.transform_func,
+                    condition=self.condition,
+                    use_edge_attrs=self.use_edge_attrs
+                    )
         else:
             x = add_positional_encoding(x)
             data = flatten(x, graph_structure['mapping'], graph_structure['n_pixels_per_node'], mask)
@@ -305,7 +321,7 @@ class Seq2Seq(torch.nn.Module):
             if t < self.input_timesteps:
                 if self.thresh != -np.inf:
                     if self.remesh_input:
-                        self.do_remesh_input(x[[t+1]], hidden, cell, mask)
+                        self.do_remesh_input(x[[t+1]], hidden, cell, mask, high_interest_region)
                     else:
                         self.graph.hidden = hidden
                         self.graph.cell = cell
@@ -320,7 +336,7 @@ class Seq2Seq(torch.nn.Module):
         self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -3, -2, -1]]
 
 
-    def unroll_output(self, unroll_steps, y, concat_layers=None, teacher_forcing_ratio=0.5, mask=None, remesh_every=1):
+    def unroll_output(self, unroll_steps, y, concat_layers=None, teacher_forcing_ratio=0.5, mask=None, high_interest_region=None, remesh_every=1):
 
         # Lists to store decoder outputs
         outputs = []
@@ -374,7 +390,7 @@ class Seq2Seq(torch.nn.Module):
 
             # Re-mesh only if we're using the quadtree decomposition, and only every remesh_every step.
             if (self.thresh != -np.inf) and ((t+1) % remesh_every == 0):
-                self.do_remesh(output, hidden, cell, mask, teacher_force=teacher_force, teacher_input=teacher_input)
+                self.do_remesh(output, hidden, cell, mask, high_interest_region, teacher_force=teacher_force, teacher_input=teacher_input)
             else:
                 self.update_without_remesh(output, hidden, cell, teacher_force=teacher_force, teacher_input=teacher_input)
 
@@ -382,10 +398,10 @@ class Seq2Seq(torch.nn.Module):
         
 
         
-    def forward(self, x, y=None, concat_layers=None, teacher_forcing_ratio=0.5, mask=None, graph_structure=None, remesh_every=1):
+    def forward(self, x, y=None, concat_layers=None, teacher_forcing_ratio=0.5, mask=None, high_interest_region=None, graph_structure=None, remesh_every=1):
 
         # Encoder
-        self.process_inputs(x, mask=mask, graph_structure=graph_structure)
+        self.process_inputs(x, mask=mask, high_interest_region=high_interest_region, graph_structure=graph_structure)
 
         # Decoder
         outputs, output_mappings = self.unroll_output(
@@ -394,6 +410,7 @@ class Seq2Seq(torch.nn.Module):
             concat_layers=concat_layers,
             teacher_forcing_ratio=teacher_forcing_ratio,
             mask=mask,
+            high_interest_region=high_interest_region,
             remesh_every=remesh_every
             )
             
@@ -413,7 +430,7 @@ class Seq2Seq(torch.nn.Module):
         self.graph.cell = cell
 
 
-    def do_remesh(self, data, hidden, cell, mask=None, teacher_force=False, teacher_input=None):
+    def do_remesh(self, data, hidden, cell, mask=None, high_interest_region=None, teacher_force=False, teacher_input=None):
         image_shape = self.graph.image_shape
 
         # Output is a prediction on the original graph structure
@@ -429,10 +446,26 @@ class Seq2Seq(torch.nn.Module):
         # its own data (rather than the one created by the input images / previous step)
         if teacher_force:
             teacher_input = add_positional_encoding(teacher_input)
-            graph_structure = image_to_graph(teacher_input, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
+            graph_structure = image_to_graph(
+                teacher_input, 
+                thresh=self.thresh, 
+                mask=mask, 
+                high_interest_region=high_interest_region, 
+                transform_func=self.transform_func, 
+                condition=self.condition, 
+                use_edge_attrs=self.use_edge_attrs
+                )
         else:
             data_img = add_positional_encoding(data_img.unsqueeze(0))  # Add pos. embedding
-            graph_structure = image_to_graph(data_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
+            graph_structure = image_to_graph(
+                data_img,
+                thresh=self.thresh, 
+                mask=mask, 
+                high_interest_region=high_interest_region, 
+                transform_func=self.transform_func, 
+                condition=self.condition, 
+                use_edge_attrs=self.use_edge_attrs
+                )
 
         # concat_layers = graph_structure['data'][:, :, [0]]  # Removed for now
 
@@ -456,7 +489,7 @@ class Seq2Seq(torch.nn.Module):
 
         self.graph.image_shape = image_shape
 
-    def do_remesh_input(self, data_img, hidden, cell, mask=None):
+    def do_remesh_input(self, data_img, hidden, cell, mask=None, high_interest_region=None):
         image_shape = self.graph.image_shape
 
         # Convert H and C to their image represenation using the old graph
@@ -465,7 +498,15 @@ class Seq2Seq(torch.nn.Module):
 
         # Create graph using the current input
         data_img = add_positional_encoding(data_img)  # Add pos. embedding
-        graph_structure = image_to_graph(data_img, thresh=self.thresh, mask=mask, transform_func=self.transform_func, condition=self.condition, use_edge_attrs=self.use_edge_attrs)
+        graph_structure = image_to_graph(
+            data_img, 
+            thresh=self.thresh, 
+            mask=mask, 
+            high_interest_region=high_interest_region,
+            transform_func=self.transform_func, 
+            condition=self.condition, 
+            use_edge_attrs=self.use_edge_attrs
+            )
 
         # Use the graph structure to convert the hidden and cell states to their graph representations
         hidden_img, cell_img = torch.swapaxes(hidden_img, 0, -1), torch.swapaxes(cell_img, 0, -1)

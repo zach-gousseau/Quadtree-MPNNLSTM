@@ -134,13 +134,13 @@ class NextFramePredictorS2S(NextFramePredictor):
         # To allow calling train() multiple times
         self.training_initiated = False
 
-    def test_threshold(self, x, thresh, mask=None, contours=True):
+    def test_threshold(self, x, thresh, mask=None, high_interest_region=None, contours=True):
         n_sample, w, h, c = x.shape
         image_shape = (w, h)
 
         x_with_pos_encoding = add_positional_encoding(x)
 
-        graph = image_to_graph(x_with_pos_encoding, thresh=thresh, mask=mask, transform_func=self.transform_func)
+        graph = image_to_graph(x_with_pos_encoding, thresh=thresh, mask=mask, high_interest_region=high_interest_region, transform_func=self.transform_func)
         img_reconstructed = unflatten(graph['data'][..., [0]], graph['mapping'], image_shape)
 
         num_nodes = len(np.unique(graph['labels']))
@@ -192,6 +192,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         lr=0.01,
         lr_decay=0.95,
         mask=None,
+        high_interest_region=None,
         truncated_backprop=45,
         graph_structure=None,
         ):
@@ -228,7 +229,15 @@ class NextFramePredictorS2S(NextFramePredictor):
                     self.optimizer.zero_grad()
                 
                     # with amp.autocast():
-                    y_hat, y_hat_mappings = self.model(x, y, concat_layers, teacher_forcing_ratio=0, mask=mask, graph_structure=graph_structure)
+                    y_hat, y_hat_mappings = self.model(
+                        x, 
+                        y, 
+                        concat_layers, 
+                        teacher_forcing_ratio=0, 
+                        mask=mask, 
+                        high_interest_region=high_interest_region,
+                        graph_structure=graph_structure
+                        )
                     
                     y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
                     y_hat = torch.stack(y_hat, dim=0)
@@ -279,7 +288,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                         self.optimizer.zero_grad()
 
                         # Encoder
-                        self.model.process_inputs(x, mask=mask, graph_structure=graph_structure)
+                        self.model.process_inputs(x, mask=mask, high_interest_region=high_interest_region, graph_structure=graph_structure)
 
                         # Decoder
                         y_hat, y_hat_mappings = self.model.unroll_output(
@@ -288,6 +297,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                             concat_layers=concat_layers,
                             teacher_forcing_ratio=0,
                             mask=mask,
+                            high_interest_region=high_interest_region,
                             remesh_every=1
                             )
                     
@@ -323,7 +333,15 @@ class NextFramePredictorS2S(NextFramePredictor):
                     concat_layers = None
 
                 with torch.no_grad():
-                    y_hat, y_hat_mappings = self.model(x, y, concat_layers, teacher_forcing_ratio=0, mask=mask, graph_structure=graph_structure)
+                    y_hat, y_hat_mappings = self.model(
+                        x, 
+                        y, 
+                        concat_layers, 
+                        teacher_forcing_ratio=0, 
+                        mask=mask, 
+                        high_interest_region=high_interest_region,
+                        graph_structure=graph_structure
+                        )
 
                     y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
                     y_hat = torch.stack(y_hat, dim=0)
@@ -380,7 +398,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         out = torch.moveaxis(out, 0, -1)
         return out
         
-    def predict(self, loader, climatology=None, mask=None, graph_structure=None):
+    def predict(self, loader, climatology=None, mask=None, high_interest_region=None, graph_structure=None):
         """
         Use model in inference mode.
         """
@@ -400,7 +418,14 @@ class NextFramePredictorS2S(NextFramePredictor):
                 concat_layers = None
 
             with torch.no_grad():
-                y_hat, y_hat_mappings = self.model(x, concat_layers=concat_layers, teacher_forcing_ratio=0, mask=mask, graph_structure=graph_structure)
+                y_hat, y_hat_mappings = self.model(
+                    x,
+                    concat_layers=concat_layers, 
+                    teacher_forcing_ratio=0,
+                    mask=mask, 
+                    high_interest_region=high_interest_region, 
+                    graph_structure=graph_structure
+                    )
                 
                 y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask).detach().cpu() for i in range(self.output_timesteps)]
                 
