@@ -45,7 +45,6 @@ if __name__ == '__main__':
     # Defaults
     convolution_type = 'TransformerConv'
     lr = 0.001
-    multires_training = False
     truncated_backprop = 0
 
     training_years = range(2007, 2013)
@@ -122,7 +121,7 @@ if __name__ == '__main__':
         loader_test,
         # climatology,
         lr=lr,
-        n_epochs=15 if not multires_training else 10,
+        n_epochs=15,
         mask=mask,
         truncated_backprop=truncated_backprop,
         graph_structure=graph_structure,

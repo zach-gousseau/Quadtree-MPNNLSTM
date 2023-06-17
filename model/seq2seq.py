@@ -223,7 +223,7 @@ class Seq2Seq(torch.nn.Module):
             hidden_size,
             dropout,
             n_layers=n_layers,
-            concat_layers_dim=0,  # We've removed the persistence and climatology concatenations
+            concat_layers_dim=1,  # We've removed the persistence and climatology concatenations
             convolution_type=convolution_type,
             rnn_type=rnn_type,
             n_conv_layers=n_conv_layers,
@@ -360,14 +360,15 @@ class Seq2Seq(torch.nn.Module):
                     print('CPU memory usage:', memoryUse, 'GB', end='\r')
             
             # Note that we've removed the concatenation (for now), uncomment to add back in.
-            # if concat_layers is not None:
+            if concat_layers is not None:
                 # concat_layers_t = torch.cat([self.graph.persistence, concat_layers[t].unsqueeze(0), torch.ones_like(self.graph.persistence) * t], dim=-1)
-            # else:
-                # concat_layers_t = self.graph.persistence
-
-            # concat_layers_t = flatten(concat_layers_t, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
-
-            # self.graph.concat_layers = concat_layers_t
+                # concat_layers_t = torch.cat([self.graph.persistence, torch.ones_like(self.graph.persistence) * t], dim=-1)
+                concat_layers_t = concat_layers[t].unsqueeze(0)
+                concat_layers_t = flatten(concat_layers_t, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
+                self.graph.concat_layers = concat_layers_t
+            else:
+                concat_layers_t = None
+                
             self.graph.pyg.to(self.device)
 
             # Perform decoding step
@@ -467,7 +468,7 @@ class Seq2Seq(torch.nn.Module):
                 use_edge_attrs=self.use_edge_attrs
                 )
 
-        # concat_layers = graph_structure['data'][:, :, [0]]  # Removed for now
+        concat_layers = graph_structure['data'][:, :, [0]]  # Removed for now
 
         # Use the graph structure to convert the hidden and cell states to their graph representations
         hidden_img, cell_img = torch.swapaxes(hidden_img, 0, -1), torch.swapaxes(cell_img, 0, -1)
@@ -480,7 +481,7 @@ class Seq2Seq(torch.nn.Module):
         self.graph.pyg.edge_index = graph_structure['edge_index']
         self.graph.pyg.edge_attr = graph_structure['edge_attrs']
         self.graph.pyg.x = graph_structure['data'].squeeze(0)
-        # self.graph.concat_layers = concat_layers  # Removed for now
+        self.graph.concat_layers = concat_layers  # Removed for now
         self.graph.mapping = graph_structure['mapping']
         self.graph.n_pixels_per_node = graph_structure['n_pixels_per_node']
 
