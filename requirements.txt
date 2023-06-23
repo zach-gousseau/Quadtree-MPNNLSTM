@@ -1,5 +1,5 @@
 fastai==2.7.10
-matplotlib==3.4.0
+matplotlib==3.6.0
 numpy==1.21.6
 opencv-python==4.6.0.66
 packaging==21.3

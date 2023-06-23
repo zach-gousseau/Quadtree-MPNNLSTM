@@ -1,7 +1,20 @@
 # User
 __pycache__/
 results/
+ice_results*/
+baseline_sifnet/
+test_results/
+data/*/
+pseudocode
+scrap*
+viz.ipynb
+ice_results/
+runs/
+.vscode/
+scratch/
 .DS_Store
+mprofile*
+*/events*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
