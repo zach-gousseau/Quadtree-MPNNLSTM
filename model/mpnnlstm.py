@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import os 
 import datetime
 from tqdm import tqdm
+import random
 import warnings
 
 import torch
@@ -301,10 +302,10 @@ class NextFramePredictorS2S(NextFramePredictor):
                             remesh_every=1
                             )
                     
-                        y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(truncated_backprop)]
+                        y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(len(y_hat))]
                         y_hat = torch.stack(y_hat, dim=0)
                         
-                        loss = self.loss_func(y_hat[:, ~mask], y[output_timestep-truncated_backprop:output_timestep, ~mask])  
+                        loss = self.loss_func(y_hat[:, ~mask], y[unroll_steps][:, ~mask])  
                         loss.backward(retain_graph=True)
 
                         # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=.5)

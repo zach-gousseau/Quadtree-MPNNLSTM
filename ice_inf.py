@@ -51,7 +51,7 @@ if __name__ == '__main__':
 
     binary=False
 
-    for month in [4, 5]:
+    for month in [6]:
 
         ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
         mask = np.isnan(ds.siconc.isel(time=0)).values
@@ -60,7 +60,7 @@ if __name__ == '__main__':
         graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
         # graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
 
-        climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
+        climatology = ds[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
         climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
 
         # Set threshold 
@@ -103,13 +103,13 @@ if __name__ == '__main__':
 
         # print('Num. parameters:', model.get_n_params())
 
-        results_dir = f'ice_results_may26_9_multires'
+        results_dir = f'results/ice_results_jun19_with_shipping_route'
 
         model.load(results_dir)
         
         # Generate predictions
         model.model.eval()
-        val_preds = model.predict(loader_val, climatology, mask=mask)
+        val_preds = model.predict(loader_val, climatology, mask=mask, graph_structure=graph_structure)
         
         # Save results
         launch_dates = [int_to_datetime(t) for t in loader_val.dataset.launch_dates]

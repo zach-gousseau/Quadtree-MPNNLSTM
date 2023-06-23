@@ -237,7 +237,12 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, high_
         
         # Even if it doesn't meet the criteria, split if the cell overlaps a masked area
         overlaps_mask = mask is not None and any_2d(mask[max(0, l-padding): min(r+padding, shape[1]), max(0, t-padding): min(b+padding, shape[1])])
-        overlaps_hir = high_interest_region is not None and any_2d(high_interest_region[max(0, l-padding): min(r+padding, shape[1]), max(0, t-padding): min(b+padding, shape[1])])
+        
+        if high_interest_region is not None:
+            overlaps_hir = high_interest_region is not None and any_2d(high_interest_region[max(0, l-padding): min(r+padding, shape[1]), max(0, t-padding): min(b+padding, shape[1])])
+        else:
+            overlaps_hir = False
+        
         split_cell = split_cell or overlaps_mask or overlaps_hir
         
         # Perform splitting if criteria is met, otherwise set all pixels to the current label
@@ -703,7 +708,7 @@ def create_static_homogeneous_graph(image_shape, max_grid_size, mask, use_edge_a
     """Create a static homogeneous graph of a specified resolution"""
     
     # First create a heterogeneous graph without a mask (homogeneous other than at the borders)
-    graph_structure = create_static_heterogeneous_graph(image_shape, max_grid_size, None, use_edge_attrs, resolution, device)
+    graph_structure = create_static_heterogeneous_graph(image_shape, max_grid_size, None, None, use_edge_attrs, resolution, device)
     
     # Remove any nodes which entirely overlap the mask
     nodes_to_delete = get_nan_nodes(mask, graph_structure)

@@ -10,7 +10,9 @@ from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn import GCNConv, ChebConv, TransformerConv, GATConv, GATv2Conv
 from torch_geometric.nn.inits import glorot, zeros
 
+import warnings
 import copy
+import sys
 
 class DummyLSTM(MessagePassing):
 
@@ -74,7 +76,22 @@ class GraphConv(nn.Module):
             self.n_layers = 0
 
     
-    def forward(self, x: Union[Tensor, PairTensor], edge_index: Adj, edge_attr: OptTensor = None):
+    def forward(self, x: Union[Tensor, PairTensor], edge_index: Adj, edge_attr: OptTensor = None, return_attention_weights=False):
+        
+        if return_attention_weights and self.convolution_type=='TransformerConv' and x.shape[-1]==8:
+            import numpy as np
+            out, (edge_index, alpha) = self.convolutions[0](x, edge_index, edge_attr, return_attention_weights=True)
+            att_map = torch.zeros(size=(x.shape[0], 1))
+            from_nodes = edge_index[1]
+            for a, from_node in zip(alpha, from_nodes):
+                att_map[from_node] = a
+                
+            with open('scratch/attention_map.npy', 'wb') as f:
+                np.save(f, np.array(x))
+                np.save(f, np.array(att_map))
+            
+            warnings.warn('Asked for attention weights.')
+            
         for i in range(self.n_layers):
             x = self.convolutions[i](x, edge_index, edge_attr)
         return x
@@ -256,7 +273,8 @@ class GConvLSTM(nn.Module):
         in_channels: int,
         out_channels: int,
         n_conv_layers: int = 1, 
-        convolution_type='GCNConv'
+        convolution_type='GCNConv',
+        name='GConvLSTM'
     ):
         super(GConvLSTM, self).__init__()
 
@@ -264,6 +282,8 @@ class GConvLSTM(nn.Module):
 
         self.convolution_type = convolution_type
         self.n_conv_layers = n_conv_layers
+        self.return_attention_weights = False#True
+        self.name = name
 
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -372,7 +392,7 @@ class GConvLSTM(nn.Module):
         return C
 
     def _calculate_input_gate(self, X, edge_index, edge_weight, H, C):
-        I = self.conv_x_i(X, edge_index, edge_weight)
+        I = self.conv_x_i(X, edge_index, edge_weight, self.return_attention_weights and self.name=='encoder')
         I = I + self.conv_h_i(H, edge_index, edge_weight)
         I = I + (self.w_c_i * C)
         I = I + self.b_i
