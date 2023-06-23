@@ -237,7 +237,12 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, high_
         
         # Even if it doesn't meet the criteria, split if the cell overlaps a masked area
         overlaps_mask = mask is not None and any_2d(mask[max(0, l-padding): min(r+padding, shape[1]), max(0, t-padding): min(b+padding, shape[1])])
-        overlaps_hir = high_interest_region is not None and any_2d(high_interest_region[max(0, l-padding): min(r+padding, shape[1]), max(0, t-padding): min(b+padding, shape[1])])
+        
+        if high_interest_region is not None:
+            overlaps_hir = high_interest_region is not None and any_2d(high_interest_region[max(0, l-padding): min(r+padding, shape[1]), max(0, t-padding): min(b+padding, shape[1])])
+        else:
+            overlaps_hir = False
+        
         split_cell = split_cell or overlaps_mask or overlaps_hir
         
         # Perform splitting if criteria is met, otherwise set all pixels to the current label
@@ -656,7 +661,6 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, high_interest_
     cell_sizes = n_pixels_per_node  # TODO: scale by latitude
 
     # Pseudo-normalize and add node sizes as feature 
-    # TODO: Use resolution argument to scale the node sizes -- currently only done for pixelwise modelling
     cell_sizes = torch.Tensor(cell_sizes) / ((max_grid_size/2)**2)
     cell_sizes = cell_sizes.repeat((n_samples, *[1]*len(cell_sizes.shape)))
 

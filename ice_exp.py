@@ -46,7 +46,7 @@ if __name__ == '__main__':
 
     # Defaults
     convolution_type = 'TransformerConv'
-    lr = 0.0001
+    lr = 0.001
     multires_training = False
     truncated_backprop = 0
 
@@ -103,8 +103,8 @@ if __name__ == '__main__':
         loader_test_half = DataLoader(data_test_half, batch_size=1, shuffle=True)
         loader_val_half = DataLoader(data_val_half, batch_size=1, shuffle=False)
 
-        # climatology_half = ds_half[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
-        # climatology_half = torch.tensor(np.nan_to_num(climatology_half)).to(device)
+        climatology_half = ds_half[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
+        climatology_half = torch.tensor(np.nan_to_num(climatology_half)).to(device)
 
         if preset_mesh == 'heterogeneous':
             graph_structure_half = create_static_heterogeneous_graph(mask_half.shape, 4, mask_half, use_edge_attrs=True, resolution=1/6, device=device)
@@ -125,9 +125,9 @@ if __name__ == '__main__':
     graph_structure = None
 
     if preset_mesh == 'heterogeneous':
-        graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
+        graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, high_interest_region=high_interest_region, use_edge_attrs=True, resolution=1/12, device=device)
     elif preset_mesh == 'homogeneous':
-        graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
+        graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, high_interest_region=high_interest_region, use_edge_attrs=True, resolution=1/12, device=device)
     
     # Full resolution datasets
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
@@ -172,7 +172,7 @@ if __name__ == '__main__':
         transform_func=dist_from_05,
         device=device,
         binary=binary,
-        debug=True, 
+        debug=False, 
         model_kwargs=model_kwargs)
 
     print('Num. parameters:', model.get_n_params())
@@ -185,12 +185,13 @@ if __name__ == '__main__':
         model.train(
             loader_train_half,
             loader_test_half,
-            # climatology_half,
+            climatology_half,
             lr=lr,
             n_epochs=5,
             mask=mask_half,
             truncated_backprop=truncated_backprop,
-            graph_structure=graph_structure_half) 
+            graph_structure=graph_structure_half
+            ) 
 
     # Train with full resolution. Use high interest region.
     model.train(
@@ -200,13 +201,13 @@ if __name__ == '__main__':
         lr=lr,
         n_epochs=15 if not multires_training else 10,
         mask=mask,
-        high_interest_region=high_interest_region,
+        high_interest_region=high_interest_region,  # This should not be necessary
         truncated_backprop=truncated_backprop,
         graph_structure=graph_structure,
         ) 
 
     # Save model and losses
-    results_dir = f'ice_results_jun3_{exp}_multires_noclim'
+    results_dir = f'results/ice_results_jun19_with_shipping_route'
 
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
@@ -220,6 +221,7 @@ if __name__ == '__main__':
         loader_val,
         climatology,
         mask=mask,
+        high_interest_region=high_interest_region,
         graph_structure=graph_structure
         )
     

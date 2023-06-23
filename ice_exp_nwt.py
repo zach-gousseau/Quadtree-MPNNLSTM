@@ -73,8 +73,8 @@ if __name__ == '__main__':
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)
     loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
 
-    # climatology = ds[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
-    # climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
+    climatology = ds[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
+    climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
 
     # Set threshold 
     thresh = -np.inf  # 0.15
@@ -119,7 +119,7 @@ if __name__ == '__main__':
     model.train(
         loader_train,
         loader_test,
-        # climatology,
+        climatology,
         lr=lr,
         n_epochs=15,
         mask=mask,
@@ -140,7 +140,7 @@ if __name__ == '__main__':
     model.model.eval()
     val_preds = model.predict(
         loader_val,
-        # climatology,
+        climatology,
         mask=mask,
         graph_structure=graph_structure
         )

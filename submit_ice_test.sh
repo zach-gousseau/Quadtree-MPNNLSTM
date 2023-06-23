@@ -5,6 +5,6 @@
 #SBATCH --mem=187G
 #SBATCH --cpus-per-task=1
 #SBATCH --time=00-12:00            # time (DD-HH:MM)
-#SBATCH --output=/home/zgoussea/scratch/logs/output_ice_test_mar23_9.out
+#SBATCH --output=/home/zgoussea/scratch/logs/output_ice_test_jun19_9.out
 source /home/zgoussea/geospatial/bin/activate
 python /home/zgoussea/projects/def-ka3scott/zgoussea/Quadtree-MPNNLSTM/ice_exp.py -m $SLURM_ARRAY_TASK_ID -e 9

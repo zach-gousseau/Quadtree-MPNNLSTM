@@ -38,9 +38,6 @@ if __name__ == '__main__':
 
     # Defaults
     convolution_type = 'TransformerConv'
-    lr = 0.001
-    multires_training = False
-    truncated_backprop = 0
 
     training_years = range(2007, 2013)
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
@@ -59,8 +56,10 @@ if __name__ == '__main__':
         image_shape = mask.shape
         graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
         # graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
+        
+        high_interest_region = xr.open_dataset('data/shipping_corridors/primary_route_mask.nc').band_data.values
 
-        climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
+        climatology = ds[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
         climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
 
         # Set threshold 
@@ -98,18 +97,24 @@ if __name__ == '__main__':
             transform_func=dist_from_05,
             device=device,
             binary=binary,
-            debug=True, 
+            debug=False, 
             model_kwargs=model_kwargs)
 
         # print('Num. parameters:', model.get_n_params())
 
-        results_dir = f'ice_results_may26_9_multires'
+        results_dir = f'results/ice_results_jun17_with_shipping_route'
 
         model.load(results_dir)
         
         # Generate predictions
         model.model.eval()
-        val_preds = model.predict(loader_val, climatology, mask=mask)
+        val_preds = model.predict(
+            loader_val,
+            climatology,
+            mask=mask,
+            high_interest_region=high_interest_region,
+            graph_structure=graph_structure,
+            )
         
         # Save results
         launch_dates = [int_to_datetime(t) for t in loader_val.dataset.launch_dates]

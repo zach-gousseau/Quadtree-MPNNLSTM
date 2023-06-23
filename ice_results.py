@@ -116,6 +116,7 @@ def round_to_day(dt):
 def flatten_unflatten(arr, graph_structure, mask):
     arr = flatten(arr, graph_structure['mapping'], graph_structure['n_pixels_per_node'], mask=~mask)
     arr = unflatten(arr, graph_structure['mapping'], mask.shape, mask=~mask)
+    return arr
 
 mask = np.isnan(xr.open_zarr('data/era5_hb_daily.zarr').siconc.isel(time=0)).values
 # mask = np.isnan(xr.open_zarr('data/era5_hb_daily_coarsened_2.zarr').siconc.isel(time=0)).values
@@ -125,7 +126,7 @@ ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
 # ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 mask = np.isnan(ds.siconc.isel(time=0)).values
 
-results_dir = 'ice_results_may26_9_multires'
+results_dir = 'results/ice_results_jun19_with_shipping_route'
 accuracy = False
 
 months, ds = [], []
@@ -151,9 +152,10 @@ graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_ed
 # ds = ds.sel(ds.launch_date.dt.year!=2018)
 
 # GIF 
-
+if not os.path.exists(f'{results_dir}/gif'):
+    os.makedirs(f'{results_dir}/gif')
 # ld = np.random.randint(0, ds.launch_date.size)
-generate_gif = True
+generate_gif = False
 if generate_gif:
     ld = 15
 
@@ -245,8 +247,11 @@ for timestep in ds.timestep:
         try:
             arr_true = ds.sel(timestep=timestep, launch_date=launch_date).y_true.values
             arr_pers = ds.sel(timestep=1, launch_date=launch_date).y_true.values
+            arr_pers = torch.Tensor(arr_pers).unsqueeze(0).unsqueeze(-1)
             arr_pers = flatten_unflatten(arr_pers, graph_structure, mask)
-        except:
+            arr_pers = np.array(arr_pers.squeeze(0).squeeze(-1))
+        except Exception as e:
+            print(e)
             continue
         
         if accuracy:
@@ -270,7 +275,7 @@ plt.close()
 # climatology = xr.open_zarr('data/era5_hb_daily.zarr')
 climatology = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
 # climatology = climatology.isel(latitude=slice(175, 275), longitude=slice(125, 225))
-climatology = climatology['siconc'].groupby('time.dayofyear').mean('time', skipna=True).values
+climatology = climatology['siconc'].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).values
 climatology = np.nan_to_num(climatology)
 
 
@@ -291,6 +296,7 @@ for timestep in ds.timestep:
             arr_true = ds.sel(timestep=timestep, launch_date=launch_date).y_true.values
             arr_clim = torch.Tensor(np.expand_dims(climatology[forecast_doy-1], (0, -1)))
             arr_clim = flatten_unflatten(arr_clim, graph_structure, mask)
+            arr_clim = np.array(arr_clim.squeeze(0).squeeze(-1))
         except ValueError:
             continue
         
