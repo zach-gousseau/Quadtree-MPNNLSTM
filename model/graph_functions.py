@@ -707,7 +707,7 @@ def create_static_homogeneous_graph(image_shape, max_grid_size, mask, use_edge_a
     """Create a static homogeneous graph of a specified resolution"""
     
     # First create a heterogeneous graph without a mask (homogeneous other than at the borders)
-    graph_structure = create_static_heterogeneous_graph(image_shape, max_grid_size, None, use_edge_attrs, resolution, device)
+    graph_structure = create_static_heterogeneous_graph(image_shape, max_grid_size, None, None, use_edge_attrs, resolution, device)
     
     # Remove any nodes which entirely overlap the mask
     nodes_to_delete = get_nan_nodes(mask, graph_structure)

@@ -40,8 +40,8 @@ class Encoder(torch.nn.Module):
 
         if not self.dummy:
             self.rnns = nn.ModuleList(
-                [rnn(input_features, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers)] + \
-                [rnn(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers) for _ in range(n_layers-1)]
+                [rnn(input_features, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers, name='encoder')] + \
+                [rnn(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers, name='encoder') for _ in range(n_layers-1)]
             )
         
         self.dropout = nn.Dropout(dropout)
@@ -107,8 +107,8 @@ class Decoder(torch.nn.Module):
 
         if not self.dummy:
             self.rnns = nn.ModuleList(
-                [rnn(input_features, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers)] + \
-                [rnn(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers) for _ in range(n_layers-1)]
+                [rnn(input_features, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers, name='decoder')] + \
+                [rnn(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers, name='decoder') for _ in range(n_layers-1)]
                 )
 
         # Dummy convolutions don't project the data into a new dimensionality

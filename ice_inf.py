@@ -48,7 +48,7 @@ if __name__ == '__main__':
 
     binary=False
 
-    for month in [4, 5]:
+    for month in [6]:
 
         ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
         mask = np.isnan(ds.siconc.isel(time=0)).values
@@ -101,8 +101,7 @@ if __name__ == '__main__':
             model_kwargs=model_kwargs)
 
         # print('Num. parameters:', model.get_n_params())
-
-        results_dir = f'results/ice_results_jun17_with_shipping_route'
+        results_dir = f'results/ice_results_jun19_with_shipping_route'
 
         model.load(results_dir)
         

@@ -123,17 +123,18 @@ mask = np.isnan(xr.open_zarr('data/era5_hb_daily.zarr').siconc.isel(time=0)).val
 
 import glob
 ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
+ds = xr.open_dataset('data/era5_hb_daily.zarr')
 # ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 mask = np.isnan(ds.siconc.isel(time=0)).values
 
-results_dir = 'results/ice_results_jun19_with_shipping_route'
+results_dir = 'results/ice_results_may7_exp_0'
 accuracy = False
 
 months, ds = [], []
 for month in range(1, 13):
     print(month)
     try:
-        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y2007_Y2012_I10O90.nc', engine='netcdf4'))
+        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y2011_Y2015_I10O90.nc', engine='netcdf4'))
         months.append(month)
     except Exception as e: #FileNotFoundError:
         print(e)
@@ -200,7 +201,7 @@ months = range(1, 13)
 losses = {}
 for month in months:
     try:
-        losses[month] = pd.read_csv(f'{results_dir}/loss_M{month}_Y2007_Y2012_I10O90.csv')
+        losses[month] = pd.read_csv(f'{results_dir}/loss_M{month}_Y2011_Y2015_I10O90.csv')
     except FileNotFoundError:
         pass
 
