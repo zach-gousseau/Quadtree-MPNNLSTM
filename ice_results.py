@@ -127,14 +127,14 @@ ds = xr.open_dataset('data/era5_hb_daily.zarr')
 # ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 mask = np.isnan(ds.siconc.isel(time=0)).values
 
-results_dir = 'results/ice_results_may7_exp_0'
+results_dir = f'results/ice_results_profile'
 accuracy = False
 
 months, ds = [], []
 for month in range(1, 13):
     print(month)
     try:
-        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y2011_Y2015_I10O90.nc', engine='netcdf4'))
+        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y2015_Y2015_I3O45.nc', engine='netcdf4'))
         months.append(month)
     except Exception as e: #FileNotFoundError:
         print(e)
@@ -147,7 +147,8 @@ ds['launch_date'] = [round_to_day(pd.Timestamp(dt)) + datetime.timedelta(days=1)
 # ds['launch_date'] = [int_to_datetime(dt) for dt in ds.launch_date.values]
 print(ds)
 image_shape = mask.shape
-graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12)
+# graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12)
+graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, None, use_edge_attrs=True, resolution=0.25)
 # graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
 
 # ds = ds.sel(ds.launch_date.dt.year!=2018)
@@ -156,22 +157,22 @@ graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_ed
 if not os.path.exists(f'{results_dir}/gif'):
     os.makedirs(f'{results_dir}/gif')
 # ld = np.random.randint(0, ds.launch_date.size)
-generate_gif = False
+generate_gif = True
 if generate_gif:
     ld = 15
 
     for month in months:
         fns = []
-        for ts in range(1, 91):
+        for ts in range(1, 46):
             
             fig, axs = plt.subplots(1, 2, figsize=(8, 3))
             
-            ds.sel(launch_date=datetime.datetime(2016, month, 15), timestep=ts).where(~mask).y_true.plot(ax=axs[0], vmin=0, vmax=1)
-            ds.sel(launch_date=datetime.datetime(2016, month, 15), timestep=ts).where(~mask).y_hat.plot(ax=axs[1], vmin=0, vmax=1)
-            axs[0].set_title(f'True ({str(datetime.datetime(2016, month, 15))[:10]}, step {ts})')
-            axs[1].set_title(f'Pred ({str(datetime.datetime(2016, month, 15))[:10]}, step {ts})')
+            ds.sel(launch_date=datetime.datetime(2017, month, 15), timestep=ts).where(~mask).y_true.plot(ax=axs[0], vmin=0, vmax=1)
+            ds.sel(launch_date=datetime.datetime(2017, month, 15), timestep=ts).where(~mask).y_hat.plot(ax=axs[1], vmin=0, vmax=1)
+            axs[0].set_title(f'True ({str(datetime.datetime(2017, month, 15))[:10]}, step {ts})')
+            axs[1].set_title(f'Pred ({str(datetime.datetime(2017, month, 15))[:10]}, step {ts})')
             plt.tight_layout()
-            fn = f'{results_dir}/gif/{str(datetime.datetime(2016, month, 15))[:10]}_{ts}.png'
+            fn = f'{results_dir}/gif/{str(datetime.datetime(2017, month, 15))[:10]}_{ts}.png'
             fns.append(fn)
             plt.savefig(fn)
             plt.close()
@@ -201,7 +202,7 @@ months = range(1, 13)
 losses = {}
 for month in months:
     try:
-        losses[month] = pd.read_csv(f'{results_dir}/loss_M{month}_Y2011_Y2015_I10O90.csv')
+        losses[month] = pd.read_csv(f'{results_dir}/loss_M{month}_Y2015_Y2015_I3O45.csv')
     except FileNotFoundError:
         pass
 

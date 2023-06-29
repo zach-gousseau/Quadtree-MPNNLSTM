@@ -58,12 +58,12 @@ if __name__ == '__main__':
         ds = ds.interp(latitude=newlat, longitude=newlon, method='nearest')
 
     mask = np.isnan(ds.siconc.isel(time=0)).values
-    high_interest_region = xr.open_dataset('data/shipping_corridors/primary_route_mask.nc').band_data.values
+    # high_interest_region = xr.open_dataset('data/shipping_corridors/primary_route_mask.nc').band_data.values
     high_interest_region = None
 
     image_shape = mask.shape
-    graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, high_interest_region, use_edge_attrs=True, resolution=0.25)
-    # graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, high_interest_region, use_edge_attrs=True, resolution=0.25)
+    # graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, high_interest_region, use_edge_attrs=True, resolution=0.25)
+    graph_structure = create_static_homogeneous_graph(image_shape, 16, mask, use_edge_attrs=True, resolution=0.25)
 
     print(f'Num nodes: {len(graph_structure["graph_nodes"])}')
 
@@ -77,7 +77,7 @@ if __name__ == '__main__':
     binary = False
     binary_thresh = 0.15
 
-    truncated_backprop = 15
+    truncated_backprop = 0
 
     # Number of frames to read as input
     input_timesteps = 3
@@ -97,8 +97,8 @@ if __name__ == '__main__':
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, y_binary_thresh=binary_thresh if binary else None)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, y_binary_thresh=binary_thresh if binary else None)
 
-    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(15)))
-    loader_test = DataLoader(data_test, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
+    loader_profile = DataLoader(data_train, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(15)))
+    loader_test = DataLoader(data_test, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
 
     thresh = 0.15
     thresh = -np.inf
@@ -189,7 +189,7 @@ if __name__ == '__main__':
             ),
         )
 
-        results_dir = f'ice_results_profile'
+        results_dir = f'results/ice_results_profile'
 
         if not os.path.exists(results_dir):
             os.makedirs(results_dir)
