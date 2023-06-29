@@ -29,6 +29,26 @@ from model.utils import get_n_params, add_positional_encoding, int_to_datetime
 
 from abc import ABC, abstractmethod
 
+class MSE_NIIEE(nn.Module):
+    def __init__(self):
+        super(MSE_NIIEE, self).__init__()
+        self.mse = torch.nn.MSELoss()
+        self.niiee = NIIEE()
+        
+    def forward(self, output, target):
+        loss = 0.1*self.niiee(output, target) + self.mse(output, target)
+        return loss
+        
+class NIIEE(nn.Module):
+    def __init__(self):
+        super(NIIEE, self).__init__()
+
+    def forward(self, output, target):
+        intersection = torch.sum(output * target)
+        union = torch.sum(output) + torch.sum(target) - intersection
+        loss = 1 - intersection / union
+        return loss
+
 
 class NextFramePredictor(ABC):
     def __init__(self, 
@@ -54,7 +74,6 @@ class NextFramePredictor(ABC):
         self.input_features = input_features 
         
         self.device = device
-
 
 
     @abstractmethod
@@ -167,8 +186,9 @@ class NextFramePredictorS2S(NextFramePredictor):
             self.model.load_state_dict(torch.load(os.path.join(directory, f'{self.experiment_name}.pth'), map_location=torch.device('cpu')))
 
     def initiate_training(self, lr, lr_decay):
-        self.loss_func = torch.nn.MSELoss() if not self.binary else torch.nn.BCELoss()
-        self.loss_func_name = 'MSE' if not self.binary else 'BCE'  # For printing
+        self.loss_func = MSE_NIIEE() if not self.binary else torch.nn.BCELoss()
+        self.loss_func_name = 'MSE+0.1NIEE' if not self.binary else 'BCE'  # For printing
+        
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=0.001)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.scheduler = StepLR(self.optimizer, step_size=3, gamma=lr_decay)
@@ -270,7 +290,7 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                         en_grad_norms = torch.norm(torch.stack([torch.norm(param.grad.detach()) for param in self.model.encoder.parameters() if param.grad is not None]))
                         de_grad_norms = torch.norm(torch.stack([torch.norm(param.grad.detach()) for param in self.model.decoder.parameters() if param.grad is not None]))
-
+                        print(de_grad_norms)
                         self.writer.add_scalar("Grad/encoder/grad_norms", en_grad_norms, batch_step)
                         self.writer.add_scalar("Grad/decoder/grad_norms", de_grad_norms, batch_step)
 
