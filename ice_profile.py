@@ -45,7 +45,7 @@ if __name__ == '__main__':
     # ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5/*/*.nc'))
     ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
 
-    # ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
+    ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 
     coarsen = 1
 
@@ -151,7 +151,7 @@ if __name__ == '__main__':
         mask=mask, 
         high_interest_region=high_interest_region, 
         graph_structure=graph_structure, 
-        truncated_backprop=truncated_backprop
+        truncated_backprop=False,#truncated_backprop
         )
 
     pr.disable()

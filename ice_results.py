@@ -123,6 +123,7 @@ mask = np.isnan(xr.open_zarr('data/era5_hb_daily.zarr').siconc.isel(time=0)).val
 
 import glob
 ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
+ds = xr.open_dataset('data/era5_hb_daily.zarr')
 # ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 mask = np.isnan(ds.siconc.isel(time=0)).values
 
