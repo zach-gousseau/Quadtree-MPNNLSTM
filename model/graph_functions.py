@@ -661,7 +661,6 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, high_interest_
     cell_sizes = n_pixels_per_node  # TODO: scale by latitude
 
     # Pseudo-normalize and add node sizes as feature 
-    # TODO: Use resolution argument to scale the node sizes -- currently only done for pixelwise modelling
     cell_sizes = torch.Tensor(cell_sizes) / ((max_grid_size/2)**2)
     cell_sizes = cell_sizes.repeat((n_samples, *[1]*len(cell_sizes.shape)))
 
