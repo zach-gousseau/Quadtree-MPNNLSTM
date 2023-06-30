@@ -37,7 +37,7 @@ def get_glorys_values(ds, dt, var_='siconc', lats=(51, 70), lons=(-95, -65)):
     return arr
 
 def get_glorys(username, password):
-    data_store = copernicusmarine_datastore(DATASET_ID, USERNAME, PASSWORD)
+    data_store = copernicusmarine_datastore(DATASET_ID, username, password)
     glorys = xr.open_dataset(data_store)
     glorys['time'] = np.array([dt - 12 * 3600000000000 for dt in glorys.time.values])
     glorys = glorys.rio.write_crs(4326)
