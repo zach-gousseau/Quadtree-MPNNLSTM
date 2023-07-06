@@ -25,8 +25,6 @@ from model.graph_functions import create_static_heterogeneous_graph, create_stat
 # torch.autograd.set_detect_anomaly(True)
 
 if __name__ == '__main__':
-    import time
-    s = time.time()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # device = 'cpu'
     # device = torch.device('mps')
@@ -82,7 +80,7 @@ if __name__ == '__main__':
 
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
-    training_years = range(2015, 2016)
+    training_years = range(2001, 2002)
     
     cache_dir='/home/zgoussea/scratch/data_cache/'
 
@@ -131,14 +129,13 @@ if __name__ == '__main__':
 
     # print(model.model)
 
-    lr = 0.001
+    lr = 0.01
 
     model.model.train()
 
     import cProfile, pstats, io
     pr = cProfile.Profile()
     pr.enable()
-    print(time.time() - s)
     model.train(
         loader_profile,
         loader_test,

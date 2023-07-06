@@ -112,13 +112,25 @@ class Decoder(torch.nn.Module):
                 )
 
         # Dummy convolutions don't project the data into a new dimensionality
-        in_channels = hidden_size + concat_layers_dim if not (dummy or convolution_type=='Dummy') else 3 + concat_layers_dim
+        in_channels = hidden_size + 1 if not (dummy or convolution_type=='Dummy') else 3 + 1
 
         conv_func = CONVOLUTIONS[convolution_type]
         conv_func_kwargs = CONVOLUTION_KWARGS[convolution_type]
         
-        self.fc_out1 = conv_func(in_channels=in_channels, out_channels=hidden_size, **conv_func_kwargs)
-        self.fc_out2 = conv_func(in_channels=hidden_size, out_channels=1, **conv_func_kwargs)
+        self.fc_out1 = Linear(in_channels=in_channels, out_channels=hidden_size)
+        self.fc_out2 = Linear(in_channels=hidden_size, out_channels=hidden_size)
+        self.fc_out3 = Linear(in_channels=hidden_size, out_channels=1)
+        
+        torch.nn.init.zeros_(self.fc_out1.weight)
+        torch.nn.init.zeros_(self.fc_out1.bias)
+        torch.nn.init.zeros_(self.fc_out2.weight)
+        torch.nn.init.zeros_(self.fc_out2.bias)
+        torch.nn.init.zeros_(self.fc_out3.weight)
+        torch.nn.init.zeros_(self.fc_out3.bias)
+        
+        self.gnn1 = conv_func(in_channels=concat_layers_dim, out_channels=hidden_size, **conv_func_kwargs)
+        self.gnn2 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
+        self.gnn3 = conv_func(in_channels=hidden_size, out_channels=1, **conv_func_kwargs)
 
         self.norm_o = nn.LayerNorm(hidden_size)
         self.norm_h = nn.LayerNorm(hidden_size)
@@ -162,10 +174,13 @@ class Decoder(torch.nn.Module):
 
         # Concatenate with the concat layers
         if concat_layers is not None:
+            concat_layers = self.gnn(concat_layers, edge_index, edge_weight)
             output = torch.cat([output, concat_layers], dim=-1)
 
         # Pass output through the final GNN to reduce to desired dimensionality
-        output = self.gnn_out(output, edge_index, edge_weight)
+        output = self.mlp_out(output)
+        
+        print(output.min(), output.max())
 
         # Squeeze everything to (-1, 1)
         output = torch.tanh(output)
@@ -179,11 +194,22 @@ class Decoder(torch.nn.Module):
 
         return output, hidden, cell
 
-    def gnn_out(self, x, edge_index, edge_weight):
-        x = self.fc_out1(x, edge_index, edge_weight)
+    def mlp_out(self, x):
+        x = self.fc_out1(x)
         x = F.relu(x)
-        x = self.fc_out2(x, edge_index, edge_weight)
+        x = self.fc_out2(x)
+        x = F.relu(x)
+        x = self.fc_out3(x)
         x = self.dropout(x)
+        return x
+    
+    def gnn(self, x, edge_index, edge_weight):
+        x = self.gnn1(x, edge_index, edge_weight)
+        x = F.relu(x)
+        x = self.gnn2(x, edge_index, edge_weight)
+        x = F.relu(x)
+        x = self.gnn3(x, edge_index, edge_weight)
+        x = F.relu(x)
         return x
         
 
