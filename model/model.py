@@ -82,9 +82,13 @@ class GraphConv(nn.Module):
             import numpy as np
             out, (edge_index, alpha) = self.convolutions[0](x, edge_index, edge_attr, return_attention_weights=True)
             att_map = torch.zeros(size=(x.shape[0], 1))
-            from_nodes = edge_index[1]
-            for a, from_node in zip(alpha, from_nodes):
-                att_map[from_node] = a
+            att_map_i = torch.zeros(size=(x.shape[0], 1))
+            nodes = edge_index[1]  # 0 is FROM, 1 is TO
+            for a, node in zip(alpha, nodes):
+                att_map[node] += a
+                att_map_i[node] += 1
+                
+            att_map = att_map / att_map_i
                 
             with open('scratch/attention_map.npy', 'wb') as f:
                 np.save(f, np.array(x))
@@ -282,7 +286,7 @@ class GConvLSTM(nn.Module):
 
         self.convolution_type = convolution_type
         self.n_conv_layers = n_conv_layers
-        self.return_attention_weights = False#True
+        self.return_attention_weights = False
         self.name = name
 
         self.in_channels = in_channels
@@ -373,13 +377,13 @@ class GConvLSTM(nn.Module):
         self._create_output_gate_parameters_and_layers()
 
     def _set_parameters(self):
-        zeros(self.w_c_i)
-        zeros(self.w_c_f)
-        zeros(self.w_c_o)
-        zeros(self.b_i)
-        zeros(self.b_f)
-        zeros(self.b_c)
-        zeros(self.b_o)
+        glorot(self.w_c_i)
+        glorot(self.w_c_f)
+        glorot(self.w_c_o)
+        glorot(self.b_i)
+        glorot(self.b_f)
+        glorot(self.b_c)
+        glorot(self.b_o)
 
     def _set_hidden_state(self, X, H):
         if H is None:

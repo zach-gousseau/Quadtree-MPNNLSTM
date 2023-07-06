@@ -14,11 +14,10 @@ from dateutil.relativedelta import relativedelta
 import argparse
 
 from model.utils import normalize
-
 from model.mpnnlstm import NextFramePredictorS2S
 from model.seq2seq import Seq2Seq
-from ice_dataset import IceDataset
 
+from ice_dataset import IceDataset
 from torch.utils.data import Dataset, DataLoader
 
 from model.graph_functions import create_static_heterogeneous_graph, create_static_homogeneous_graph
@@ -26,7 +25,6 @@ from model.graph_functions import create_static_heterogeneous_graph, create_stat
 # torch.autograd.set_detect_anomaly(True)
 
 if __name__ == '__main__':
-
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # device = 'cpu'
     # device = torch.device('mps')
@@ -38,14 +36,9 @@ if __name__ == '__main__':
     # convolution_type = 'Dummy'
     generate_predictions = True
 
-    # ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
-    # ds = xr.open_dataset('data/era5_hb_daily_coarsened_2.zarr')
-    # ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
-    # ds = xr.open_zarr('/home/zgoussea/scratch/era5_arctic_daily.zarr')
-    # ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5/*/*.nc'))
-    ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
+    ds = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc'))  # ln -s /home/zgoussea/scratch/ERA5_GLORYS data/ERA5_GLORYS
 
-    ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
+    # ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 
     coarsen = 1
 
@@ -62,8 +55,8 @@ if __name__ == '__main__':
     high_interest_region = None
 
     image_shape = mask.shape
-    # graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, high_interest_region, use_edge_attrs=True, resolution=0.25)
-    graph_structure = create_static_homogeneous_graph(image_shape, 16, mask, use_edge_attrs=True, resolution=0.25)
+    # graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, high_interest_region, use_edge_attrs=True, resolution=0.25, device=device)
+    graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=0.25, device=device)
 
     print(f'Num nodes: {len(graph_structure["graph_nodes"])}')
 
@@ -87,7 +80,7 @@ if __name__ == '__main__':
 
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
-    training_years = range(2015, 2016)
+    training_years = range(2001, 2002)
 
     climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
     climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
@@ -134,7 +127,7 @@ if __name__ == '__main__':
 
     # print(model.model)
 
-    lr = 0.001
+    lr = 0.01
 
     model.model.train()
 
@@ -147,7 +140,7 @@ if __name__ == '__main__':
         loader_test,
         climatology,
         lr=lr, 
-        n_epochs=5, 
+        n_epochs=1, 
         mask=mask, 
         high_interest_region=high_interest_region, 
         graph_structure=graph_structure, 
