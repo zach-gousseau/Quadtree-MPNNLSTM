@@ -405,7 +405,6 @@ def flatten(img, mapping, n_pixels_per_node, mask=None):
     
     # Compute mean values for each graph node
     while True:
-        # data = img_flattened @ mapping.T.to_dense() / n_pixels_per_node
         data = img_flattened @ mapping.T / n_pixels_per_node
 
         if data.isnan().any():
