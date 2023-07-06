@@ -50,13 +50,15 @@ if __name__ == '__main__':
     multires_training = False
     truncated_backprop = 0
 
-    training_years = range(2007, 2013)
-    x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
+    training_years = range(2003, 2013)
+    x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf', 'usi', 'vsi', 'sithick']
     y_vars = ['siconc']
     input_features = len(x_vars)
     input_timesteps = 10
     output_timesteps= 90
     preset_mesh = False
+    
+    cache_dir='/home/zgoussea/scratch/data_cache/'
 
     binary=False
 
@@ -80,7 +82,7 @@ if __name__ == '__main__':
         lr = 0.001
         input_timesteps = 90
     elif exp == 9:
-        multires_training = True
+        multires_training = False
         preset_mesh = 'heterogeneous'
     elif exp == 10:
         multires_training = True
@@ -91,13 +93,12 @@ if __name__ == '__main__':
     if multires_training:
 
         # Half resolution dataset
-        # ds_half = xr.open_dataset('data/era5_hb_daily_coarsened_2.zarr') # ln -s /home/zgoussea/scratch/era5_hb_daily_coarsened_2.zarr data/era5_hb_daily_coarsened_2.zarr
-        ds_half = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc_2x/*.nc'))
+        ds_half = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS_2x/*.nc'))  # ln -s /home/zgoussea/scratch/ERA5_GLORYS data/ERA5_GLORYS
         mask_half = np.isnan(ds_half.siconc.isel(time=0)).values
 
-        data_train_half = IceDataset(ds_half, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
-        data_test_half = IceDataset(ds_half, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
-        data_val_half = IceDataset(ds_half, [training_years[-1]+5], month, input_timesteps, output_timesteps, x_vars, y_vars)
+        data_train_half = IceDataset(ds_half, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, cache_dir=cache_dir)
+        data_test_half = IceDataset(ds_half, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, cache_dir=cache_dir)
+        data_val_half = IceDataset(ds_half, [training_years[-1]+5], month, input_timesteps, output_timesteps, x_vars, y_vars, cache_dir=cache_dir)
 
         loader_train_half = DataLoader(data_train_half, batch_size=1, shuffle=True)
         loader_test_half = DataLoader(data_test_half, batch_size=1, shuffle=True)
@@ -113,13 +114,10 @@ if __name__ == '__main__':
 
 
     # Full resolution dataset
-    # ds = xr.open_zarr('data/era5_hb_daily.zarr')    # ln -s /home/zgoussea/scratch/era5_hb_daily.zarr data/era5_hb_daily.zarr
-    # ds = xr.open_mfdataset(glob.glob('data/era5_hb_daily_nc/*.nc'))  # ln -s /home/zgoussea/scratch/era5_hb_daily_nc data/era5_hb_daily_nc
-    # ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))  # ln -s /home/zgoussea/scratch/hb_era5_glorys_nc data/hb_era5_glorys_nc
-    # ds = xr.open_zarr('data/hb_era5_glorys.zarr')  # ln -s /home/zgoussea/scratch/hb_era5_glorys.zarr/  data/hb_era5_glorys.zarr
-    ds = xr.open_mfdataset(glob.glob('data/hb_era5_glorys_nc/*.nc'))
+    ds = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc'))  # ln -s /home/zgoussea/scratch/ERA5_GLORYS data/ERA5_GLORYS
     mask = np.isnan(ds.siconc.isel(time=0)).values
-    high_interest_region = xr.open_dataset('data/shipping_corridors/primary_route_mask.nc').band_data.values
+    # high_interest_region = xr.open_dataset('data/shipping_corridors/primary_route_mask.nc').band_data.values
+    high_interest_region = None
 
     image_shape = mask.shape
     graph_structure = None
@@ -130,9 +128,9 @@ if __name__ == '__main__':
         graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, high_interest_region=high_interest_region, use_edge_attrs=True, resolution=1/12, device=device)
     
     # Full resolution datasets
-    data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True)
-    data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars)
-    data_val = IceDataset(ds, range(training_years[-1]+2, training_years[-1]+2+4), month, input_timesteps, output_timesteps, x_vars, y_vars)
+    data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, cache_dir=cache_dir)
+    data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, cache_dir=cache_dir)
+    data_val = IceDataset(ds, range(training_years[-1]+2, training_years[-1]+2+4), month, input_timesteps, output_timesteps, x_vars, y_vars, cache_dir=cache_dir)
 
     loader_train = DataLoader(data_train, batch_size=1, shuffle=True)
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)
@@ -199,7 +197,7 @@ if __name__ == '__main__':
         loader_test,
         climatology,
         lr=lr,
-        n_epochs=15 if not multires_training else 10,
+        n_epochs=20 if not multires_training else 10,
         mask=mask,
         high_interest_region=high_interest_region,  # This should not be necessary
         truncated_backprop=truncated_backprop,
@@ -207,7 +205,7 @@ if __name__ == '__main__':
         ) 
 
     # Save model and losses
-    results_dir = f'results/ice_results_jun19_with_shipping_route'
+    results_dir = f'results/ice_results_jul5'
 
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)

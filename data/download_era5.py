@@ -9,7 +9,7 @@ from tqdm import tqdm
 lats = (51, 70)
 lons = (-95, 65)
 
-def download_era5(start_year, end_year, region, CDS_key):
+def download_era5(start_year, end_year, region, CDS_key, output_dir=None):
     """
     Download ERA5 files
     :param start_year: Integer. Start year in YYYY.
@@ -18,7 +18,8 @@ def download_era5(start_year, end_year, region, CDS_key):
     :param CDS_key: Secret key for the Climate Data Store: https://cds.climate.copernicus.eu/#!/home
     """
 
-    output_dir = os.getcwd()
+    output_dir = os.getcwd() if output_dir is None else output_dir
+
     base = "ERA5_"
     url = "https://cds.climate.copernicus.eu/api/v2"
 
@@ -39,7 +40,7 @@ def download_era5(start_year, end_year, region, CDS_key):
                 #'total_precipitation',
                 #'surface_solar_radiation_downwards']
 
-    for year in range(end_year, start_year, -1):
+    for year in range(start_year, end_year):
         print(year)
         os.chdir(output_dir)
 
@@ -126,9 +127,11 @@ if __name__ == "__main__":
                         help="Region of interest in lat0/lon0/lat1/lon1 format")
     parser.add_argument("--key", type=str,
                         help="CDS key")
+    parser.add_argument("--directory", type=str,
+                        help="Write directory", default=None)
 
     args = parser.parse_args()
 
-    download_era5(start_year=args.start_year, end_year=args.end_year, region=args.region, CDS_key=args.key)
+    download_era5(start_year=args.start_year, end_year=args.end_year, region=args.region, CDS_key=args.key, output_dir=args.directory)
 
-    # 120937:07970bca-a158-4ec5-9198-93d82b859818
+    # python data/download_era5.py --start_year 1990 --end_year 2021 --region "70/-95/51/-65" --key "120937:07970bca-a158-4ec5-9198-93d82b859818" --directory /home/zgoussea/scratch/ERA5

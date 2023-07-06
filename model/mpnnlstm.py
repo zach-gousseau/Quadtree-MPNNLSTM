@@ -187,8 +187,11 @@ class NextFramePredictorS2S(NextFramePredictor):
             self.model.load_state_dict(torch.load(os.path.join(directory, f'{self.experiment_name}.pth'), map_location=torch.device('cpu')))
 
     def initiate_training(self, lr, lr_decay):
-        self.loss_func = MSE_NIIEE() if not self.binary else torch.nn.BCELoss()
-        self.loss_func_name = 'MSE+0.1NIEE' if not self.binary else 'BCE'  # For printing
+        # self.loss_func = MSE_NIIEE() if not self.binary else torch.nn.BCELoss()
+        # self.loss_func_name = 'MSE+0.1NIEE' if not self.binary else 'BCE'  # For printing
+        
+        self.loss_func = torch.nn.MSELoss() if not self.binary else torch.nn.BCELoss()
+        self.loss_func_name = 'MSE' if not self.binary else 'BCE'  # For printing
         
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=0.001)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
@@ -291,7 +294,6 @@ class NextFramePredictorS2S(NextFramePredictor):
 
                         en_grad_norms = torch.norm(torch.stack([torch.norm(param.grad.detach()) for param in self.model.encoder.parameters() if param.grad is not None]))
                         de_grad_norms = torch.norm(torch.stack([torch.norm(param.grad.detach()) for param in self.model.decoder.parameters() if param.grad is not None]))
-                        print(de_grad_norms)
                         self.writer.add_scalar("Grad/encoder/grad_norms", en_grad_norms, batch_step)
                         self.writer.add_scalar("Grad/decoder/grad_norms", de_grad_norms, batch_step)
 

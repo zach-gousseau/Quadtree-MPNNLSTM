@@ -34,7 +34,7 @@ if __name__ == '__main__':
     convolution_type = 'TransformerConv'
     # convolution_type = 'GCNConv'
     # convolution_type = 'Dummy'
-    generate_predictions = True
+    generate_predictions = False
 
     ds = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc'))  # ln -s /home/zgoussea/scratch/ERA5_GLORYS data/ERA5_GLORYS
 
@@ -81,14 +81,16 @@ if __name__ == '__main__':
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
     training_years = range(2001, 2002)
+    
+    cache_dir='/home/zgoussea/scratch/data_cache/'
 
     climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
     climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
 
     input_features = len(x_vars)
     
-    data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, y_binary_thresh=binary_thresh if binary else None)
-    data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, y_binary_thresh=binary_thresh if binary else None)
+    data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, y_binary_thresh=binary_thresh if binary else None, cache_dir=cache_dir)
+    data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, y_binary_thresh=binary_thresh if binary else None, cache_dir=cache_dir)
 
     loader_profile = DataLoader(data_train, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(15)))
     loader_test = DataLoader(data_test, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
@@ -134,7 +136,6 @@ if __name__ == '__main__':
     import cProfile, pstats, io
     pr = cProfile.Profile()
     pr.enable()
-
     model.train(
         loader_profile,
         loader_test,
@@ -153,7 +154,7 @@ if __name__ == '__main__':
 
     if generate_predictions:
 
-        data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars)
+        data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars, cache_dir=cache_dir)
         loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
 
         # Generate predictions
