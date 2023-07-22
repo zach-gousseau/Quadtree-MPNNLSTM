@@ -34,7 +34,7 @@ if __name__ == '__main__':
     convolution_type = 'TransformerConv'
     # convolution_type = 'GCNConv'
     # convolution_type = 'Dummy'
-    generate_predictions = False
+    generate_predictions = True
 
     ds = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc'))  # ln -s /home/zgoussea/scratch/ERA5_GLORYS data/ERA5_GLORYS
 
@@ -55,8 +55,8 @@ if __name__ == '__main__':
     high_interest_region = None
 
     image_shape = mask.shape
-    # graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, high_interest_region, use_edge_attrs=True, resolution=0.25, device=device)
-    graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=0.25, device=device)
+    graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
+    # graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
 
     print(f'Num nodes: {len(graph_structure["graph_nodes"])}')
 
@@ -80,9 +80,9 @@ if __name__ == '__main__':
 
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
-    training_years = range(2001, 2002)
+    training_years = range(2010, 2011)
     
-    cache_dir='/home/zgoussea/scratch/data_cache/'
+    cache_dir=None#'/home/zgoussea/scratch/data_cache/'
 
     climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
     climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
@@ -92,8 +92,8 @@ if __name__ == '__main__':
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, y_binary_thresh=binary_thresh if binary else None, cache_dir=cache_dir)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, y_binary_thresh=binary_thresh if binary else None, cache_dir=cache_dir)
 
-    loader_profile = DataLoader(data_train, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(15)))
-    loader_test = DataLoader(data_test, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
+    loader_profile = DataLoader(data_train, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(30)))
+    loader_test = DataLoader(data_test, batch_size=1, shuffle=False)#, sampler=torch.utils.data.SubsetRandomSampler(range(15)))
 
     thresh = 0.15
     thresh = -np.inf
@@ -105,7 +105,7 @@ if __name__ == '__main__':
         hidden_size=16,
         dropout=0.1,
         n_layers=1,
-        n_conv_layers=1,
+        n_conv_layers=2,
         transform_func=dist_from_05,
         dummy=False,
         convolution_type=convolution_type,
@@ -122,14 +122,14 @@ if __name__ == '__main__':
         output_timesteps=output_timesteps,
         transform_func=dist_from_05,
         device=device,
-        debug=False,
+        debug=True,
         model_kwargs=model_kwargs)
 
     print('Num. parameters:', model.get_n_params())
 
     # print(model.model)
 
-    lr = 0.01
+    lr = 0.001
 
     model.model.train()
 
@@ -141,7 +141,7 @@ if __name__ == '__main__':
         loader_test,
         climatology,
         lr=lr, 
-        n_epochs=1, 
+        n_epochs=10, 
         mask=mask, 
         high_interest_region=high_interest_region, 
         graph_structure=graph_structure, 
@@ -154,13 +154,13 @@ if __name__ == '__main__':
 
     if generate_predictions:
 
-        data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars, cache_dir=cache_dir)
-        loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
+        # data_val = IceDataset(ds, [training_years[-1]+2], month, input_timesteps, output_timesteps, x_vars, y_vars, cache_dir=cache_dir)
+        # loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
 
         # Generate predictions
         model.model.eval()
         val_preds = model.predict(
-            loader_val, 
+            loader_test, 
             climatology, 
             mask=mask, 
             high_interest_region=high_interest_region, 
@@ -168,12 +168,12 @@ if __name__ == '__main__':
             )
         
         # Save results
-        launch_dates = loader_val.dataset.launch_dates
+        launch_dates = loader_test.dataset.launch_dates
         
         ds = xr.Dataset(
             data_vars=dict(
                 y_hat=(["launch_date", "timestep", "latitude", "longitude"], val_preds.squeeze(-1)),
-                y_true=(["launch_date", "timestep", "latitude", "longitude"], loader_val.dataset.y.squeeze(-1)),
+                y_true=(["launch_date", "timestep", "latitude", "longitude"], loader_test.dataset.y.squeeze(-1)),
             ),
             coords=dict(
                 longitude=ds.longitude,

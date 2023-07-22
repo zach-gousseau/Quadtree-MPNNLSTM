@@ -13,6 +13,9 @@ from torch_geometric.nn.inits import glorot, zeros
 import warnings
 import copy
 import sys
+import math
+
+from torch_geometric.utils import softmax
 
 class DummyLSTM(MessagePassing):
 
@@ -22,6 +25,41 @@ class DummyLSTM(MessagePassing):
     def forward(self, x: Tensor, edge_index: Adj, edge_weight: OptTensor = None,
     H: OptTensor = None, C: OptTensor = None) -> Tensor:
         return x, H, C
+    
+class TransformerConvCustom(TransformerConv):
+    def __init__(self, in_channels: Union[int, Tuple[int, int]], out_channels: int, heads: int = 1, concat: bool = True, beta: bool = False, dropout: float = 0, edge_dim: Optional[int] = None, bias: bool = True, root_weight: bool = True, **kwargs):
+        super().__init__(in_channels, out_channels, heads, concat, beta, dropout, edge_dim, bias, root_weight, **kwargs)
+        
+    def message(self, query_i: Tensor, key_j: Tensor, value_j: Tensor,
+                edge_attr: OptTensor, index: Tensor, ptr: OptTensor,
+                size_i: Optional[int]) -> Tensor:
+
+        if self.lin_edge is not None:
+            assert edge_attr is not None
+            edge_attr = self.lin_edge(edge_attr).view(-1, self.heads,
+                                                      self.out_channels)
+            key_j = key_j + edge_attr
+
+        alpha = (query_i * key_j).sum(dim=-1) / math.sqrt(self.out_channels)
+        # alpha = softmax(alpha, index, ptr, size_i)
+        
+        # Custom 
+        alpha = torch.sigmoid(alpha)
+        _, counts = torch.unique(index, return_counts=True)
+        scalers = counts.repeat_interleave(counts).unsqueeze(-1)
+        alpha = alpha / scalers
+        
+        self._alpha = alpha
+        alpha = F.dropout(alpha, p=self.dropout, training=self.training)
+
+        out = value_j
+        if edge_attr is not None:
+            out = out + edge_attr
+
+        out = out * alpha.view(-1, self.heads, 1)
+        return out
+
+    
 
 class MHTransformerConv(TransformerConv):
     def __init__(self, in_channels: Union[int, Tuple[int, int]], out_channels: int, heads: int = 1, concat: bool = True, beta: bool = False, dropout: float = 0, edge_dim: Optional[int] = None, bias: bool = True, root_weight: bool = True, **kwargs):
@@ -77,26 +115,46 @@ class GraphConv(nn.Module):
 
     
     def forward(self, x: Union[Tensor, PairTensor], edge_index: Adj, edge_attr: OptTensor = None, return_attention_weights=False):
-        
-        if return_attention_weights and self.convolution_type=='TransformerConv' and x.shape[-1]==8:
-            import numpy as np
-            out, (edge_index, alpha) = self.convolutions[0](x, edge_index, edge_attr, return_attention_weights=True)
-            att_map = torch.zeros(size=(x.shape[0], 1))
-            att_map_i = torch.zeros(size=(x.shape[0], 1))
-            nodes = edge_index[1]  # 0 is FROM, 1 is TO
-            for a, node in zip(alpha, nodes):
-                att_map[node] += a
-                att_map_i[node] += 1
-                
-            att_map = att_map / att_map_i
-                
-            with open('scratch/attention_map.npy', 'wb') as f:
-                np.save(f, np.array(x))
-                np.save(f, np.array(att_map))
-            
-            warnings.warn('Asked for attention weights.')
-            
         for i in range(self.n_layers):
+            
+            if return_attention_weights and self.convolution_type=='TransformerConv' and x.shape[-1]==8:
+                import numpy as np
+                out, (edge_index, alpha) = self.convolutions[i](x, edge_index, edge_attr, return_attention_weights=True)
+
+                from_nodes = edge_index[0]
+                to_nodes = edge_index[1]
+
+                att_map_from = torch.zeros(size=(x.shape[0], 1), dtype=torch.float32)
+                att_map_to = torch.zeros(size=(x.shape[0], 1), dtype=torch.float32)
+                att_map_from_i = torch.zeros(size=(x.shape[0], 1), dtype=torch.float32)
+                att_map_to_i = torch.zeros(size=(x.shape[0], 1), dtype=torch.float32)
+
+                for a, from_node in zip(alpha, from_nodes):
+                    att_map_from[from_node] += a
+                    att_map_from_i[from_node] += 1
+
+                for a, to_node in zip(alpha, to_nodes):
+                    att_map_to[to_node] += a
+                    # att_map_to_i[to_node] += 1
+                    
+                # att_map_from = att_map_from / att_map_from_i
+                
+                att_map_from_i = torch.zeros(size=(x.shape[0], 1), dtype=torch.float32)
+                n, c = torch.unique(edge_index[0], return_counts=True)
+                for from_node, count_ in zip(n, c):
+                    att_map_from_i[from_node] = count_
+
+                # att_map_to = att_map_to / att_map_to_i
+                # att_map_from = att_map_from / att_map_from_i
+
+                with open(f'scratch/attention_maps_{i}.npy', 'wb') as f:
+                    np.save(f, np.array(alpha))
+                    np.save(f, np.array(x))
+                    np.save(f, np.array(att_map_from))
+                    np.save(f, np.array(att_map_to))
+
+                warnings.warn('Asked for attention weights.')
+                
             x = self.convolutions[i](x, edge_index, edge_attr)
         return x
 
@@ -286,7 +344,7 @@ class GConvLSTM(nn.Module):
 
         self.convolution_type = convolution_type
         self.n_conv_layers = n_conv_layers
-        self.return_attention_weights = False
+        self.return_attention_weights = True#True
         self.name = name
 
         self.in_channels = in_channels
@@ -377,13 +435,13 @@ class GConvLSTM(nn.Module):
         self._create_output_gate_parameters_and_layers()
 
     def _set_parameters(self):
-        glorot(self.w_c_i)
-        glorot(self.w_c_f)
-        glorot(self.w_c_o)
-        glorot(self.b_i)
-        glorot(self.b_f)
-        glorot(self.b_c)
-        glorot(self.b_o)
+        zeros(self.w_c_i)
+        zeros(self.w_c_f)
+        zeros(self.w_c_o)
+        zeros(self.b_i)
+        zeros(self.b_f)
+        zeros(self.b_c)
+        zeros(self.b_o)
 
     def _set_hidden_state(self, X, H):
         if H is None:

@@ -30,6 +30,8 @@ from model.utils import get_n_params, add_positional_encoding, int_to_datetime
 
 from abc import ABC, abstractmethod
 
+from pytorch_msssim import ssim
+
 class MSE_NIIEE(nn.Module):
     def __init__(self):
         super(MSE_NIIEE, self).__init__()
@@ -48,6 +50,17 @@ class NIIEE(nn.Module):
         intersection = torch.sum(output * target)
         union = torch.sum(output) + torch.sum(target) - intersection
         loss = 1 - intersection / union
+        return loss
+    
+class MSE_SSIM(nn.Module):
+    def __init__(self, mask):
+        super(MSE_SSIM, self).__init__()
+        self.mse = torch.nn.MSELoss()
+        self.ssim = ssim
+        self.mask = mask
+        
+    def forward(self, output, target):
+        loss = 0.1*self.ssim(output.unsqueeze(1), target.unsqueeze(1), data_range=1) + self.mse(output[:, ~self.mask], target[:, ~self.mask])
         return loss
 
 
@@ -186,18 +199,21 @@ class NextFramePredictorS2S(NextFramePredictor):
         except:
             self.model.load_state_dict(torch.load(os.path.join(directory, f'{self.experiment_name}.pth'), map_location=torch.device('cpu')))
 
-    def initiate_training(self, lr, lr_decay):
+    def initiate_training(self, lr, lr_decay, mask):
         # self.loss_func = MSE_NIIEE() if not self.binary else torch.nn.BCELoss()
         # self.loss_func_name = 'MSE+0.1NIEE' if not self.binary else 'BCE'  # For printing
         
         self.loss_func = torch.nn.MSELoss() if not self.binary else torch.nn.BCELoss()
         self.loss_func_name = 'MSE' if not self.binary else 'BCE'  # For printing
         
+        # self.loss_func = MSE_SSIM(mask) if not self.binary else torch.nn.BCELoss()
+        # self.loss_func_name = 'MSE_SSIM' if not self.binary else 'BCE'  # For printing
+        
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=0.001)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.scheduler = StepLR(self.optimizer, step_size=3, gamma=lr_decay)
 
-        # scaler = amp.GradScaler()  # Not used 
+        self.scaler = amp.GradScaler()  # Not used 
         
         self.writer = SummaryWriter('runs/' + self.experiment_name + '_' + datetime.datetime.now().strftime("%Y%m%d_%H_%M_%S"))
 
@@ -225,7 +241,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         
         # Initialize training only if it's the first train() call
         if not self.training_initiated:
-            self.initiate_training(lr, lr_decay)
+            self.initiate_training(lr, lr_decay, mask)
 
         if mask is not None:
             assert mask.shape == image_shape, f'Mask and image shapes do not match. Got {mask.shape} and {image_shape}'
@@ -252,32 +268,41 @@ class NextFramePredictorS2S(NextFramePredictor):
                 if truncated_backprop == 0:
                     self.optimizer.zero_grad()
                 
-                    # with amp.autocast():
-                    y_hat, y_hat_mappings = self.model(
-                        x, 
-                        y, 
-                        concat_layers, 
-                        teacher_forcing_ratio=0, 
-                        mask=mask, 
-                        high_interest_region=high_interest_region,
-                        graph_structure=graph_structure
-                        )
-                    
-                    y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
-                    y_hat = torch.stack(y_hat, dim=0)
-                    
-                    loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
+                    with amp.autocast():
+                        y_hat, y_hat_mappings = self.model(
+                            x, 
+                            y, 
+                            concat_layers, 
+                            teacher_forcing_ratio=0, 
+                            mask=mask, 
+                            high_interest_region=high_interest_region,
+                            graph_structure=graph_structure
+                            )
+                        # print(y_hat[0].dtype, y_hat_mappings[0].dtype)
+                        with amp.autocast(enabled=False):
+                            y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
+                            y_hat = torch.stack(y_hat, dim=0)
+                        
+                        loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
+                        
+                        self.scaler.scale(loss).backward()
+                        self.scaler.unscale_(self.optimizer)
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10)
+                        self.scaler.step(self.optimizer)
+                        self.scaler.update()
+                        
+                        # loss = self.loss_func(y_hat, y)  
 
-                    # with profiler.profile(enabled=True, use_cuda=True) as prof:
-                    loss.backward()
+                        # with profiler.profile(enabled=True, use_cuda=True) as prof:
+                        # loss.backward()
 
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10)
+                        # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10)
 
-                    # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
-                    # prof.export_chrome_trace("profiling_results.json")
-                    # quit()
+                        # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+                        # prof.export_chrome_trace("profiling_results.json")
+                        # quit()
 
-                    self.optimizer.step()
+                        # self.optimizer.step()
 
                     if self.debug:
                         # decoder_params = [p for p in self.model.decoder.parameters()]
@@ -356,20 +381,22 @@ class NextFramePredictorS2S(NextFramePredictor):
                     concat_layers = None
 
                 with torch.no_grad():
-                    y_hat, y_hat_mappings = self.model(
-                        x, 
-                        y, 
-                        concat_layers, 
-                        teacher_forcing_ratio=0, 
-                        mask=mask, 
-                        high_interest_region=high_interest_region,
-                        graph_structure=graph_structure
-                        )
-
-                    y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
-                    y_hat = torch.stack(y_hat, dim=0)
-                
-                    loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
+                    with amp.autocast():
+                        y_hat, y_hat_mappings = self.model(
+                            x, 
+                            y, 
+                            concat_layers, 
+                            teacher_forcing_ratio=0, 
+                            mask=mask, 
+                            high_interest_region=high_interest_region,
+                            graph_structure=graph_structure
+                            )
+                        with amp.autocast(enabled=False):
+                            y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
+                            y_hat = torch.stack(y_hat, dim=0)
+                    
+                        loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
+                        # loss = self.loss_func(y_hat, y)  
 
                 step_test += 1
                 running_loss_test += loss

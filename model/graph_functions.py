@@ -142,7 +142,7 @@ def min_2d(arr):
                 min_val = arr[i, j]
     return min_val
 
-def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, high_interest_region=None, transform_func=None, condition='max_larger_than'):
+def quadtree_decompose(img, padding=1, thresh=0.05, max_size=8, mask=None, high_interest_region=None, transform_func=None, condition='max_larger_than'):
     """
     Perform quadtree decomposition on an image.
 
@@ -258,7 +258,7 @@ def quadtree_decompose(img, padding=0, thresh=0.05, max_size=8, mask=None, high_
     
     return labels[:n, :m]
 
-def get_adj(labels, xx, yy, edges_at_corners=False, use_edge_attrs=True):
+def get_adj(labels, xx, yy, edges_at_corners=True, use_edge_attrs=True):
     """
     Get the adjacency matrix for a given label matrix by connecting all adjacent cells (this could be more efficient).
     Basically for a label matrix that looks (e.g.) like this: 
@@ -646,8 +646,8 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, high_interest_
 
     mapping, graph_nodes, n_pixels_per_node = get_mapping(labels)
     mapping = mapping.to_dense()
+    # mapping, n_pixels_per_node = mapping.to(img.device).type(img.dtype), n_pixels_per_node.to(img.device).type(img.dtype)
     mapping, n_pixels_per_node = mapping.to(img.device), n_pixels_per_node.to(img.device)
-    
     data = flatten(img, mapping, n_pixels_per_node)
 
     if torch.any(torch.isnan(data)):

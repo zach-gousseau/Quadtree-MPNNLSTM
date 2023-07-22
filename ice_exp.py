@@ -46,7 +46,7 @@ if __name__ == '__main__':
 
     # Defaults
     convolution_type = 'TransformerConv'
-    lr = 0.001
+    lr = 0.0001
     multires_training = False
     truncated_backprop = 0
 
@@ -128,11 +128,13 @@ if __name__ == '__main__':
         graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, high_interest_region=high_interest_region, use_edge_attrs=True, resolution=1/12, device=device)
     
     # Full resolution datasets
-    data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, cache_dir=cache_dir)
+    data_train_1 = IceDataset(ds, training_years[:5], month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, cache_dir=cache_dir)
+    data_train_2 = IceDataset(ds, training_years[5:], month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, cache_dir=cache_dir)
     data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, cache_dir=cache_dir)
     data_val = IceDataset(ds, range(training_years[-1]+2, training_years[-1]+2+4), month, input_timesteps, output_timesteps, x_vars, y_vars, cache_dir=cache_dir)
 
-    loader_train = DataLoader(data_train, batch_size=1, shuffle=True)
+    loader_train_1 = DataLoader(data_train_1, batch_size=1, shuffle=True)
+    loader_train_2 = DataLoader(data_train_2, batch_size=1, shuffle=True)
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)
     loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
 
@@ -193,11 +195,23 @@ if __name__ == '__main__':
 
     # Train with full resolution. Use high interest region.
     model.train(
-        loader_train,
+        loader_train_1,
         loader_test,
         climatology,
         lr=lr,
-        n_epochs=20 if not multires_training else 10,
+        n_epochs=5 if not multires_training else 10,
+        mask=mask,
+        high_interest_region=high_interest_region,  # This should not be necessary
+        truncated_backprop=truncated_backprop,
+        graph_structure=graph_structure,
+        ) 
+    
+    model.train(
+        loader_train_2,
+        loader_test,
+        climatology,
+        lr=lr,
+        n_epochs=10 if not multires_training else 10,
         mask=mask,
         high_interest_region=high_interest_region,  # This should not be necessary
         truncated_backprop=truncated_backprop,
@@ -205,7 +219,7 @@ if __name__ == '__main__':
         ) 
 
     # Save model and losses
-    results_dir = f'results/ice_results_jul5'
+    results_dir = f'results/ice_results_jul22'
 
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)

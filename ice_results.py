@@ -20,6 +20,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import argparse
+import re
 
 from model.utils import normalize
 
@@ -121,7 +122,7 @@ def flatten_unflatten(arr, graph_structure, mask):
 mask = np.isnan(xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc')).siconc.isel(time=0)).values
 # mask = np.isnan(xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc')).isel(latitude=slice(175, 275), longitude=slice(125, 225)).siconc.isel(time=0)).values
 
-results_dir = f'results/ice_results_jul1'
+results_dir = f'results/ice_results_jul22'
 accuracy = False
 
 year_start, year_end, timestep_in, timestep_out = re.search(r'Y(\d+)_Y(\d+)_I(\d+)O(\d+)', glob.glob(results_dir+'/*.nc')[0]).groups()
@@ -143,8 +144,8 @@ image_shape = mask.shape
 
 
 # graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12)
-graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, None, use_edge_attrs=True, resolution=0.25)
-# graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
+graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, None, use_edge_attrs=True, resolution=1/12)
+# graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12)
 
 num_timesteps = ds.timestep.size
 
@@ -153,7 +154,7 @@ if not os.path.exists(f'{results_dir}/gif'):
     os.makedirs(f'{results_dir}/gif')
 
 generate_gif = True
-year = 2017
+year = int(ds.launch_date.dt.year.values[0])
 if generate_gif:
     ld = 15
 
@@ -230,7 +231,12 @@ plt.savefig(f'{results_dir}/heatmap.png')
 plt.close()
 
 
-ds['y_hat'].values = np.swapaxes(xr.concat([ds.y_true.isel(timestep=0) for _ in range(num_timesteps)], dim='timestep').values, 0, 1)
+# ds['y_hat'].values
+arr_pers = np.swapaxes(xr.concat([ds.y_true.isel(timestep=0) for _ in range(num_timesteps)], dim='timestep').values, 0, 1)
+shape_ = arr_pers.shape
+arr_pers = flatten_unflatten(torch.Tensor(arr_pers.reshape((-1, *image_shape, 1))), graph_structure, mask)
+arr_pers = arr_pers.reshape(shape_)
+ds['y_hat'].values = arr_pers
 heatmap_pers = create_heatmap_fast(ds)
 
 plt.figure(dpi=80)
@@ -244,7 +250,11 @@ climatology = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc'))
 climatology = climatology['siconc'].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).values
 climatology = np.nan_to_num(climatology)
 
-ds['y_hat'].values = np.array([[climatology[(doy-1+i)%365] for i in range(num_timesteps)] for doy in ds.launch_date.dt.dayofyear])
+arr_clim = np.array([[climatology[(doy-1+i)%365] for i in range(num_timesteps)] for doy in ds.launch_date.dt.dayofyear])
+shape_ = arr_clim.shape
+arr_clim = flatten_unflatten(torch.Tensor(arr_clim.reshape((-1, *image_shape, 1))), graph_structure, mask)
+arr_clim = arr_clim.reshape(shape_)
+ds['y_hat'].values = arr_clim
 heatmap_clim = create_heatmap_fast(ds)
 
 plt.figure(dpi=80)

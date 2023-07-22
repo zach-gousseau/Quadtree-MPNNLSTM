@@ -121,12 +121,12 @@ class Decoder(torch.nn.Module):
         self.fc_out2 = Linear(in_channels=hidden_size, out_channels=hidden_size)
         self.fc_out3 = Linear(in_channels=hidden_size, out_channels=1)
         
-        torch.nn.init.zeros_(self.fc_out1.weight)
-        torch.nn.init.zeros_(self.fc_out1.bias)
-        torch.nn.init.zeros_(self.fc_out2.weight)
-        torch.nn.init.zeros_(self.fc_out2.bias)
-        torch.nn.init.zeros_(self.fc_out3.weight)
-        torch.nn.init.zeros_(self.fc_out3.bias)
+        # torch.nn.init.zeros_(self.fc_out1.weight)
+        # torch.nn.init.zeros_(self.fc_out1.bias)
+        # torch.nn.init.zeros_(self.fc_out2.weight)
+        # torch.nn.init.zeros_(self.fc_out2.bias)
+        # torch.nn.init.zeros_(self.fc_out3.weight)
+        # torch.nn.init.zeros_(self.fc_out3.bias)
         
         self.gnn1 = conv_func(in_channels=concat_layers_dim, out_channels=hidden_size, **conv_func_kwargs)
         self.gnn2 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
@@ -179,8 +179,6 @@ class Decoder(torch.nn.Module):
 
         # Pass output through the final GNN to reduce to desired dimensionality
         output = self.mlp_out(output)
-        
-        print(output.min(), output.max())
 
         # Squeeze everything to (-1, 1)
         output = torch.tanh(output)
@@ -210,8 +208,7 @@ class Decoder(torch.nn.Module):
         x = F.relu(x)
         x = self.gnn3(x, edge_index, edge_weight)
         x = F.relu(x)
-        return x
-        
+        return x        
 
 class Seq2Seq(torch.nn.Module):
     def __init__(self,
@@ -249,7 +246,7 @@ class Seq2Seq(torch.nn.Module):
             hidden_size,
             dropout,
             n_layers=n_layers,
-            concat_layers_dim=1,  # We've removed the persistence and climatology concatenations
+            concat_layers_dim=2,  # We've removed the persistence and climatology concatenations
             convolution_type=convolution_type,
             rnn_type=rnn_type,
             n_conv_layers=n_conv_layers,
@@ -359,7 +356,8 @@ class Seq2Seq(torch.nn.Module):
         # self.graph.persistence = x[[-1]][:, :, :, [0]]
         
         # First input to the decoder is the last input to the encoder 
-        self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -3, -2, -1]]
+        self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -3, -2, -1]]  # Node size
+        # self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -2, -1]]
 
 
     def unroll_output(self, unroll_steps, y, concat_layers=None, teacher_forcing_ratio=0.5, mask=None, high_interest_region=None, remesh_every=1):
@@ -388,8 +386,8 @@ class Seq2Seq(torch.nn.Module):
             # Note that we've removed the concatenation (for now), uncomment to add back in.
             if concat_layers is not None:
                 # concat_layers_t = torch.cat([self.graph.persistence, concat_layers[t].unsqueeze(0), torch.ones_like(self.graph.persistence) * t], dim=-1)
-                # concat_layers_t = torch.cat([self.graph.persistence, torch.ones_like(self.graph.persistence) * t], dim=-1)
-                concat_layers_t = concat_layers[t].unsqueeze(0)
+                concat_layers_t = torch.cat([concat_layers[t].unsqueeze(0), (torch.ones_like(concat_layers[t].unsqueeze(0)) * t)/self.output_timesteps], dim=-1)
+                # concat_layers_t = concat_layers[t].unsqueeze(0)
                 concat_layers_t = flatten(concat_layers_t, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
                 self.graph.concat_layers = concat_layers_t
             else:

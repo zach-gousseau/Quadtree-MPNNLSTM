@@ -33,6 +33,7 @@ class IceDataset(Dataset):
                 x = np.load(os.path.join(cache_dir, 'x.npy'))
                 y = np.load(os.path.join(cache_dir, 'y.npy'))
                 launch_dates = np.load(os.path.join(cache_dir, 'launch_dates.npy'))
+                x, y = x.astype('float16'), y.astype('float16')
                 return x, y, launch_dates
             except FileNotFoundError:
                 pass
