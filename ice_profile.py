@@ -31,12 +31,12 @@ if __name__ == '__main__':
     print('device:', device)
 
     month = 6
-    # convolution_type = 'TransformerConv'
-    convolution_type = 'GCNConv'
+    convolution_type = 'TransformerConv'
+    # convolution_type = 'GCNConv'
     # convolution_type = 'Dummy'
     generate_predictions = True
 
-    ds = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS_2x/*.nc'))  # ln -s /home/zgoussea/scratch/ERA5_GLORYS data/ERA5_GLORYS
+    ds = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc'))  # ln -s /home/zgoussea/scratch/ERA5_GLORYS data/ERA5_GLORYS
 
     # ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 
@@ -56,7 +56,7 @@ if __name__ == '__main__':
 
     image_shape = mask.shape
     # graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
-    graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=False, resolution=1/12, device=device)
+    graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
 
     print(f'Num nodes: {len(graph_structure["graph_nodes"])}')
 
@@ -84,7 +84,7 @@ if __name__ == '__main__':
     
     cache_dir=None#'/home/zgoussea/scratch/data_cache/'
 
-    climatology = ds[y_vars].groupby('time.dayofyear').mean('time', skipna=True).to_array().values
+    climatology = ds[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
     climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
     climatology = torch.moveaxis(climatology, 0, -1)
     climatology = flatten(climatology, graph_structure['mapping'], graph_structure['n_pixels_per_node'])

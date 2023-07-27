@@ -59,6 +59,7 @@ class IceDataset(Dataset):
             cache_dir = os.path.join(cache_dir, dataset_id)
             
             try:
+                print('Reading cached data')
                 x = np.load(os.path.join(cache_dir, 'x.npy'))
                 y = np.load(os.path.join(cache_dir, 'y.npy'))
                 launch_dates = np.load(os.path.join(cache_dir, 'launch_dates.npy'))
@@ -67,14 +68,16 @@ class IceDataset(Dataset):
                     y = y > y_binary_thresh
                 
                 if graph_structure is not None:
-                    x, y = self.flatten_xy(x, y, graph_structure, mask)
-                    
+                    x, y = self.flatten_xy_chunked(x, y, graph_structure, mask)
+                
+                print(x.shape)
                 x, y = x.astype('float16'), y.astype('float16')
                 return x, y, launch_dates
             
             except FileNotFoundError:
                 pass
 
+        print('No cached data')
         x, y = [], []
         launch_dates = []
         for year in years:
@@ -129,27 +132,43 @@ class IceDataset(Dataset):
             np.save(os.path.join(cache_dir, 'launch_dates.npy'), launch_dates)
             
         if graph_structure is not None:
-            x, y = self.flatten_xy(x, y, graph_structure, mask)
+            x, y = self.flatten_xy_chunked(x, y, graph_structure, mask)
             
         if y_binary_thresh is not None:
             y = y > y_binary_thresh
-        
-        # x, y = x.astype('float16'), y.astype('float16')
+
+        x, y = x.astype('float16'), y.astype('float16')
         return x, y, launch_dates
     
     
     def flatten_xy(self, x, y, graph_structure, mask):
         x_shape = x.shape
-        x = torch.Tensor(x.reshape(x_shape[0]*x_shape[1], *x_shape[2:]))  # Flatten first two dims
+        x = torch.Tensor(x.reshape(x_shape[0]*x_shape[1], *x_shape[2:])).to(graph_structure['mapping'].device)  # Flatten first two dims
         x = add_positional_encoding(x)
         x = flatten(x, graph_structure['mapping'], graph_structure['n_pixels_per_node'], mask)
         node_sizes = torch.Tensor(graph_structure['n_pixels_per_node']) / ((4/2)**2)  # TODO: Don't assume 4 !!
         node_sizes = node_sizes.repeat((x.shape[0], *[1]*len(node_sizes.shape)))
         x = torch.cat([x, node_sizes.unsqueeze(-1)], -1)
-        x = np.array(x).reshape(*x_shape[:2], *x.shape[1:])  # Unflatten first two dims
+        x = np.array(x.detach().cpu()).reshape(*x_shape[:2], *x.shape[1:])  # Unflatten first two dims
         
         y_shape = y.shape
-        y = torch.Tensor(y.reshape(y_shape[0]*y_shape[1], *y_shape[2:]))  # Flatten first two dims
+        y = torch.Tensor(y.reshape(y_shape[0]*y_shape[1], *y_shape[2:])).to(graph_structure['mapping'].device)  # Flatten first two dims
         y = flatten(y, graph_structure['mapping'], graph_structure['n_pixels_per_node'], mask)
-        y = np.array(y).reshape(*y_shape[:2], *y.shape[1:])  # Unflatten first two dims
+        y = np.array(y.detach().cpu()).reshape(*y_shape[:2], *y.shape[1:])  # Unflatten first two dims
         return x, y
+    
+    def flatten_xy_chunked(self, x, y, graph_structure, mask, chunk_size=100):
+        total_samples = len(x)
+        num_chunks = (total_samples + chunk_size - 1) // chunk_size
+
+        results = []
+        for i in range(num_chunks):
+            print(i, num_chunks)
+            start_idx = i * chunk_size
+            end_idx = (i + 1) * chunk_size
+            x_chunk = x[start_idx:end_idx]
+            y_chunk = y[start_idx:end_idx]
+            chunk_result = self.flatten_xy(x_chunk, y_chunk, graph_structure, mask)
+            results.extend(np.array(chunk_result.detach().cpu()))
+
+        return np.array(results)

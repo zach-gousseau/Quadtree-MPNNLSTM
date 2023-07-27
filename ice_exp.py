@@ -21,7 +21,7 @@ from torch.utils.data import Dataset, DataLoader
 
 from ice_dataset import IceDataset
 
-from model.graph_functions import create_static_heterogeneous_graph, create_static_homogeneous_graph
+from model.graph_functions import create_static_heterogeneous_graph, create_static_homogeneous_graph, flatten
 
 
 if __name__ == '__main__':
@@ -112,6 +112,9 @@ if __name__ == '__main__':
 
         climatology_half = ds_half[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
         climatology_half = torch.tensor(np.nan_to_num(climatology_half)).to(device)
+        climatology_half = torch.moveaxis(climatology_half, 0, -1)
+        climatology_half = flatten(climatology_half, graph_structure['mapping'], graph_structure['n_pixels_per_node'])
+        climatology_half = torch.moveaxis(climatology_half, -1, 0)
 
         if preset_mesh == 'heterogeneous':
             graph_structure_half = create_static_heterogeneous_graph(mask_half.shape, 4, mask_half, use_edge_attrs=False, resolution=1/6, device=device)
@@ -134,18 +137,21 @@ if __name__ == '__main__':
         graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, high_interest_region=high_interest_region, use_edge_attrs=False, resolution=1/12, device=device)
     
     # Full resolution datasets
-    data_train_1 = IceDataset(ds, training_years[:5], month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, cache_dir=cache_dir)
-    data_train_2 = IceDataset(ds, training_years[5:], month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, cache_dir=cache_dir)
-    data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, cache_dir=cache_dir)
-    data_val = IceDataset(ds, range(training_years[-1]+2, training_years[-1]+2+4), month, input_timesteps, output_timesteps, x_vars, y_vars, cache_dir=cache_dir)
+    data_train_1 = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
+    # data_train_2 = IceDataset(ds, training_years[5:], month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
+    data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
+    data_val = IceDataset(ds, range(training_years[-1]+2, training_years[-1]+2+4), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
 
     loader_train_1 = DataLoader(data_train_1, batch_size=1, shuffle=True)
-    loader_train_2 = DataLoader(data_train_2, batch_size=1, shuffle=True)
+    # loader_train_2 = DataLoader(data_train_2, batch_size=1, shuffle=True)
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)
     loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
 
     climatology = ds[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
     climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
+    climatology = torch.moveaxis(climatology, 0, -1)
+    climatology = flatten(climatology, graph_structure['mapping'], graph_structure['n_pixels_per_node'])
+    climatology = torch.moveaxis(climatology, -1, 0)
 
     # Set threshold 
     thresh = -np.inf  # 0.15
@@ -212,17 +218,17 @@ if __name__ == '__main__':
         graph_structure=graph_structure,
         ) 
     
-    model.train(
-        loader_train_2,
-        loader_test,
-        climatology,
-        lr=lr,
-        n_epochs=10 if not multires_training else 10,
-        mask=mask,
-        high_interest_region=high_interest_region,  # This should not be necessary
-        truncated_backprop=truncated_backprop,
-        graph_structure=graph_structure,
-        ) 
+    # model.train(
+    #     loader_train_2,
+    #     loader_test,
+    #     climatology,
+    #     lr=lr,
+    #     n_epochs=10 if not multires_training else 10,
+    #     mask=mask,
+    #     high_interest_region=high_interest_region,  # This should not be necessary
+    #     truncated_backprop=truncated_backprop,
+    #     graph_structure=graph_structure,
+    #     ) 
 
     # Save model and losses
     results_dir = f'results/ice_results_jul26_{rnn_type}'
