@@ -243,8 +243,8 @@ class NextFramePredictorS2S(NextFramePredictor):
         if not self.training_initiated:
             self.initiate_training(lr, lr_decay, mask)
 
-        if mask is not None:
-            assert mask.shape == image_shape, f'Mask and image shapes do not match. Got {mask.shape} and {image_shape}'
+        # if mask is not None:
+            # assert mask.shape == image_shape, f'Mask and image shapes do not match. Got {mask.shape} and {image_shape}'
 
         # Training loop
         st = time.time()
@@ -279,11 +279,13 @@ class NextFramePredictorS2S(NextFramePredictor):
                             graph_structure=graph_structure
                             )
                         # print(y_hat[0].dtype, y_hat_mappings[0].dtype)
-                        with amp.autocast(enabled=False):
-                            y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
-                            y_hat = torch.stack(y_hat, dim=0)
+                        # with amp.autocast(enabled=False):
+                            # y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
+                            # y_hat = torch.stack(y_hat, dim=0)
                         
-                        loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
+                        # loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
+                        y_hat = torch.stack(y_hat, dim=0)
+                        loss = self.loss_func(y_hat, y)  
                         
                         self.scaler.scale(loss).backward()
                         self.scaler.unscale_(self.optimizer)
@@ -391,12 +393,13 @@ class NextFramePredictorS2S(NextFramePredictor):
                             high_interest_region=high_interest_region,
                             graph_structure=graph_structure
                             )
-                        with amp.autocast(enabled=False):
-                            y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
-                            y_hat = torch.stack(y_hat, dim=0)
+                        # with amp.autocast(enabled=False):
+                            # y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
+                            # y_hat = torch.stack(y_hat, dim=0)
                     
-                        loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
-                        # loss = self.loss_func(y_hat, y)  
+                        # loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
+                        y_hat = torch.stack(y_hat, dim=0)
+                        loss = self.loss_func(y_hat, y)  
 
                 step_test += 1
                 running_loss_test += loss
@@ -412,8 +415,8 @@ class NextFramePredictorS2S(NextFramePredictor):
             if np.isnan(running_loss_test.item()):
                 raise ValueError('NaN loss :(')
 
-            if running_loss_test.item() > 4:
-                raise ValueError('Diverged :(')
+            # if running_loss_test.item() > 4:
+            #     raise ValueError('Diverged :(')
 
             self.writer.add_scalar("Loss/test", running_loss_test.item(), epoch)
 
@@ -468,14 +471,15 @@ class NextFramePredictorS2S(NextFramePredictor):
                 concat_layers = None
 
             with torch.no_grad():
-                y_hat, y_hat_mappings = self.model(
-                    x,
-                    concat_layers=concat_layers, 
-                    teacher_forcing_ratio=0,
-                    mask=mask, 
-                    high_interest_region=high_interest_region, 
-                    graph_structure=graph_structure
-                    )
+                with amp.autocast():
+                    y_hat, y_hat_mappings = self.model(
+                        x,
+                        concat_layers=concat_layers, 
+                        teacher_forcing_ratio=0,
+                        mask=mask, 
+                        high_interest_region=high_interest_region, 
+                        graph_structure=graph_structure
+                        )
                 
                 y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask).detach().cpu() for i in range(self.output_timesteps)]
                 

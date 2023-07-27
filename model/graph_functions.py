@@ -454,6 +454,9 @@ def unflatten(data, mapping, image_shape, mask=None):
     data = torch.moveaxis(data, -1, 0)
     # img = (data @ mapping.to_dense()).reshape(*data.shape[:-1], *image_shape)
     img = (data @ mapping).reshape(*data.shape[:-1], *image_shape)
+    while img.isnan().any():
+        img = (data @ mapping).reshape(*data.shape[:-1], *image_shape)
+        warnings.warn('Matrix multiplication in unflatten() failed, trying again.')
     return torch.moveaxis(img, 0, -1)
 
 def unflatten_pixelwise(data, mask, image_shape):
