@@ -197,7 +197,8 @@ class GConvGRU(torch.nn.Module):
         in_channels: int,
         out_channels: int,
         n_conv_layers: int = 1, 
-        convolution_type='GCNConv'
+        convolution_type='GCNConv',
+        name='GConvGRU'
     ):
         super(GConvGRU, self).__init__()
 
@@ -344,7 +345,7 @@ class GConvLSTM(nn.Module):
 
         self.convolution_type = convolution_type
         self.n_conv_layers = n_conv_layers
-        self.return_attention_weights = True#True
+        self.return_attention_weights = False#True
         self.name = name
 
         self.in_channels = in_channels

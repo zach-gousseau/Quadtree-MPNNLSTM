@@ -4,13 +4,42 @@ import datetime
 from dateutil.relativedelta import relativedelta
 
 from torch.utils.data import Dataset
+from model.graph_functions import flatten
+import torch
 
+
+from model.utils import add_positional_encoding
 class IceDataset(Dataset):
-    def __init__(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None, train=False, y_binary_thresh=None, cache_dir=None):
+    def __init__(self, 
+                 ds, 
+                 years, 
+                 month, 
+                 input_timesteps,
+                 output_timesteps, 
+                 x_vars=None, 
+                 y_vars=None, 
+                 train=False, 
+                 y_binary_thresh=None, 
+                 graph_structure=None,
+                 mask=None,
+                 cache_dir=None
+                 ):
         self.train = train
         
-        self.x, self.y, self.launch_dates = self.get_xy(ds, years, month, input_timesteps, output_timesteps, x_vars=x_vars, y_vars=y_vars, y_binary_thresh=y_binary_thresh, cache_dir=cache_dir)
-        self.image_shape = self.x[0].shape[1:-1]
+        self.x, self.y, self.launch_dates = self.get_xy(
+            ds, 
+            years,
+            month, 
+            input_timesteps, 
+            output_timesteps, 
+            x_vars=x_vars, 
+            y_vars=y_vars, 
+            y_binary_thresh=y_binary_thresh, 
+            graph_structure=graph_structure, 
+            mask=mask,
+            cache_dir=cache_dir
+            )
+        self.image_shape = (ds.latitude.size, ds.longitude.size)
 
     def __len__(self):
         return len(self.y)
@@ -18,7 +47,7 @@ class IceDataset(Dataset):
     def __getitem__(self, idx):
         return self.x[idx], self.y[idx], self.launch_dates[idx]
 
-    def get_xy(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None, y_binary_thresh=None, cache_dir=None):
+    def get_xy(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None, y_binary_thresh=None, graph_structure=None, mask=None, cache_dir=None):
         
         if cache_dir is not None:
             dataset_id = f'LA{ds.latitude.min().values.item()}_{ds.latitude.max().values.item()}_LO{ds.longitude.min().values.item()}_{ds.longitude.max().values.item()}' + \
@@ -33,8 +62,16 @@ class IceDataset(Dataset):
                 x = np.load(os.path.join(cache_dir, 'x.npy'))
                 y = np.load(os.path.join(cache_dir, 'y.npy'))
                 launch_dates = np.load(os.path.join(cache_dir, 'launch_dates.npy'))
+                
+                if y_binary_thresh is not None:
+                    y = y > y_binary_thresh
+                
+                if graph_structure is not None:
+                    x, y = self.flatten_xy(x, y, graph_structure, mask)
+                    
                 x, y = x.astype('float16'), y.astype('float16')
                 return x, y, launch_dates
+            
             except FileNotFoundError:
                 pass
 
@@ -82,9 +119,6 @@ class IceDataset(Dataset):
 
         x, y, launch_dates = np.concatenate(x, 0), np.concatenate(y, 0), np.concatenate(launch_dates, 0)
 
-        if y_binary_thresh is not None:
-            y = y > y_binary_thresh
-
         launch_dates = launch_dates.astype(int)
         
         if cache_dir is not None:
@@ -93,5 +127,29 @@ class IceDataset(Dataset):
             np.save(os.path.join(cache_dir, 'x.npy'), x)
             np.save(os.path.join(cache_dir, 'y.npy'), y)
             np.save(os.path.join(cache_dir, 'launch_dates.npy'), launch_dates)
+            
+        if graph_structure is not None:
+            x, y = self.flatten_xy(x, y, graph_structure, mask)
+            
+        if y_binary_thresh is not None:
+            y = y > y_binary_thresh
         
+        # x, y = x.astype('float16'), y.astype('float16')
         return x, y, launch_dates
+    
+    
+    def flatten_xy(self, x, y, graph_structure, mask):
+        x_shape = x.shape
+        x = torch.Tensor(x.reshape(x_shape[0]*x_shape[1], *x_shape[2:]))  # Flatten first two dims
+        x = add_positional_encoding(x)
+        x = flatten(x, graph_structure['mapping'], graph_structure['n_pixels_per_node'], mask)
+        node_sizes = torch.Tensor(graph_structure['n_pixels_per_node']) / ((4/2)**2)  # TODO: Don't assume 4 !!
+        node_sizes = node_sizes.repeat((x.shape[0], *[1]*len(node_sizes.shape)))
+        x = torch.cat([x, node_sizes.unsqueeze(-1)], -1)
+        x = np.array(x).reshape(*x_shape[:2], *x.shape[1:])  # Unflatten first two dims
+        
+        y_shape = y.shape
+        y = torch.Tensor(y.reshape(y_shape[0]*y_shape[1], *y_shape[2:]))  # Flatten first two dims
+        y = flatten(y, graph_structure['mapping'], graph_structure['n_pixels_per_node'], mask)
+        y = np.array(y).reshape(*y_shape[:2], *y.shape[1:])  # Unflatten first two dims
+        return x, y

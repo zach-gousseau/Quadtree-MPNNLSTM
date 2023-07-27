@@ -112,14 +112,17 @@ class Decoder(torch.nn.Module):
                 )
 
         # Dummy convolutions don't project the data into a new dimensionality
-        in_channels = hidden_size + 1 if not (dummy or convolution_type=='Dummy') else 3 + 1
+        in_channels = hidden_size + 0 + concat_layers_dim if not (dummy or convolution_type=='Dummy') else 3 + 0 + concat_layers_dim
 
         conv_func = CONVOLUTIONS[convolution_type]
         conv_func_kwargs = CONVOLUTION_KWARGS[convolution_type]
         
-        self.fc_out1 = Linear(in_channels=in_channels, out_channels=hidden_size)
-        self.fc_out2 = Linear(in_channels=hidden_size, out_channels=hidden_size)
-        self.fc_out3 = Linear(in_channels=hidden_size, out_channels=1)
+        # self.fc_out1 = Linear(in_channels=in_channels, out_channels=hidden_size)
+        # self.fc_out2 = Linear(in_channels=hidden_size, out_channels=hidden_size)
+        # self.fc_out3 = Linear(in_channels=hidden_size, out_channels=1)
+        self.gnn_out1 = conv_func(in_channels=in_channels, out_channels=hidden_size, **conv_func_kwargs)
+        # self.gnn_out2 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
+        self.gnn_out2 = conv_func(in_channels=hidden_size, out_channels=1, **conv_func_kwargs)
         
         # torch.nn.init.zeros_(self.fc_out1.weight)
         # torch.nn.init.zeros_(self.fc_out1.bias)
@@ -128,9 +131,9 @@ class Decoder(torch.nn.Module):
         # torch.nn.init.zeros_(self.fc_out3.weight)
         # torch.nn.init.zeros_(self.fc_out3.bias)
         
-        self.gnn1 = conv_func(in_channels=concat_layers_dim, out_channels=hidden_size, **conv_func_kwargs)
-        self.gnn2 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
-        self.gnn3 = conv_func(in_channels=hidden_size, out_channels=1, **conv_func_kwargs)
+        # self.gnn1 = conv_func(in_channels=concat_layers_dim, out_channels=hidden_size, **conv_func_kwargs)
+        # self.gnn2 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
+        # self.gnn2 = conv_func(in_channels=hidden_size, out_channels=1, **conv_func_kwargs)
 
         self.norm_o = nn.LayerNorm(hidden_size)
         self.norm_h = nn.LayerNorm(hidden_size)
@@ -174,11 +177,12 @@ class Decoder(torch.nn.Module):
 
         # Concatenate with the concat layers
         if concat_layers is not None:
-            concat_layers = self.gnn(concat_layers, edge_index, edge_weight)
+            # gnn_output = self.gnn(concat_layers, edge_index, edge_weight)
+            # output = torch.cat([output, gnn_output, concat_layers], dim=-1)
             output = torch.cat([output, concat_layers], dim=-1)
 
         # Pass output through the final GNN to reduce to desired dimensionality
-        output = self.mlp_out(output)
+        output = self.mlp_out(output, edge_index, edge_weight)
 
         # Squeeze everything to (-1, 1)
         output = torch.tanh(output)
@@ -192,12 +196,12 @@ class Decoder(torch.nn.Module):
 
         return output, hidden, cell
 
-    def mlp_out(self, x):
-        x = self.fc_out1(x)
+    def mlp_out(self, x, edge_index, edge_weight):
+        x = self.gnn_out1(x, edge_index, edge_weight)
         x = F.relu(x)
-        x = self.fc_out2(x)
-        x = F.relu(x)
-        x = self.fc_out3(x)
+        x = self.gnn_out2(x, edge_index, edge_weight)
+        # x = F.relu(x)
+        # x = self.gnn_out3(x, edge_index, edge_weight)
         x = self.dropout(x)
         return x
     
@@ -206,7 +210,7 @@ class Decoder(torch.nn.Module):
         x = F.relu(x)
         x = self.gnn2(x, edge_index, edge_weight)
         x = F.relu(x)
-        x = self.gnn3(x, edge_index, edge_weight)
+        # x = self.gnn3(x, edge_index, edge_weight)
         x = F.relu(x)
         return x        
 
@@ -226,6 +230,7 @@ class Seq2Seq(torch.nn.Module):
                  convolution_type='ChebConv',
                  rnn_type='LSTM',
                  binary=False,
+                 image_shape=None,
                  dummy=False,
                  device=None,
                  debug=False):
@@ -260,6 +265,7 @@ class Seq2Seq(torch.nn.Module):
         self.condition = condition
         self.remesh_input = remesh_input
         self.debug = debug
+        self.image_shape = image_shape
 
         self.convolution_type = convolution_type
 
@@ -276,8 +282,8 @@ class Seq2Seq(torch.nn.Module):
 
     def process_inputs(self, x, mask=None, high_interest_region=None, graph_structure=None):
 
-        num_samples, w, h, c = x.shape
-        image_shape = (w, h)
+        # num_samples, w, h, c = x.shape
+        # image_shape = self.image_shape
 
         self.mask = mask
         
@@ -309,12 +315,13 @@ class Seq2Seq(torch.nn.Module):
                     use_edge_attrs=self.use_edge_attrs
                     )
         else:
-            x = add_positional_encoding(x)
-            data = flatten(x, graph_structure['mapping'], graph_structure['n_pixels_per_node'], mask)
-            node_sizes = torch.Tensor(graph_structure['n_pixels_per_node']) / ((4/2)**2)  # TODO: Don't assume 4 !!
-            node_sizes = node_sizes.repeat((x.shape[0], *[1]*len(node_sizes.shape)))
-            data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
-            graph_structure['data'] = data
+            # x = add_positional_encoding(x)
+            # data = flatten(x, graph_structure['mapping'], graph_structure['n_pixels_per_node'], mask)
+            # node_sizes = torch.Tensor(graph_structure['n_pixels_per_node']) / ((4/2)**2)  # TODO: Don't assume 4 !!
+            # node_sizes = node_sizes.repeat((x.shape[0], *[1]*len(node_sizes.shape)))
+            # data = torch.cat([data, node_sizes.unsqueeze(-1)], -1)
+            # graph_structure['data'] = data
+            graph_structure['data'] = x
 
         # Create Graph object, add data to pyg Data object
         self.graph = Graph(graph_structure['edge_index'], graph_structure['edge_attrs'])
@@ -323,7 +330,7 @@ class Seq2Seq(torch.nn.Module):
         # Store mapping, n_pixels_per_node, image_shape in the Graph object
         self.graph.mapping = graph_structure['mapping']
         self.graph.n_pixels_per_node = graph_structure['n_pixels_per_node']
-        self.graph.image_shape = image_shape
+        self.graph.image_shape = self.image_shape
         self.graph.pyg.to(self.device)
         
         # Encoder ------------------------------------------------------------------------------------------------------------
@@ -386,9 +393,9 @@ class Seq2Seq(torch.nn.Module):
             # Note that we've removed the concatenation (for now), uncomment to add back in.
             if concat_layers is not None:
                 # concat_layers_t = torch.cat([self.graph.persistence, concat_layers[t].unsqueeze(0), torch.ones_like(self.graph.persistence) * t], dim=-1)
-                concat_layers_t = torch.cat([concat_layers[t].unsqueeze(0), (torch.ones_like(concat_layers[t].unsqueeze(0)) * t)/self.output_timesteps], dim=-1)
+                concat_layers_t = torch.cat([concat_layers[t], (torch.ones_like(concat_layers[t]) * t)/self.output_timesteps], dim=-1)
                 # concat_layers_t = concat_layers[t].unsqueeze(0)
-                concat_layers_t = flatten(concat_layers_t, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
+                # concat_layers_t = flatten(concat_layers_t, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
                 self.graph.concat_layers = concat_layers_t
             else:
                 concat_layers_t = None
