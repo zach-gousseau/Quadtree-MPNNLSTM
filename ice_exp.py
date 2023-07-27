@@ -45,8 +45,9 @@ if __name__ == '__main__':
     exp = int(args['exp'])
 
     # Defaults
-    convolution_type = 'TransformerConv'
-    lr = 0.0001
+    # convolution_type = 'TransformerConv'
+    convolution_type = 'GCNConv'
+    lr = 0.001
     multires_training = False
     truncated_backprop = 0
 
@@ -57,6 +58,7 @@ if __name__ == '__main__':
     input_timesteps = 10
     output_timesteps= 90
     preset_mesh = False
+    rnn_type = 'LSTM'
     
     cache_dir='/home/zgoussea/scratch/data_cache/'
 
@@ -87,6 +89,10 @@ if __name__ == '__main__':
     elif exp == 10:
         multires_training = True
         preset_mesh = 'homogeneous'
+    elif exp == 11:
+        multires_training = False
+        preset_mesh = 'heterogeneous'
+        rnn_type = 'GRU'
         
     # -------------------------------------------
 
@@ -108,9 +114,9 @@ if __name__ == '__main__':
         climatology_half = torch.tensor(np.nan_to_num(climatology_half)).to(device)
 
         if preset_mesh == 'heterogeneous':
-            graph_structure_half = create_static_heterogeneous_graph(mask_half.shape, 4, mask_half, use_edge_attrs=True, resolution=1/6, device=device)
+            graph_structure_half = create_static_heterogeneous_graph(mask_half.shape, 4, mask_half, use_edge_attrs=False, resolution=1/6, device=device)
         elif preset_mesh == 'homogeneous':
-            graph_structure_half = create_static_homogeneous_graph(mask_half.shape, 4, mask_half, use_edge_attrs=True, resolution=1/6, device=device)
+            graph_structure_half = create_static_homogeneous_graph(mask_half.shape, 4, mask_half, use_edge_attrs=False, resolution=1/6, device=device)
 
 
     # Full resolution dataset
@@ -123,9 +129,9 @@ if __name__ == '__main__':
     graph_structure = None
 
     if preset_mesh == 'heterogeneous':
-        graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, high_interest_region=high_interest_region, use_edge_attrs=True, resolution=1/12, device=device)
+        graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, high_interest_region=high_interest_region, use_edge_attrs=False, resolution=1/12, device=device)
     elif preset_mesh == 'homogeneous':
-        graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, high_interest_region=high_interest_region, use_edge_attrs=True, resolution=1/12, device=device)
+        graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, high_interest_region=high_interest_region, use_edge_attrs=False, resolution=1/12, device=device)
     
     # Full resolution datasets
     data_train_1 = IceDataset(ds, training_years[:5], month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, cache_dir=cache_dir)
@@ -151,13 +157,13 @@ if __name__ == '__main__':
 
     # Arguments passed to Seq2Seq constructor
     model_kwargs = dict(
-        hidden_size=32,
+        hidden_size=16,
         dropout=0.1,
         n_layers=1,
         transform_func=dist_from_05,
         dummy=False,
-        n_conv_layers=3,
-        rnn_type='LSTM',
+        n_conv_layers=1,
+        rnn_type=rnn_type,
         convolution_type=convolution_type,
     )
 
@@ -219,7 +225,7 @@ if __name__ == '__main__':
         ) 
 
     # Save model and losses
-    results_dir = f'results/ice_results_jul22'
+    results_dir = f'results/ice_results_jul26_{rnn_type}'
 
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
@@ -242,8 +248,8 @@ if __name__ == '__main__':
     
     ds = xr.Dataset(
         data_vars=dict(
-            y_hat=(["launch_date", "timestep", "latitude", "longitude"], val_preds.squeeze(-1)),
-            y_true=(["launch_date", "timestep", "latitude", "longitude"], loader_val.dataset.y.squeeze(-1)),
+            y_hat=(["launch_date", "timestep", "latitude", "longitude"], val_preds.squeeze(-1).astype('float')),
+            y_true=(["launch_date", "timestep", "latitude", "longitude"], loader_val.dataset.y.squeeze(-1).astype('float')),
         ),
         coords=dict(
             longitude=ds.longitude,
