@@ -20,7 +20,7 @@ from model.seq2seq import Seq2Seq
 from ice_dataset import IceDataset
 from torch.utils.data import Dataset, DataLoader
 
-from model.graph_functions import create_static_heterogeneous_graph, create_static_homogeneous_graph, flatten
+from model.graph_functions import create_static_heterogeneous_graph, create_static_homogeneous_graph, flatten, unflatten
 
 # torch.autograd.set_detect_anomaly(True)
 
@@ -30,9 +30,9 @@ if __name__ == '__main__':
     # device = torch.device('mps')
     print('device:', device)
 
-    month = 6
-    convolution_type = 'TransformerConv'
-    # convolution_type = 'GCNConv'
+    month = 1
+    # convolution_type = 'TransformerConv'
+    convolution_type = 'GCNConv'
     # convolution_type = 'Dummy'
     generate_predictions = True
 
@@ -56,7 +56,7 @@ if __name__ == '__main__':
 
     image_shape = mask.shape
     # graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
-    graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
+    graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=False, resolution=1/12, device=device)
 
     print(f'Num nodes: {len(graph_structure["graph_nodes"])}')
 
@@ -119,7 +119,7 @@ if __name__ == '__main__':
                            )
 
     loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(15)))
-    loader_test = DataLoader(data_test, batch_size=1, shuffle=False, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
+    loader_test = DataLoader(data_test, batch_size=1, shuffle=False)#, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
 
     thresh = 0.15
     thresh = -np.inf
@@ -168,7 +168,7 @@ if __name__ == '__main__':
         loader_test,
         climatology,
         lr=lr, 
-        n_epochs=10, 
+        n_epochs=1, 
         mask=mask, 
         high_interest_region=high_interest_region, 
         graph_structure=graph_structure, 
@@ -197,10 +197,16 @@ if __name__ == '__main__':
         # Save results
         launch_dates = loader_test.dataset.launch_dates
         
+        y_true = torch.Tensor(loader_test.dataset.y).to(device)
+        
+        if graph_structure is not None:
+            y_true = torch.stack([unflatten(y_true[i], graph_structure['mapping'], image_shape, mask).detach().cpu() for i in range(y_true.shape[0])])
+
+        
         ds = xr.Dataset(
             data_vars=dict(
                 y_hat=(["launch_date", "timestep", "latitude", "longitude"], val_preds.squeeze(-1)),
-                y_true=(["launch_date", "timestep", "latitude", "longitude"], loader_test.dataset.y.squeeze(-1)),
+                y_true=(["launch_date", "timestep", "latitude", "longitude"], y_true.squeeze(-1)),
             ),
             coords=dict(
                 longitude=ds.longitude,

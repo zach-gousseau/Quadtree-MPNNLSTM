@@ -21,7 +21,7 @@ from torch.utils.data import Dataset, DataLoader
 
 from ice_dataset import IceDataset
 
-from model.graph_functions import create_static_heterogeneous_graph, create_static_homogeneous_graph, flatten
+from model.graph_functions import create_static_heterogeneous_graph, create_static_homogeneous_graph, flatten, unflatten
 
 
 if __name__ == '__main__':
@@ -253,6 +253,11 @@ if __name__ == '__main__':
     # Save results
     launch_dates = [int_to_datetime(t) for t in loader_val.dataset.launch_dates]
     
+    y_true = torch.Tensor(loader_test.dataset.y)
+    
+    if graph_structure is not None:
+        y_true = torch.stack([unflatten(y_true[i].to(device), graph_structure['mapping'], image_shape, mask).detach().cpu() for i in range(y_true.shape[0])])
+
     ds = xr.Dataset(
         data_vars=dict(
             y_hat=(["launch_date", "timestep", "latitude", "longitude"], val_preds.squeeze(-1).astype('float')),
