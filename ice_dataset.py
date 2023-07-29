@@ -161,14 +161,17 @@ class IceDataset(Dataset):
         total_samples = len(x)
         num_chunks = (total_samples + chunk_size - 1) // chunk_size
 
-        results = []
+        results_x = []
+        results_y = []
         for i in range(num_chunks):
             print(i, num_chunks)
             start_idx = i * chunk_size
             end_idx = (i + 1) * chunk_size
             x_chunk = x[start_idx:end_idx]
             y_chunk = y[start_idx:end_idx]
-            chunk_result = self.flatten_xy(x_chunk, y_chunk, graph_structure, mask)
-            results.extend(np.array(chunk_result.detach().cpu()))
+            results_x_chunk, results_y_chunk = self.flatten_xy(x_chunk, y_chunk, graph_structure, mask)
+            
+            results_x.extend(np.array(results_x_chunk))
+            results_y.extend(np.array(results_y_chunk))
 
-        return np.array(results)
+        return np.array(results_x), np.array(results_y)

@@ -51,7 +51,8 @@ if __name__ == '__main__':
     multires_training = False
     truncated_backprop = 0
 
-    training_years = range(2003, 2013)
+    training_years_1 = range(1993, 2003)
+    training_years_2 = range(2003, 2013)
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf', 'usi', 'vsi', 'sithick']
     y_vars = ['siconc']
     input_features = len(x_vars)
@@ -137,13 +138,13 @@ if __name__ == '__main__':
         graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, high_interest_region=high_interest_region, use_edge_attrs=False, resolution=1/12, device=device)
     
     # Full resolution datasets
-    data_train_1 = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
-    # data_train_2 = IceDataset(ds, training_years[5:], month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
-    data_test = IceDataset(ds, [training_years[-1]+1], month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
-    data_val = IceDataset(ds, range(training_years[-1]+2, training_years[-1]+2+4), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
+    data_train_1 = IceDataset(ds, training_years_1, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
+    data_train_2 = IceDataset(ds, training_years_2, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
+    data_test = IceDataset(ds, range(training_years_2[-1]+1, training_years_2[-1]+1+2), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
+    data_val = IceDataset(ds, range(training_years_2[-1]+1+2+1, training_years_2[-1]+1+2+1+3), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
 
     loader_train_1 = DataLoader(data_train_1, batch_size=1, shuffle=True)
-    # loader_train_2 = DataLoader(data_train_2, batch_size=1, shuffle=True)
+    loader_train_2 = DataLoader(data_train_2, batch_size=1, shuffle=True)
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)
     loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
 
@@ -168,12 +169,12 @@ if __name__ == '__main__':
         n_layers=1,
         transform_func=dist_from_05,
         dummy=False,
-        n_conv_layers=1,
+        n_conv_layers=3,
         rnn_type=rnn_type,
         convolution_type=convolution_type,
     )
 
-    experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
+    experiment_name = f'M{str(month)}_Y{training_years_1[0]}_Y{training_years_2[-1]}_I{input_timesteps}O{output_timesteps}'
 
     model = NextFramePredictorS2S(
         thresh=thresh,
@@ -211,27 +212,27 @@ if __name__ == '__main__':
         loader_test,
         climatology,
         lr=lr,
-        n_epochs=5 if not multires_training else 10,
+        n_epochs=10 if not multires_training else 10,
         mask=mask,
         high_interest_region=high_interest_region,  # This should not be necessary
         truncated_backprop=truncated_backprop,
         graph_structure=graph_structure,
         ) 
     
-    # model.train(
-    #     loader_train_2,
-    #     loader_test,
-    #     climatology,
-    #     lr=lr,
-    #     n_epochs=10 if not multires_training else 10,
-    #     mask=mask,
-    #     high_interest_region=high_interest_region,  # This should not be necessary
-    #     truncated_backprop=truncated_backprop,
-    #     graph_structure=graph_structure,
-    #     ) 
+    model.train(
+        loader_train_2,
+        loader_test,
+        climatology,
+        lr=lr,
+        n_epochs=30 if not multires_training else 10,
+        mask=mask,
+        high_interest_region=high_interest_region,  # This should not be necessary
+        truncated_backprop=truncated_backprop,
+        graph_structure=graph_structure,
+        ) 
 
     # Save model and losses
-    results_dir = f'results/ice_results_jul26_{rnn_type}'
+    results_dir = f'results/ice_results_20years_small'
 
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
