@@ -30,7 +30,7 @@ if __name__ == '__main__':
     # device = torch.device('mps')
     print('device:', device)
 
-    month = 1
+    month = 4
     # convolution_type = 'TransformerConv'
     convolution_type = 'GCNConv'
     # convolution_type = 'Dummy'
@@ -80,7 +80,7 @@ if __name__ == '__main__':
 
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']  # ['siconc', 't2m']
-    training_years = range(2010, 2011)
+    training_years = range(2014, 2015)
     
     cache_dir=None#'/home/zgoussea/scratch/data_cache/'
 
@@ -118,8 +118,8 @@ if __name__ == '__main__':
                            cache_dir=cache_dir
                            )
 
-    loader_profile = DataLoader(data_train, batch_size=1, sampler=torch.utils.data.SubsetRandomSampler(range(15)))
-    loader_test = DataLoader(data_test, batch_size=1, shuffle=False)#, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
+    loader_profile = DataLoader(data_train, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(30)))
+    loader_test = DataLoader(data_test, batch_size=1)#, shuffle=False, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
 
     thresh = 0.15
     thresh = -np.inf
@@ -168,7 +168,7 @@ if __name__ == '__main__':
         loader_test,
         climatology,
         lr=lr, 
-        n_epochs=1, 
+        n_epochs=10, 
         mask=mask, 
         high_interest_region=high_interest_region, 
         graph_structure=graph_structure, 

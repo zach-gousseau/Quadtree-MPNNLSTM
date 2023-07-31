@@ -141,7 +141,7 @@ class Decoder(torch.nn.Module):
         
         self.dropout = nn.Dropout(dropout)
         
-    def forward(self, X, edge_index, edge_weight, concat_layers, H, C):
+    def forward(self, X, edge_index, edge_weight, concat_layers, y_initial, H, C):
 
         if self.dummy:
             if concat_layers is not None:
@@ -188,8 +188,9 @@ class Decoder(torch.nn.Module):
         output = torch.tanh(output)
         
         # Add to previous step's SIC map, OR to the launch date's SIC map (not used)
-        output = output + X[:, [0]]  
+        # output = output + X[:, [0]]  
         # output = output + concat_layers[:, [0]]
+        output = output + y_initial
 
         if self.binary:
             output = torch.sigmoid(output)
@@ -360,7 +361,7 @@ class Seq2Seq(torch.nn.Module):
                     self.graph.cell = cell
 
         # Persistance (removed for now)
-        # self.graph.persistence = x[[-1]][:, :, :, [0]]
+        self.graph.persistence = x[-1, :, [0]]
         
         # First input to the decoder is the last input to the encoder 
         self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -3, -2, -1]]  # Node size
@@ -408,6 +409,7 @@ class Seq2Seq(torch.nn.Module):
                 edge_index=self.graph.pyg.edge_index,
                 edge_weight=self.graph.pyg.edge_attr, 
                 concat_layers=self.graph.concat_layers if hasattr(self.graph, 'concat_layers') else None,
+                y_initial=self.graph.persistence,
                 H=self.graph.hidden, 
                 C=self.graph.cell
                 )

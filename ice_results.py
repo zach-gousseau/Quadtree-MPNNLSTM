@@ -122,7 +122,7 @@ def flatten_unflatten(arr, graph_structure, mask):
 mask = np.isnan(xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc')).siconc.isel(time=0)).values
 # mask = np.isnan(xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc')).isel(latitude=slice(175, 275), longitude=slice(125, 225)).siconc.isel(time=0)).values
 
-results_dir = f'results/ice_results_jul22'
+results_dir = f'results/ice_results_20years_small'
 accuracy = False
 
 year_start, year_end, timestep_in, timestep_out = re.search(r'Y(\d+)_Y(\d+)_I(\d+)O(\d+)', glob.glob(results_dir+'/*.nc')[0]).groups()
@@ -131,7 +131,7 @@ months, ds = [], []
 for month in range(1, 13):
     print(month)
     try:
-        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y{year_start}_Y{year_end}_I{timestep_in}O{timestep_out}.nc', engine='netcdf4'))
+        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y{year_start}_Y{year_end}_I{timestep_in}O{timestep_out}.nc', engine='netcdf4').astype('float16'))
         months.append(month)
     except Exception as e: #FileNotFoundError:
         print(e)
@@ -144,7 +144,7 @@ image_shape = mask.shape
 
 
 # graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12)
-graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, None, use_edge_attrs=True, resolution=1/12)
+graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, high_interest_region=None, use_edge_attrs=False, resolution=1/12, device=None)
 # graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12)
 
 num_timesteps = ds.timestep.size
@@ -153,14 +153,14 @@ num_timesteps = ds.timestep.size
 if not os.path.exists(f'{results_dir}/gif'):
     os.makedirs(f'{results_dir}/gif')
 
-generate_gif = True
+generate_gif = False
 year = int(ds.launch_date.dt.year.values[0])
 if generate_gif:
     ld = 15
 
     for month in months:
         fns = []
-        for ts in range(1, 46):
+        for ts in range(1, 91):
             
             fig, axs = plt.subplots(1, 2, figsize=(8, 3))
             

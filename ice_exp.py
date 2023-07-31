@@ -253,7 +253,7 @@ if __name__ == '__main__':
     # Save results
     launch_dates = [int_to_datetime(t) for t in loader_val.dataset.launch_dates]
     
-    y_true = torch.Tensor(loader_test.dataset.y)
+    y_true = torch.Tensor(loader_val.dataset.y)
     
     if graph_structure is not None:
         y_true = torch.stack([unflatten(y_true[i].to(device), graph_structure['mapping'], image_shape, mask).detach().cpu() for i in range(y_true.shape[0])])

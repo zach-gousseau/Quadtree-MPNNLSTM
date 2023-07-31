@@ -70,7 +70,6 @@ class IceDataset(Dataset):
                 if graph_structure is not None:
                     x, y = self.flatten_xy_chunked(x, y, graph_structure, mask)
                 
-                print(x.shape)
                 x, y = x.astype('float16'), y.astype('float16')
                 return x, y, launch_dates
             
@@ -164,7 +163,6 @@ class IceDataset(Dataset):
         results_x = []
         results_y = []
         for i in range(num_chunks):
-            print(i, num_chunks)
             start_idx = i * chunk_size
             end_idx = (i + 1) * chunk_size
             x_chunk = x[start_idx:end_idx]
