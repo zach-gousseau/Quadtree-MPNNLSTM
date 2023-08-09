@@ -203,7 +203,7 @@ class Decoder(torch.nn.Module):
         x = self.gnn_out2(x, edge_index, edge_weight)
         # x = F.relu(x)
         # x = self.gnn_out3(x, edge_index, edge_weight)
-        x = self.dropout(x)
+        # x = self.dropout(x)
         return x
     
     def gnn(self, x, edge_index, edge_weight):

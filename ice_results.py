@@ -119,10 +119,11 @@ def flatten_unflatten(arr, graph_structure, mask):
     arr = unflatten(arr, graph_structure['mapping'], mask.shape, mask=~mask)
     return arr
 
-mask = np.isnan(xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc')).siconc.isel(time=0)).values
+# mask = np.isnan(xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc')).siconc.isel(time=0)).values
+mask = np.isnan(xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5_D/*.nc')[0]).siconc.isel(time=0)).values
 # mask = np.isnan(xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc')).isel(latitude=slice(175, 275), longitude=slice(125, 225)).siconc.isel(time=0)).values
 
-results_dir = f'results/ice_results_20years_small'
+results_dir = f'results/ice_results_20years_smaller_era5_LSTM'
 accuracy = False
 
 year_start, year_end, timestep_in, timestep_out = re.search(r'Y(\d+)_Y(\d+)_I(\d+)O(\d+)', glob.glob(results_dir+'/*.nc')[0]).groups()
@@ -144,7 +145,7 @@ image_shape = mask.shape
 
 
 # graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12)
-graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, high_interest_region=None, use_edge_attrs=False, resolution=1/12, device=None)
+graph_structure = create_static_heterogeneous_graph(image_shape, 2, mask, high_interest_region=None, use_edge_attrs=False, resolution=1/12, device=None)
 # graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12)
 
 num_timesteps = ds.timestep.size
@@ -153,7 +154,7 @@ num_timesteps = ds.timestep.size
 if not os.path.exists(f'{results_dir}/gif'):
     os.makedirs(f'{results_dir}/gif')
 
-generate_gif = False
+generate_gif = True
 year = int(ds.launch_date.dt.year.values[0])
 if generate_gif:
     ld = 15
@@ -230,6 +231,8 @@ plt.xlabel('Lead time (days)')
 plt.savefig(f'{results_dir}/heatmap.png')
 plt.close()
 
+heatmap.to_csv(f'{results_dir}/heatmap.csv')
+
 
 # ds['y_hat'].values
 arr_pers = np.swapaxes(xr.concat([ds.y_true.isel(timestep=0) for _ in range(num_timesteps)], dim='timestep').values, 0, 1)
@@ -245,15 +248,19 @@ plt.xlabel('Lead time (days)')
 plt.savefig(f'{results_dir}/heatmap_pers.png')
 plt.close()
 
-climatology = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc'))
+heatmap_pers.to_csv(f'{results_dir}/heatmap_pers.csv')
+
+# climatology = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc'))
+climatology = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5_D/*.nc'))
 # climatology = climatology.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 climatology = climatology['siconc'].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).values
 climatology = np.nan_to_num(climatology)
+climatology = flatten_unflatten(torch.Tensor(climatology.reshape((-1, *image_shape, 1))), graph_structure, mask)
 
-arr_clim = np.array([[climatology[(doy-1+i)%365] for i in range(num_timesteps)] for doy in ds.launch_date.dt.dayofyear])
-shape_ = arr_clim.shape
-arr_clim = flatten_unflatten(torch.Tensor(arr_clim.reshape((-1, *image_shape, 1))), graph_structure, mask)
-arr_clim = arr_clim.reshape(shape_)
+arr_clim = np.array([[climatology[(doy.item()-1+i)%365, :, :, 0].numpy() for i in range(num_timesteps)] for doy in ds.launch_date.dt.dayofyear])
+# shape_ = arr_clim.shape
+# arr_clim = flatten_unflatten(torch.Tensor(arr_clim.reshape((-1, *image_shape, 1))), graph_structure, mask)
+# arr_clim = arr_clim.reshape(shape_)
 ds['y_hat'].values = arr_clim
 heatmap_clim = create_heatmap_fast(ds)
 
@@ -262,6 +269,12 @@ sns.heatmap(heatmap_clim, yticklabels=[month_name[i][:3] for i in range(1, 13)],
 plt.xlabel('Lead time (days)')
 plt.savefig(f'{results_dir}/heatmap_clim.png')
 plt.close()
+
+heatmap_clim.to_csv(f'{results_dir}/heatmap_clim.csv')
+
+# heatmap = pd.read_csv(f'{results_dir}/heatmap.csv', index_col=0)
+# heatmap_clim = pd.read_csv(f'{results_dir}/heatmap_clim.csv', index_col=0)
+# heatmap_pers = pd.read_csv(f'{results_dir}/heatmap_pers.csv', index_col=0)
 
 
 plt.figure(dpi=80)
@@ -277,7 +290,3 @@ plt.title('Blue -> Model outperforms persistence')
 plt.xlabel('Lead time (days)')
 plt.savefig(f'{results_dir}/heatmap_diff_pers.png')
 plt.close()
-
-heatmap.to_csv(f'{results_dir}/heatmap.csv')
-heatmap_clim.to_csv(f'{results_dir}/heatmap_clim.csv')
-heatmap_pers.to_csv(f'{results_dir}/heatmap_pers.csv')

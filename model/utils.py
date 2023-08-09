@@ -77,3 +77,53 @@ def int_to_datetime(x):
 
 def round_to_day(dt):
     return datetime.datetime(*dt.timetuple()[:3])
+
+class GraphSamplerData:
+    def __init__(self, edge_index_samples, n_ids, e_ids):
+        self.edge_index_samples = edge_index_samples
+        self.n_ids = n_ids
+        self.e_ids = e_ids
+        
+
+class GraphSampler:
+    def __init__(self, nodes, edge_index, n_samples=100, n_hops=3):
+        self.n_samples = n_samples
+        self.edge_index = edge_index
+        self.nodes = nodes
+        self.n_hops = n_hops
+        
+    def get_random_target_nodes(self):
+        originating_nodes = self.edge_index[0] 
+        terminating_nodes = self.edge_index[1] 
+
+        # Initial node
+        parent_nodes = torch.Tensor([np.random.choice(self.nodes)])
+
+        nodes_sample = parent_nodes
+        while len(nodes_sample) < self.n_samples:
+            children_idx = torch.where(torch.isin(originating_nodes, parent_nodes))[0]
+            parent_nodes = terminating_nodes[children_idx]
+            nodes_sample = torch.unique(torch.cat((nodes_sample, parent_nodes), 0))
+        return nodes_sample[:self.n_samples]
+        
+    
+    def __iter__(self):
+        while True:
+            nodes_sample = self.get_random_target_nodes()
+            n_ids = torch.where(torch.isin(self.nodes, nodes_sample))[0]
+
+            terminating_nodes = self.edge_index[1] 
+
+            edge_index_samples = []
+            e_ids = []
+            relevant_nodes = nodes_sample
+            for _ in range(self.n_hops):
+                e_id = torch.where(torch.isin(terminating_nodes, relevant_nodes))[0]  # Get indices of relevant edges
+
+                edge_index_sample = self.edge_index[:, e_id]
+                edge_index_samples.append(edge_index_sample)
+                e_ids.append(e_id)
+
+                relevant_nodes = edge_index_sample[0]  # For next iteration
+
+            yield GraphSamplerData(edge_index_samples, n_ids, e_ids)

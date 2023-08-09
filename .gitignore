@@ -10,11 +10,13 @@ scrap*
 viz.ipynb
 ice_results/
 runs/
+runs_local/
 .vscode/
 scratch/
 .DS_Store
 mprofile*
 */events*
+submit_scratch.sh
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

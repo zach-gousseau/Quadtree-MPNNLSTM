@@ -51,7 +51,7 @@ if __name__ == '__main__':
 
     binary=False
 
-    for month in range(6, 13):
+    for month in range(1, 12):
 
         ds = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc'))
         mask = np.isnan(ds.siconc.isel(time=0)).values
@@ -84,7 +84,7 @@ if __name__ == '__main__':
             n_layers=1,
             transform_func=dist_from_05,
             dummy=False,
-            n_conv_layers=3,
+            n_conv_layers=1,
             rnn_type=rnn_type,
             convolution_type=convolution_type,
         )
@@ -108,7 +108,7 @@ if __name__ == '__main__':
         data_val = IceDataset(ds, range(training_years_2[-1]+1+2+1, training_years_2[-1]+1+2+1+3), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
         loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
 
-        results_dir = f'results/ice_results_20years_small'
+        results_dir = f'results/ice_results_20years_smaller'
 
         model.load(results_dir)
         

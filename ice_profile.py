@@ -20,7 +20,7 @@ from model.seq2seq import Seq2Seq
 from ice_dataset import IceDataset
 from torch.utils.data import Dataset, DataLoader
 
-from model.graph_functions import create_static_heterogeneous_graph, create_static_homogeneous_graph, flatten, unflatten
+from model.graph_functions import create_static_heterogeneous_graph, create_static_homogeneous_graph, flatten, unflatten, flatten_pixelwise
 
 # torch.autograd.set_detect_anomaly(True)
 
@@ -36,7 +36,7 @@ if __name__ == '__main__':
     # convolution_type = 'Dummy'
     generate_predictions = True
 
-    ds = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc'))  # ln -s /home/zgoussea/scratch/ERA5_GLORYS data/ERA5_GLORYS
+    ds = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS_2x/*.nc'))  # ln -s /home/zgoussea/scratch/ERA5_GLORYS data/ERA5_GLORYS
 
     # ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 
@@ -61,7 +61,7 @@ if __name__ == '__main__':
     print(f'Num nodes: {len(graph_structure["graph_nodes"])}')
 
 
-    # graph_structure = None
+    graph_structure = None
 
     np.random.seed(42)
     random.seed(42)
@@ -73,22 +73,27 @@ if __name__ == '__main__':
     truncated_backprop = 0
 
     # Number of frames to read as input
-    input_timesteps = 3
-    output_timesteps= 45
+    input_timesteps = 10
+    output_timesteps= 90
 
     start = time.time()
 
-    x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
+    x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf', 'usi', 'vsi', 'sithick']
     y_vars = ['siconc']  # ['siconc', 't2m']
-    training_years = range(2014, 2015)
+    training_years = range(2012, 2013)
     
     cache_dir=None#'/home/zgoussea/scratch/data_cache/'
 
     climatology = ds[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
     climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
-    climatology = torch.moveaxis(climatology, 0, -1)
-    climatology = flatten(climatology, graph_structure['mapping'], graph_structure['n_pixels_per_node'])
-    climatology = torch.moveaxis(climatology, -1, 0)
+    
+    if graph_structure is not None:
+        climatology = torch.moveaxis(climatology, 0, -1)
+        climatology = flatten(climatology, graph_structure['mapping'], graph_structure['n_pixels_per_node'])
+        climatology = torch.moveaxis(climatology, -1, 0)
+    else:
+        climatology = flatten_pixelwise(climatology[0], mask)
+        climatology = climatology.unsqueeze(0)
 
     input_features = len(x_vars)
     
@@ -106,7 +111,7 @@ if __name__ == '__main__':
                             cache_dir=cache_dir
                             )
     data_test = IceDataset(ds, 
-                           [training_years[-1]+1],
+                           range(2013, 2015),
                            month, 
                            input_timesteps, 
                            output_timesteps,

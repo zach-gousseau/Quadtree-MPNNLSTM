@@ -445,7 +445,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         climatology (np.ndarray): Climate normals tensor of shape (365, w, h)
         launch_date (np.datetime64 (?)): The launch date
         """
-        doys = [int_to_datetime(launch_date.numpy()[0] + 8.640e13 * t).timetuple().tm_yday - 1 for t in range(0, self.output_timesteps)]
+        doys = [int_to_datetime(launch_date.numpy()[0] + 8.640e13 * t).timetuple().tm_yday - 1 for t in range(1, self.output_timesteps+1)]
 
         out = climatology[:, doys]
         out = torch.moveaxis(out, 0, -1)
