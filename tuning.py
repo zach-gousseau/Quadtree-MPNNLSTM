@@ -78,7 +78,7 @@ if __name__ == '__main__':
 
     image_shape = mask.shape
     preset_mesh = 'heterogeneous'
-    training_years = range(2009, 2012)
+    training_years = range(2007, 2012)
     
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf', 'usi', 'vsi', 'sithick']
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
@@ -94,7 +94,7 @@ if __name__ == '__main__':
     
     # Full resolution datasets
     data_train = IceDataset(ds, training_years, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask)
-    data_test = IceDataset(ds, range(training_years[-1]+1, training_years[-1]+1+2), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask)
+    data_test = IceDataset(ds, range(training_years[-1], training_years[-1]+2), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask)
 
     loader_train = DataLoader(data_train, batch_size=1, shuffle=True)
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)
@@ -115,10 +115,10 @@ if __name__ == '__main__':
     truncated_backprop = 0
     rnn_type = 'GRU'
     
-    hidden_size=16
+    hidden_size=32
     dropout=0.1
     n_layers=1
-    n_conv_layers=1
+    n_conv_layers=3
 
     binary=False
 
@@ -129,18 +129,28 @@ if __name__ == '__main__':
     # Experiment definitions --------------------
     if exp == 1:
         convolution_type = 'TransformerConv'
-    elif exp == 2:
-        rnn_type = 'LSTM'
+    if exp == 2:
+        convolution_type = 'ChebConv'
     elif exp == 3:
-        hidden_size = 32
+        rnn_type = 'LSTM'
     elif exp == 4:
-        n_layers = 2
+        hidden_size = 64
     elif exp == 5:
-        n_conv_layers = 2
+        hidden_size = 128
     elif exp == 6:
-        n_conv_layers = 3
+        n_layers = 2
     elif exp == 7:
-        n_conv_layers = 3
+        n_layers = 3
+    elif exp == 8:
+        n_conv_layers = 4
+    elif exp == 9:
+        n_conv_layers = 5
+    elif exp == 10:
+        n_conv_layers = 6
+    elif exp == 11:
+        rnn_type = 'LSTM'
+    elif exp == 12:
+        rnn_type = 'NoConvLSTM'
 
     experiment_name = f'M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}_EXP_{exp}'
     
@@ -185,9 +195,8 @@ if __name__ == '__main__':
         loader_test,
         climatology,
         lr=lr,
-        n_epochs=30,
+        n_epochs=50,
         mask=mask,
-        high_interest_region=high_interest_region,  # This should not be necessary
         truncated_backprop=truncated_backprop,
         graph_structure=graph_structure,
         ) 
@@ -195,7 +204,7 @@ if __name__ == '__main__':
     training_time = time.time() - training_time
 
     # Save model and losses
-    results_dir = f'results/ice_results_tuning'
+    results_dir = f'results/ice_results_tuning_new_more_years'
 
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
@@ -255,6 +264,6 @@ if __name__ == '__main__':
     plt.title(f'Experiment {exp}')
     plt.savefig(f'{results_dir}/losses_{exp}.png')
     
-    pd.DataFrame({'training_time': [training_time], 'num_params': model.get_n_params()}).to_csv(f'{results_dir}/data_{exp}.png')
+    pd.DataFrame({'training_time': [training_time], 'num_params': model.get_n_params()}).to_csv(f'{results_dir}/data_{exp}.csv')
     
     print(f'Finished model {exp} in {((time.time() - start) / 60)} minutes')

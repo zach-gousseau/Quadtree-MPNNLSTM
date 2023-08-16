@@ -17,14 +17,23 @@ import os
 
 from model.model import GConvLSTM, GConvLSTM_Simple, GConvGRU, SplitGConvLSTM, DummyLSTM, CONVOLUTION_KWARGS, CONVOLUTIONS
 
+class NoGConvLSTM(nn.LSTM):
+    def __init__(self, *args, **kwargs):
+        super(NoGConvLSTM, self).__init__(*args, **kwargs)
+
+    def forward(self, input, edge_index=None, edge_weight=None, H=None, C=None):
+        # Simply bypass a and b and call the parent class's forward method
+        o, (h, c) = super(NoGConvLSTM, self).forward(input.unsqueeze(0), (H.unsqueeze(0), C.unsqueeze(0)))
+        return o.squeeze(0), h.squeeze(0), c.squeeze(0)
+
 
 class Encoder(torch.nn.Module):
     def __init__(self, input_features, hidden_size, dropout, n_layers=1, convolution_type='GCNConv', rnn_type='LSTM', n_conv_layers=3, dummy=False):
         super().__init__()
 
-        assert rnn_type in ['GRU', 'LSTM', 'SplitLSTM']
+        assert rnn_type in ['GRU', 'LSTM', 'SplitLSTM', 'NoConvLSTM']
 
-        if rnn_type == 'LSTM':
+        if rnn_type == 'LSTM' or rnn_type == 'NoConvLSTM':
             rnn = GConvLSTM
         elif rnn_type == 'GRU':
             rnn = GConvGRU
@@ -62,17 +71,17 @@ class Encoder(torch.nn.Module):
 
         # First layer
         hidden_layer = self.norm_h(hidden_layer)
-        if self.rnn_type != 'GRU':
-            cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
+        # if self.rnn_type != 'GRU':
+            # cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
 
         # Subsequent layers
         hidden, cell = [hidden_layer], [cell_layer]
         for i in range(1, self.n_layers):
             _, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=None, C=None)
 
-            hidden_layer = self.norm_h(hidden_layer)
-            if self.rnn_type != 'GRU':
-                cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
+            # hidden_layer = self.norm_h(hidden_layer)
+            # if self.rnn_type != 'GRU':
+                # cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
 
             hidden.append(hidden_layer)
             cell.append(cell_layer)
@@ -85,7 +94,7 @@ class Decoder(torch.nn.Module):
     def __init__(self, input_features, hidden_size, dropout, n_layers=1, concat_layers_dim=3, convolution_type='GCNConv', rnn_type='LSTM', n_conv_layers=3, binary=False, dummy=False):
         super().__init__()
 
-        assert rnn_type in ['GRU', 'LSTM', 'SplitLSTM']
+        assert rnn_type in ['GRU', 'LSTM', 'SplitLSTM', 'NoConvLSTM']
 
         if rnn_type == 'LSTM':
             rnn = GConvLSTM
@@ -93,6 +102,8 @@ class Decoder(torch.nn.Module):
             rnn = GConvGRU
         elif rnn_type == 'SplitLSTM':
             rnn = SplitGConvLSTM
+        elif rnn_type == 'NoConvLSTM':
+            rnn = NoGConvLSTM
         else:
             raise ValueError
         
@@ -106,10 +117,13 @@ class Decoder(torch.nn.Module):
         n_conv_layers = 1  # Hard-coded single convolutional layer in the decoder (TODO: make this not hard coded.)
 
         if not self.dummy:
-            self.rnns = nn.ModuleList(
-                [rnn(input_features, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers, name='decoder')] + \
-                [rnn(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers, name='decoder') for _ in range(n_layers-1)]
-                )
+            if rnn_type == 'NoConvLSTM':
+                self.rnns = nn.ModuleList([NoGConvLSTM(input_features, hidden_size, 1)] +  [NoGConvLSTM(hidden_size, hidden_size, 1) for _ in range(n_layers-1)]).to(torch.device("cuda:0"))
+            else:
+                self.rnns = nn.ModuleList(
+                    [rnn(input_features, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers, name='decoder')] + \
+                    [rnn(hidden_size, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers, name='decoder') for _ in range(n_layers-1)]
+                    )
 
         # Dummy convolutions don't project the data into a new dimensionality
         in_channels = hidden_size + 0 + concat_layers_dim if not (dummy or convolution_type=='Dummy') else 3 + 0 + concat_layers_dim
@@ -153,17 +167,17 @@ class Decoder(torch.nn.Module):
         output, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H[0], C=C[0])
 
         hidden_layer = self.norm_h(hidden_layer)
-        if self.rnn_type != 'GRU':
-            cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
+        # if self.rnn_type != 'GRU':
+            # cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
 
         # Subsequent layers
         hidden, cell = [hidden_layer], [cell_layer]
         for i in range(1, self.n_layers):
             output, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=H[i], C=C[i])
 
-            hidden_layer = self.norm_h(hidden_layer)
-            if self.rnn_type != 'GRU':
-                cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
+            # hidden_layer = self.norm_h(hidden_layer)
+            # if self.rnn_type != 'GRU':
+                # cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
 
             hidden.append(hidden_layer)
             cell.append(cell_layer)
@@ -172,7 +186,7 @@ class Decoder(torch.nn.Module):
         cell = torch.stack(cell) if self.rnn_type != 'GRU' else [None]*len(hidden)  # GRU does not have a cell state
 
         # Use top layer's output
-        output = self.norm_o(output)
+        # output = self.norm_o(output)
         output = F.relu(output)
 
         # Concatenate with the concat layers
@@ -203,7 +217,7 @@ class Decoder(torch.nn.Module):
         x = self.gnn_out2(x, edge_index, edge_weight)
         # x = F.relu(x)
         # x = self.gnn_out3(x, edge_index, edge_weight)
-        # x = self.dropout(x)
+        x = self.dropout(x)
         return x
     
     def gnn(self, x, edge_index, edge_weight):

@@ -55,8 +55,8 @@ def masked_RMSE(mask):
 
 def masked_RMSE_along_axis(mask):
     def loss(y_true, y_pred):
-        sq_diff = np.multiply((y_pred - y_true)**2, mask)
-        return np.sqrt(np.mean(sq_diff, (1, 2)))
+        sq_diff = ((y_pred - y_true)**2)[:, mask]
+        return np.sqrt(np.mean(sq_diff, (1)))
     return loss
 
 def create_heatmap(ds, accuracy=False):
@@ -123,7 +123,21 @@ def flatten_unflatten(arr, graph_structure, mask):
 mask = np.isnan(xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5_D/*.nc')[0]).siconc.isel(time=0)).values
 # mask = np.isnan(xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc')).isel(latitude=slice(175, 275), longitude=slice(125, 225)).siconc.isel(time=0)).values
 
-results_dir = f'results/ice_results_20years_smaller_era5_LSTM'
+# results_dir = f'results/ice_results_20years_era5_6conv'
+# results_dir = f'results/ice_results_20years_smaller_era5_LSTM'
+results_dir = f'results/ice_results_may10_exp_8y_train_5y_dup'
+# results_dir = f'results/ice_results_20years_smaller_era5_transformer'
+# results_dir = f'results/ice_results_20years_era5_6conv_noconv'
+
+# results_dir = f'results/ice_results_20years_era5_6conv_noconv_newyears' # looks like shit
+# results_dir = f'results/ice_results_20years_era5_3convtransformer_noconv_newyears' # bit better but still shit
+# results_dir = f'results/ice_results_20years_smaller_era5_transformer_2'
+# results_dir = f'results/ice_results_20years_era5_6conv_noconv_newyears_actually6conv'
+
+# results_dir = f'results/ice_results_20years_smaller_era5'
+
+# results_dir = f'results/ice_results_20years_era5_6conv_dup'
+results_dir = f'results/ice_results_20years_smaller_era5_LSTM_dup'
 accuracy = False
 
 year_start, year_end, timestep_in, timestep_out = re.search(r'Y(\d+)_Y(\d+)_I(\d+)O(\d+)', glob.glob(results_dir+'/*.nc')[0]).groups()
@@ -140,12 +154,21 @@ for month in range(1, 13):
 
 ds = xr.concat(ds, dim='launch_date')
 ds = ds.rio.set_crs(4326)
+
+# ds['launch_date'] = [int_to_datetime(dt) for dt in ds.launch_date.values]
+# ds = ds.isel(latitude=slice(None, None, -1))
+# ds = ds.drop_duplicates('launch_date')
+
+
+
 ds['launch_date'] = [round_to_day(pd.Timestamp(dt)) + datetime.timedelta(days=1) for dt in ds.launch_date.values]
 image_shape = mask.shape
 
+ds = ds.sortby('launch_date').sel(launch_date=slice(datetime.datetime(2014, 1, 1), datetime.datetime(2019, 1, 1)))
+
 
 # graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12)
-graph_structure = create_static_heterogeneous_graph(image_shape, 2, mask, high_interest_region=None, use_edge_attrs=False, resolution=1/12, device=None)
+graph_structure = create_static_heterogeneous_graph(image_shape, 1, mask, high_interest_region=None, use_edge_attrs=False, resolution=1/12, device=None)
 # graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12)
 
 num_timesteps = ds.timestep.size
@@ -154,7 +177,7 @@ num_timesteps = ds.timestep.size
 if not os.path.exists(f'{results_dir}/gif'):
     os.makedirs(f'{results_dir}/gif')
 
-generate_gif = True
+generate_gif = False
 year = int(ds.launch_date.dt.year.values[0])
 if generate_gif:
     ld = 15
@@ -252,6 +275,7 @@ heatmap_pers.to_csv(f'{results_dir}/heatmap_pers.csv')
 
 # climatology = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc'))
 climatology = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5_D/*.nc'))
+climatology = climatology.sel(time=slice(datetime.datetime(1993, 1, 1), datetime.datetime(2014, 1, 1)))
 # climatology = climatology.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 climatology = climatology['siconc'].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).values
 climatology = np.nan_to_num(climatology)

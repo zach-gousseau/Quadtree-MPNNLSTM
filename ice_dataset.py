@@ -70,7 +70,7 @@ class IceDataset(Dataset):
                 if graph_structure is not None:
                     x, y = self.flatten_xy_chunked(x, y, graph_structure, mask)
                 
-                x, y = x.astype('float16'), y.astype('float16')
+                # x, y = x.astype('float16'), y.astype('float16')
                 return x, y, launch_dates
             
             except FileNotFoundError:
@@ -136,7 +136,7 @@ class IceDataset(Dataset):
         if y_binary_thresh is not None:
             y = y > y_binary_thresh
 
-        x, y = x.astype('float16'), y.astype('float16')
+        # x, y = x.astype('float16'), y.astype('float16')
         return x, y, launch_dates
     
     

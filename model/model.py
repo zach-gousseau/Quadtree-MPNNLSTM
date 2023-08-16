@@ -436,9 +436,9 @@ class GConvLSTM(nn.Module):
         self._create_output_gate_parameters_and_layers()
 
     def _set_parameters(self):
-        zeros(self.w_c_i)
-        zeros(self.w_c_f)
-        zeros(self.w_c_o)
+        glorot(self.w_c_i)
+        glorot(self.w_c_f)
+        glorot(self.w_c_o)
         zeros(self.b_i)
         zeros(self.b_f)
         zeros(self.b_c)
