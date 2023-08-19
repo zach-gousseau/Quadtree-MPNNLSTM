@@ -752,7 +752,8 @@ class SplitGConvLSTM(nn.Module):
         in_channels: int,
         out_channels: int,
         n_conv_layers: int = 1, 
-        convolution_type='GCNConv'
+        convolution_type='GCNConv',
+        name='SplitGConvLSTM'
     ):
         super(SplitGConvLSTM, self).__init__()
 
@@ -783,8 +784,8 @@ class SplitGConvLSTM(nn.Module):
         ) -> torch.FloatTensor:
         X = self.conv(X, edge_index, edge_weight)
 
-        outputs, (hidden, cell) = self.rnn(X, (H, C)) if H is not None else self.rnn(X)
-        return outputs, hidden, cell
+        outputs, (hidden, cell) = self.rnn(X.unsqueeze(0), (H.unsqueeze(0), C.unsqueeze(0))) if H is not None else self.rnn(X.unsqueeze(0))
+        return outputs.squeeze(0), hidden.squeeze(0), cell.squeeze(0)
 
 
 class MPNNLSTMI(nn.Module):

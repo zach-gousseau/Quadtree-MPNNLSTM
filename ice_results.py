@@ -137,7 +137,9 @@ results_dir = f'results/ice_results_may10_exp_8y_train_5y_dup'
 # results_dir = f'results/ice_results_20years_smaller_era5'
 
 # results_dir = f'results/ice_results_20years_era5_6conv_dup'
-results_dir = f'results/ice_results_20years_smaller_era5_LSTM_dup'
+# results_dir = f'results/ice_results_20years_smaller_era5_LSTM_dup'
+results_dir = f'results/ice_results_20years_era5_6conv_noconv_20yearsstraight_splitgconvlstm_adam'
+results_dir = f'results/ice_results_20years_era5_3conv_noconv_20yearsstraight_splitgconvlstm_adam_transformer'
 accuracy = False
 
 year_start, year_end, timestep_in, timestep_out = re.search(r'Y(\d+)_Y(\d+)_I(\d+)O(\d+)', glob.glob(results_dir+'/*.nc')[0]).groups()
@@ -158,6 +160,7 @@ ds = ds.rio.set_crs(4326)
 # ds['launch_date'] = [int_to_datetime(dt) for dt in ds.launch_date.values]
 # ds = ds.isel(latitude=slice(None, None, -1))
 # ds = ds.drop_duplicates('launch_date')
+# mask = np.isnan(xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5_D/*.nc')[0]).siconc.isel(time=0)).isel(latitude=slice(None, None, -1)).values
 
 
 
@@ -177,7 +180,7 @@ num_timesteps = ds.timestep.size
 if not os.path.exists(f'{results_dir}/gif'):
     os.makedirs(f'{results_dir}/gif')
 
-generate_gif = False
+generate_gif = True
 year = int(ds.launch_date.dt.year.values[0])
 if generate_gif:
     ld = 15
@@ -249,7 +252,7 @@ plt.savefig(f'{results_dir}/losses.png')
 heatmap = create_heatmap_fast(ds)
 
 plt.figure(dpi=80)
-sns.heatmap(heatmap, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.18, vmin=0.02)
+sns.heatmap(heatmap, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.28, vmin=0.02)
 plt.xlabel('Lead time (days)')
 plt.savefig(f'{results_dir}/heatmap.png')
 plt.close()
@@ -266,7 +269,7 @@ ds['y_hat'].values = arr_pers
 heatmap_pers = create_heatmap_fast(ds)
 
 plt.figure(dpi=80)
-sns.heatmap(heatmap_pers, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.18, vmin=0.02)
+sns.heatmap(heatmap_pers, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.28, vmin=0.02)
 plt.xlabel('Lead time (days)')
 plt.savefig(f'{results_dir}/heatmap_pers.png')
 plt.close()
@@ -289,7 +292,7 @@ ds['y_hat'].values = arr_clim
 heatmap_clim = create_heatmap_fast(ds)
 
 plt.figure(dpi=80)
-sns.heatmap(heatmap_clim, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.18, vmin=0.02)
+sns.heatmap(heatmap_clim, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.28, vmin=0.02)
 plt.xlabel('Lead time (days)')
 plt.savefig(f'{results_dir}/heatmap_clim.png')
 plt.close()
@@ -313,4 +316,24 @@ sns.heatmap((heatmap - heatmap_pers), yticklabels=[month_name[i][:3] for i in ra
 plt.title('Blue -> Model outperforms persistence')
 plt.xlabel('Lead time (days)')
 plt.savefig(f'{results_dir}/heatmap_diff_pers.png')
+plt.close()
+
+
+#COMPARE
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from calendar import month_name
+results_dir1 = f'results/ice_results_20years_era5_6conv_noconv_20yearsstraight_splitgconvlstm_adam'
+results_dir2 = f'results/ice_results_20years_era5_3conv_noconv_20yearsstraight_splitgconvlstm_adam_transformer'
+descriptor1 = 'GCN'
+descriptor2 = 'Transformer'
+heatmap1 = pd.read_csv(results_dir1 + '/heatmap.csv', index_col=0)
+heatmap2 = pd.read_csv(results_dir2 + '/heatmap.csv', index_col=0)
+
+plt.figure(dpi=80)
+sns.heatmap((heatmap2 - heatmap1), yticklabels=[month_name[i][:3] for i in range(1, 13)], cmap='coolwarm', center=0, vmin=-0.05, vmax=0.05)
+plt.title(f'Blue -> {descriptor2} outperforms {descriptor1}')
+plt.xlabel('Lead time (days)')
+plt.savefig(f'{results_dir2}/heatmap_diff_compare_{descriptor1}_{descriptor2}.png')
 plt.close()

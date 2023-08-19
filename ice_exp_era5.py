@@ -51,13 +51,15 @@ if __name__ == '__main__':
     multires_training = False
     truncated_backprop = 0
 
-    training_years_1 = range(1993, 1998)
-    training_years_2 = range(2000, 2003)
-    training_years_4 = range(2003, 2013)
+    # training_years_1 = range(1993, 1998)
+    # training_years_2 = range(2000, 2003)
+    # training_years_4 = range(2003, 2013)
     
-    training_years_1 = range(2002, 2003)
-    training_years_4 = range(2002, 2010)
-    # training_years_4 = range(2008, 2013)
+    # training_years_1 = range(2002, 2003)
+    # training_years_4 = range(2002, 2010)
+    
+    training_years_1 = training_years_4 = range(1993, 2013)
+    
     x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
     y_vars = ['siconc']
     input_features = len(x_vars)
@@ -65,6 +67,7 @@ if __name__ == '__main__':
     output_timesteps= 90
     preset_mesh = False
     rnn_type = 'LSTM'
+    n_conv_layers = 3
     
     cache_dir='/home/zgoussea/scratch/data_cache/'
     # cache_dir = None
@@ -155,6 +158,33 @@ if __name__ == '__main__':
         rnn_type = 'NoConvLSTM'
         n_epochs = [15, 15, 20]
         results_dir = f'results/ice_results_20years_era5_6conv_noconv_newyears_actually6conv'
+    elif exp == 20:
+        multires_training = False
+        preset_mesh = 'heterogeneous'
+        rnn_type = 'NoConvLSTM'
+        n_epochs = [50]
+        results_dir = f'results/ice_results_20years_era5_6conv_noconv_20yearsstraight_splitgconvlstm'
+    elif exp == 21:
+        multires_training = False
+        preset_mesh = 'heterogeneous'
+        rnn_type = 'NoConvLSTM'
+        n_epochs = [50]
+        results_dir = f'results/ice_results_20years_era5_6conv_noconv_20yearsstraight_splitgconvlstm_30_input'
+        input_timesteps = 30
+    elif exp == 22:
+        multires_training = False
+        preset_mesh = 'heterogeneous'
+        rnn_type = 'NoConvLSTM'
+        n_epochs = [50]
+        results_dir = f'results/ice_results_20years_era5_6conv_noconv_20yearsstraight_splitgconvlstm_adam'
+    elif exp == 23:
+        convolution_type = 'TransformerConv'
+        multires_training = False
+        preset_mesh = 'heterogeneous'
+        rnn_type = 'NoConvLSTM'
+        n_epochs = [35]
+        results_dir = f'results/ice_results_20years_era5_3conv_noconv_20yearsstraight_splitgconvlstm_adam_transformer'
+        n_conv_layers = 3
 
         
         
@@ -180,14 +210,14 @@ if __name__ == '__main__':
     data_train_1 = IceDataset(ds, training_years_1, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
     # data_train_2 = IceDataset(ds, training_years_2, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
     # data_train_3 = IceDataset(ds, training_years_3, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
-    data_train_4 = IceDataset(ds, training_years_4, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
+    # data_train_4 = IceDataset(ds, training_years_4, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
     data_test = IceDataset(ds, range(training_years_4[-1]+1, training_years_4[-1]+1+2), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
     data_val = IceDataset(ds, range(training_years_4[-1]+1+2+1-2, training_years_4[-1]+1+2+1+4), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
 
     loader_train_1 = DataLoader(data_train_1, batch_size=1, shuffle=True)
     # loader_train_2 = DataLoader(data_train_2, batch_size=1, shuffle=True)
     # loader_train_3 = DataLoader(data_train_3, batch_size=1, shuffle=True)
-    loader_train_4 = DataLoader(data_train_4, batch_size=1, shuffle=True)
+    # loader_train_4 = DataLoader(data_train_4, batch_size=1, shuffle=True)
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)
     loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
 
@@ -213,7 +243,7 @@ if __name__ == '__main__':
         n_layers=1,
         transform_func=dist_from_05,
         dummy=False,
-        n_conv_layers=6,
+        n_conv_layers=n_conv_layers,
         rnn_type=rnn_type,
         convolution_type=convolution_type,
     )
@@ -271,16 +301,16 @@ if __name__ == '__main__':
     #     graph_structure=graph_structure,
     #     ) 
   
-    model.train(
-        loader_train_4,
-        loader_test,
-        climatology,
-        lr=lr,
-        n_epochs=n_epochs[1],
-        mask=mask,
-        truncated_backprop=truncated_backprop,
-        graph_structure=graph_structure,
-        ) 
+    # model.train(
+    #     loader_train_4,
+    #     loader_test,
+    #     climatology,
+    #     lr=lr,
+    #     n_epochs=n_epochs[1],
+    #     mask=mask,
+    #     truncated_backprop=truncated_backprop,
+    #     graph_structure=graph_structure,
+    #     ) 
 
     # Save model and losses
     # results_dir = f'results/ice_results_20years_era5_6conv_f32'

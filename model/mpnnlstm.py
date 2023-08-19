@@ -209,8 +209,8 @@ class NextFramePredictorS2S(NextFramePredictor):
         # self.loss_func = MSE_SSIM(mask) if not self.binary else torch.nn.BCELoss()
         # self.loss_func_name = 'MSE_SSIM' if not self.binary else 'BCE'  # For printing
         
-        # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=0.001)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=0.01)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)#, weight_decay=0.01)
         self.scheduler = StepLR(self.optimizer, step_size=3, gamma=lr_decay)
 
         self.scaler = amp.GradScaler()  # Not used 
@@ -255,6 +255,8 @@ class NextFramePredictorS2S(NextFramePredictor):
             # Loop over training set
             running_loss = 0
             step = 0
+            
+            self.model.train()
             for x, y, launch_date in tqdm(loader_train, leave=True):
 
                 x, y = x.squeeze(0).to(self.device), y.squeeze(0).to(self.device)
@@ -373,6 +375,7 @@ class NextFramePredictorS2S(NextFramePredictor):
             # Loop over test set
             running_loss_test = 0
             step_test = 0
+            self.model.eval()
             for x, y, launch_date in tqdm(loader_test, leave=True):
 
                 x, y = x.squeeze(0).to(self.device), y.squeeze(0).to(self.device)

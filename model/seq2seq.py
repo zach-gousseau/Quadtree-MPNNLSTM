@@ -33,11 +33,11 @@ class Encoder(torch.nn.Module):
 
         assert rnn_type in ['GRU', 'LSTM', 'SplitLSTM', 'NoConvLSTM']
 
-        if rnn_type == 'LSTM' or rnn_type == 'NoConvLSTM':
+        if rnn_type == 'LSTM':
             rnn = GConvLSTM
         elif rnn_type == 'GRU':
             rnn = GConvGRU
-        elif rnn_type == 'SplitLSTM':
+        elif rnn_type == 'SplitLSTM' or rnn_type == 'NoConvLSTM':
             rnn = SplitGConvLSTM
         else:
             raise ValueError
@@ -66,6 +66,7 @@ class Encoder(torch.nn.Module):
         X = X.squeeze(0)
 
         _, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H, C=C)
+        # hidden_layer = self.dropout(hidden_layer)
 
         # hidden_layer, cell_layer = hidden_layer.squeeze(0), cell_layer.squeeze(0)
 
@@ -78,6 +79,7 @@ class Encoder(torch.nn.Module):
         hidden, cell = [hidden_layer], [cell_layer]
         for i in range(1, self.n_layers):
             _, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=None, C=None)
+            # hidden_layer = self.dropout(hidden_layer)
 
             # hidden_layer = self.norm_h(hidden_layer)
             # if self.rnn_type != 'GRU':
@@ -118,7 +120,7 @@ class Decoder(torch.nn.Module):
 
         if not self.dummy:
             if rnn_type == 'NoConvLSTM':
-                self.rnns = nn.ModuleList([NoGConvLSTM(input_features, hidden_size, 1)] +  [NoGConvLSTM(hidden_size, hidden_size, 1) for _ in range(n_layers-1)]).to(torch.device("cuda:0"))
+                self.rnns = nn.ModuleList([NoGConvLSTM(input_features, hidden_size, 1)] +  [NoGConvLSTM(hidden_size, hidden_size, 1) for _ in range(n_layers-1)]).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
             else:
                 self.rnns = nn.ModuleList(
                     [rnn(input_features, hidden_size, convolution_type=convolution_type, n_conv_layers=n_conv_layers, name='decoder')] + \
@@ -165,6 +167,8 @@ class Decoder(torch.nn.Module):
         
         # First layer
         output, hidden_layer, cell_layer = self.rnns[0](X, edge_index, edge_weight, H=H[0], C=C[0])
+        # hidden_layer = self.dropout(hidden_layer)
+        # output = self.dropout(output)
 
         hidden_layer = self.norm_h(hidden_layer)
         # if self.rnn_type != 'GRU':
@@ -175,7 +179,7 @@ class Decoder(torch.nn.Module):
         for i in range(1, self.n_layers):
             output, hidden_layer, cell_layer = self.rnns[i](hidden[-1], edge_index, edge_weight, H=H[i], C=C[i])
 
-            # hidden_layer = self.norm_h(hidden_layer)
+            hidden_layer = self.norm_h(hidden_layer)
             # if self.rnn_type != 'GRU':
                 # cell_layer = self.norm_c(cell_layer)  # GRU does not have a cell state
 
@@ -214,10 +218,12 @@ class Decoder(torch.nn.Module):
     def mlp_out(self, x, edge_index, edge_weight):
         x = self.gnn_out1(x, edge_index, edge_weight)
         x = F.relu(x)
+        x = self.dropout(x)
         x = self.gnn_out2(x, edge_index, edge_weight)
+        x = self.dropout(x)
         # x = F.relu(x)
         # x = self.gnn_out3(x, edge_index, edge_weight)
-        x = self.dropout(x)
+        # x = self.dropout(x)
         return x
     
     def gnn(self, x, edge_index, edge_weight):
@@ -292,6 +298,7 @@ class Seq2Seq(torch.nn.Module):
 
         self.thresh = thresh
         self.transform_func = transform_func
+        self.dropout = nn.Dropout(dropout)
         self.graph = None
         self.device = device
 
@@ -374,6 +381,7 @@ class Seq2Seq(torch.nn.Module):
                     self.graph.hidden = hidden
                     self.graph.cell = cell
 
+        # self.graph.hidden = self.dropout(self.graph.hidden)
         # Persistance (removed for now)
         self.graph.persistence = x[-1, :, [0]]
         
@@ -447,7 +455,6 @@ class Seq2Seq(torch.nn.Module):
 
         
     def forward(self, x, y=None, concat_layers=None, teacher_forcing_ratio=0.5, mask=None, high_interest_region=None, graph_structure=None, remesh_every=1):
-
         # Encoder
         self.process_inputs(x, mask=mask, high_interest_region=high_interest_region, graph_structure=graph_structure)
 
@@ -466,9 +473,11 @@ class Seq2Seq(torch.nn.Module):
 
     def update_without_remesh(self, data, hidden, cell, teacher_force=False, teacher_input=None):
         if teacher_force:
-            teacher_input = add_positional_encoding(teacher_input)  # Add positional encoding
-            self.graph.pyg.x = flatten(teacher_input, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
-            self.graph.pyg.x = torch.cat([self.graph.pyg.x, self.graph.n_pixels_per_node.unsqueeze(-1)], dim=-1)  # Add node sizes
+            pos_encoding = self.graph.pyg.x[..., 1:]
+            self.graph.pyg.x = torch.cat([teacher_input.squeeze(0), pos_encoding], dim=-1)
+            # teacher_input = add_positional_encoding(teacher_input)  # Add positional encoding
+            # self.graph.pyg.x = flatten(teacher_input, self.graph.mapping, self.graph.n_pixels_per_node, self.mask).squeeze(0)
+            # self.graph.pyg.x = torch.cat([self.graph.pyg.x, self.graph.n_pixels_per_node.unsqueeze(-1)], dim=-1)  # Add node sizes
         else:
             # Add positional encoding
             pos_encoding = self.graph.pyg.x[..., 1:]
