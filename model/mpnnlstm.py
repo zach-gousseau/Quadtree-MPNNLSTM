@@ -114,6 +114,7 @@ class NextFramePredictorS2S(NextFramePredictor):
     def __init__(self,
                  thresh,
                  experiment_name='experiment', 
+                 directory='',
                  decompose=True, 
                  input_features=1,
                  input_timesteps=3,
@@ -148,8 +149,12 @@ class NextFramePredictorS2S(NextFramePredictor):
         self.condition = condition
 
         self.experiment_name = experiment_name
+        self.directory = directory
         self.debug = debug
         self.device = device
+        
+        if not os.path.exists(directory):
+            os.makedirs(directory)
         
         # Model 
         self.model = Seq2Seq(
@@ -190,8 +195,8 @@ class NextFramePredictorS2S(NextFramePredictor):
     def get_n_params(self):
         return get_n_params(self.model)
 
-    def save(self, directory):
-        torch.save(self.model.state_dict(), os.path.join(directory, f'{self.experiment_name}.pth'))
+    def save(self):
+        torch.save(self.model.state_dict(), os.path.join(self.directory, f'{self.experiment_name}.pth'))
 
     def load(self, directory):
         try:
@@ -210,7 +215,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         # self.loss_func_name = 'MSE_SSIM' if not self.binary else 'BCE'  # For printing
         
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=0.01)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)#, weight_decay=0.01)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)#, weight_decay=0.001)
         self.scheduler = StepLR(self.optimizer, step_size=3, gamma=lr_decay)
 
         self.scaler = amp.GradScaler()  # Not used 
@@ -221,6 +226,8 @@ class NextFramePredictorS2S(NextFramePredictor):
         self.train_loss = []
 
         self.training_initiated = True
+        
+        self.min_loss = np.inf
     
     # @profile
     def train(
@@ -257,6 +264,7 @@ class NextFramePredictorS2S(NextFramePredictor):
             step = 0
             
             self.model.train()
+            self.model.epoch = epoch
             for x, y, launch_date in tqdm(loader_train, leave=True):
 
                 x, y = x.squeeze(0).to(self.device), y.squeeze(0).to(self.device)
@@ -414,6 +422,10 @@ class NextFramePredictorS2S(NextFramePredictor):
 
             running_loss = running_loss / (step + 1)
             running_loss_test = running_loss_test / (step_test + 1)
+            
+            if running_loss_test < self.min_loss:
+                self.save()
+                self.min_loss = running_loss_test
 
             if np.isnan(running_loss_test.item()):
                 raise ValueError('NaN loss :(')

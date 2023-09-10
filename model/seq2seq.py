@@ -267,7 +267,46 @@ class Seq2Seq(torch.nn.Module):
             n_conv_layers=n_conv_layers,
             dummy=dummy,
             )
-        self.decoder = Decoder(
+        self.decoder_1 = Decoder(
+            1+3,  # 1 output variable + 3 (positional encoding and node_size)
+            hidden_size,
+            dropout,
+            n_layers=n_layers,
+            concat_layers_dim=2,  # We've removed the persistence and climatology concatenations
+            convolution_type=convolution_type,
+            rnn_type=rnn_type,
+            n_conv_layers=n_conv_layers,
+            binary=binary,
+            dummy=dummy,
+            )
+        
+        self.decoder_2 = Decoder(
+            1+3,  # 1 output variable + 3 (positional encoding and node_size)
+            hidden_size,
+            dropout,
+            n_layers=n_layers,
+            concat_layers_dim=2,  # We've removed the persistence and climatology concatenations
+            convolution_type=convolution_type,
+            rnn_type=rnn_type,
+            n_conv_layers=n_conv_layers,
+            binary=binary,
+            dummy=dummy,
+            )
+        
+        self.decoder_3 = Decoder(
+            1+3,  # 1 output variable + 3 (positional encoding and node_size)
+            hidden_size,
+            dropout,
+            n_layers=n_layers,
+            concat_layers_dim=2,  # We've removed the persistence and climatology concatenations
+            convolution_type=convolution_type,
+            rnn_type=rnn_type,
+            n_conv_layers=n_conv_layers,
+            binary=binary,
+            dummy=dummy,
+            )
+        
+        self.decoder_4 = Decoder(
             1+3,  # 1 output variable + 3 (positional encoding and node_size)
             hidden_size,
             dropout,
@@ -426,7 +465,16 @@ class Seq2Seq(torch.nn.Module):
             self.graph.pyg.to(self.device)
 
             # Perform decoding step
-            output, hidden, cell = self.decoder(
+            if t < 5:
+                decoder = self.decoder_1
+            elif t < 15:
+                decoder = self.decoder_2
+            elif t < 30:
+                decoder = self.decoder_3
+            else:
+                decoder = self.decoder_4
+                
+            output, hidden, cell = decoder(
                 X=self.graph.pyg.x,
                 edge_index=self.graph.pyg.edge_index,
                 edge_weight=self.graph.pyg.edge_attr, 
@@ -457,6 +505,17 @@ class Seq2Seq(torch.nn.Module):
     def forward(self, x, y=None, concat_layers=None, teacher_forcing_ratio=0.5, mask=None, high_interest_region=None, graph_structure=None, remesh_every=1):
         # Encoder
         self.process_inputs(x, mask=mask, high_interest_region=high_interest_region, graph_structure=graph_structure)
+        
+        # if self.training and self.epoch < 2:
+        #     unroll_steps = range(5)
+        # elif self.training and self.epoch < 4:
+        #     unroll_steps = range(15)
+        # elif self.training and self.epoch < 6:
+        #     unroll_steps = range(45)
+        # else:
+        #     unroll_steps = range(self.output_timesteps)
+            
+        # unroll_steps = range(self.output_timesteps)
 
         # Decoder
         outputs, output_mappings = self.unroll_output(

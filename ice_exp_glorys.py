@@ -60,7 +60,7 @@ if __name__ == '__main__':
     
     training_years_1 = training_years_4 = range(1993, 2013)
     
-    x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']
+    x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf', 'usi', 'vsi', 'sithick']
     y_vars = ['siconc']
     input_features = len(x_vars)
     input_timesteps = 10
@@ -70,7 +70,7 @@ if __name__ == '__main__':
     n_conv_layers = 3
     
     cache_dir='/home/zgoussea/scratch/data_cache/'
-    cache_dir = None
+    # cache_dir = None
 
     binary=False
 
@@ -104,152 +104,143 @@ if __name__ == '__main__':
         preset_mesh = 'heterogeneous'
         rnn_type = 'LSTM'
         n_epochs = [5, 5, 10, 10]
-        directory = f'results/ice_results_20years_era5_LSTM_6conv'
+        directory = f'results/ice_results_20years_glorys_LSTM_6conv'
     elif exp == 12:
         convolution_type = 'TransformerConv'
         multires_training = False
         preset_mesh = 'heterogeneous'
         rnn_type = 'GRU'
         n_epochs = [5, 10]
-        directory = f'results/ice_results_20years_smaller_era5_transformer'
+        directory = f'results/ice_results_20years_smaller_glorys_transformer'
     elif exp == 13:
         convolution_type = 'TransformerConv'
         multires_training = False
         preset_mesh = 'heterogeneous'
         rnn_type = 'LSTM'
         n_epochs = [5, 5, 5, 10]
-        directory = f'results/ice_results_15years_era5_transformer'
+        directory = f'results/ice_results_15years_glorys_transformer'
     elif exp == 14:
         multires_training = False
         preset_mesh = 'heterogeneous'
         rnn_type = 'NoConvLSTM'
         n_epochs = [5, 10, 20, 30]
-        directory = f'results/ice_results_20years_era5_6conv_noconv'
+        directory = f'results/ice_results_20years_glorys_6conv_noconv'
     elif exp == 15:
         multires_training = False
         preset_mesh = 'heterogeneous'
         rnn_type = 'NoConvLSTM'
         n_epochs = [15, 15, 20]
-        directory = f'results/ice_results_20years_era5_6conv_noconv_newyears'
+        directory = f'results/ice_results_20years_glorys_6conv_noconv_newyears'
     elif exp == 16:
         convolution_type = 'TransformerConv'
         multires_training = False
         preset_mesh = 'heterogeneous'
         rnn_type = 'NoConvLSTM'
         n_epochs = [7, 7, 12]
-        directory = f'results/ice_results_20years_era5_3convtransformer_noconv_newyears'
+        directory = f'results/ice_results_20years_glorys_3convtransformer_noconv_newyears'
     elif exp == 17:
         convolution_type = 'TransformerConv'
         multires_training = False
         preset_mesh = 'heterogeneous'
         rnn_type = 'GRU'
         n_epochs = [5, 10, 5]
-        directory = f'results/ice_results_20years_smaller_era5_transformer_2'
+        directory = f'results/ice_results_20years_smaller_glorys_transformer_2'
     elif exp == 18:
         convolution_type = 'TransformerConv'
         multires_training = False
         preset_mesh = 'heterogeneous'
         rnn_type = 'LSTM'
         n_epochs = [0, 15]
-        directory = f'results/ice_results_20years_smaller_era5_transformer_8y'
+        directory = f'results/ice_results_20years_smaller_glorys_transformer_8y'
     elif exp == 19:
         multires_training = False
         preset_mesh = 'heterogeneous'
         rnn_type = 'NoConvLSTM'
         n_epochs = [15, 15, 20]
-        directory = f'results/ice_results_20years_era5_6conv_noconv_newyears_actually6conv'
+        directory = f'results/ice_results_20years_glorys_6conv_noconv_newyears_actually6conv'
     elif exp == 20:
         multires_training = False
         preset_mesh = 'heterogeneous'
         rnn_type = 'NoConvLSTM'
         n_epochs = [50]
-        directory = f'results/ice_results_20years_era5_6conv_noconv_20yearsstraight_splitgconvlstm'
+        directory = f'results/ice_results_20years_glorys_6conv_noconv_20yearsstraight_splitgconvlstm'
     elif exp == 21:
         multires_training = False
         preset_mesh = 'heterogeneous'
         rnn_type = 'NoConvLSTM'
         n_epochs = [50]
-        directory = f'results/ice_results_20years_era5_6conv_noconv_20yearsstraight_splitgconvlstm_30_input'
+        directory = f'results/ice_results_20years_glorys_6conv_noconv_20yearsstraight_splitgconvlstm_30_input'
         input_timesteps = 30
     elif exp == 22:
         multires_training = False
         preset_mesh = 'heterogeneous'
         rnn_type = 'NoConvLSTM'
         n_epochs = [50]
-        directory = f'results/ice_results_20years_era5_6conv_noconv_20yearsstraight_splitgconvlstm_adam'
+        directory = f'results/ice_results_20years_glorys_6conv_noconv_20yearsstraight_splitgconvlstm_adam'
     elif exp == 23:
         convolution_type = 'TransformerConv'
         multires_training = False
         preset_mesh = 'heterogeneous'
         rnn_type = 'NoConvLSTM'
         n_epochs = [35]
-        directory = f'results/ice_results_20years_era5_3conv_noconv_20yearsstraight_splitgconvlstm_adam_transformer_decay'
+        directory = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_transformer'
         n_conv_layers = 3
-    elif exp == 24:
-        multires_training = False
-        preset_mesh = 'heterogeneous'
-        rnn_type = 'NoConvLSTM'
-        n_epochs = [50]
-        lr = 0.0001
-        directory = f'results/ice_results_20years_era5_3conv_noconv_20yearsstraight_splitgconvlstm_adam_decay_lr0001'
-        n_conv_layers = 6
-    elif exp == 25:
-        convolution_type = 'TransformerConv'
-        multires_training = False
-        preset_mesh = 'heterogeneous'
-        rnn_type = 'NoConvLSTM'
-        n_epochs = [35]
-        lr = 0.0001
-        directory = f'results/ice_results_20years_era5_3conv_noconv_20yearsstraight_splitgconvlstm_adam_transformer_decay_lr0001'
-        n_conv_layers = 3
-    elif exp == 26:
-        multires_training = False
-        preset_mesh = 'heterogeneous'
-        rnn_type = 'NoConvLSTM'
-        n_epochs = [50]
-        lr = 0.0001
-        directory = f'results/ice_results_20years_era5_3conv_noconv_20yearsstraight_splitgconvlstm_adam_decay_lr0001_2decoders'
-        n_conv_layers = 6
-    elif exp == 27:
-        multires_training = False
-        preset_mesh = 'heterogeneous'
-        rnn_type = 'NoConvLSTM'
-        n_epochs = [50]
-        lr = 0.001
-        directory = f'results/ice_results_20years_era5_3conv_noconv_20yearsstraight_splitgconvlstm_adam_decay_lr001_4decoders'
-        n_conv_layers = 6
     elif exp == 28:
         multires_training = False
         preset_mesh = 'heterogeneous'
         rnn_type = 'NoConvLSTM'
         n_epochs = [50]
         lr = 0.001
-        directory = f'results/ice_results_20years_era5_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_4decoders'
+        directory = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_4decoders'
         n_conv_layers = 6
     elif exp == 29:
-        multires_training = False
-        preset_mesh = 'heterogeneous'
-        rnn_type = 'NoConvLSTM'
-        n_epochs = [1]
-        lr = 0.001
-        directory = f'results/ice_results_20years_era5_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_4decoders_1'
-        n_conv_layers = 6
-    elif exp == 30:
+        convolution_type = 'TransformerConv'
         multires_training = False
         preset_mesh = 'heterogeneous'
         rnn_type = 'NoConvLSTM'
         n_epochs = [35]
         lr = 0.001
-        directory = f'results/ice_results_20years_era5_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_4decoders_1'
+        directory = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_4decoders_transformer'
         n_conv_layers = 3
-        output_timesteps = 10
+    elif exp == 30:
+        convolution_type = 'TransformerConv'
+        multires_training = False
+        preset_mesh = 'heterogeneous'
+        rnn_type = 'NoConvLSTM'
+        n_epochs = [35]
+        lr = 0.001
+        directory = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_4decoders_transformer_era5vars'
+        n_conv_layers = 3
+    elif exp == 31:
+        convolution_type = 'TransformerConv'
+        multires_training = False
+        preset_mesh = 'heterogeneous'
+        rnn_type = 'NoConvLSTM'
+        n_epochs = [25]
+        lr = 0.001
+        directory = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_4decoders_transformer_30input'
+        n_conv_layers = 3
+        input_timesteps = 30
+        cache_dir = None
+    elif exp == 32:
+        convolution_type = 'TransformerConv'
+        multires_training = False
+        preset_mesh = 'homogeneous'
+        rnn_type = 'NoConvLSTM'
+        n_epochs = [35]
+        lr = 0.001
+        directory = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_4decoders_transformer_homo'
+        n_conv_layers = 3
+        cache_dir = None
+
+        
         
     use_edge_attrs = False if convolution_type == 'GCNConv' else True
         
     # -------------------------------------------
 
     # Full resolution dataset
-    ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5_D/*.nc'))  # ln -s /home/zgoussea/scratch/ERA5_GLORYS data/ERA5_GLORYS
+    ds = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc'))  # ln -s /home/zgoussea/scratch/ERA5_GLORYS data/ERA5_GLORYS
     mask = np.isnan(ds.siconc.isel(time=0)).values
     # high_interest_region = xr.open_dataset('data/shipping_corridors/primary_route_mask.nc').band_data.values
     high_interest_region = None
@@ -258,9 +249,9 @@ if __name__ == '__main__':
     # graph_structure = None
 
     if preset_mesh == 'heterogeneous':
-        graph_structure = create_static_heterogeneous_graph(image_shape, 1, mask, high_interest_region=high_interest_region, use_edge_attrs=use_edge_attrs, resolution=1/12, device=device)
+        graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, high_interest_region=high_interest_region, use_edge_attrs=use_edge_attrs, resolution=1/12, device=device)
     elif preset_mesh == 'homogeneous':
-        graph_structure = create_static_homogeneous_graph(image_shape, 1, mask, high_interest_region=high_interest_region, use_edge_attrs=use_edge_attrs, resolution=1/12, device=device)
+        graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, high_interest_region=high_interest_region, use_edge_attrs=use_edge_attrs, resolution=1/12, device=device)
     
     # Full resolution datasets
     data_train_1 = IceDataset(ds, training_years_1, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
@@ -370,8 +361,10 @@ if __name__ == '__main__':
     #     ) 
 
     # Save model and losses
+    # directory = f'results/ice_results_20years_glorys_6conv_f32'
+
     model.loss.to_csv(f'{directory}/loss_{experiment_name}.csv')
-    model.load(directory)  # Load best model
+    model.load(directory)
     
     # Generate predictions
     model.model.eval()

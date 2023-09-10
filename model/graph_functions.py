@@ -705,7 +705,7 @@ def get_nan_nodes(mask, graph_structure):
 def replace_with_map(arr, map_):
     return np.vectorize(map_.get)(arr)
 
-def create_static_homogeneous_graph(image_shape, max_grid_size, mask, use_edge_attrs=True, resolution=0.25, device=None):
+def create_static_homogeneous_graph(image_shape, max_grid_size, mask, high_interest_region=None, use_edge_attrs=True, resolution=0.25, device=None):
     """Create a static homogeneous graph of a specified resolution"""
     
     # First create a heterogeneous graph without a mask (homogeneous other than at the borders)

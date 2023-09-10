@@ -36,7 +36,8 @@ if __name__ == '__main__':
     # convolution_type = 'Dummy'
     generate_predictions = True
 
-    ds = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS_2x/*.nc'))  # ln -s /home/zgoussea/scratch/ERA5_GLORYS data/ERA5_GLORYS
+    # ds = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS_2x/*.nc'))  # ln -s /home/zgoussea/scratch/ERA5_GLORYS data/ERA5_GLORYS
+    ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5_D/*.nc'))
 
     # ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 
@@ -61,7 +62,7 @@ if __name__ == '__main__':
     print(f'Num nodes: {len(graph_structure["graph_nodes"])}')
 
 
-    graph_structure = None
+    # graph_structure = None
 
     np.random.seed(42)
     random.seed(42)
@@ -74,15 +75,16 @@ if __name__ == '__main__':
 
     # Number of frames to read as input
     input_timesteps = 10
-    output_timesteps= 90
+    output_timesteps= 10
 
     start = time.time()
 
-    x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf', 'usi', 'vsi', 'sithick']
+    x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf']#, 'usi', 'vsi', 'sithick']
     y_vars = ['siconc']  # ['siconc', 't2m']
     training_years = range(2012, 2013)
     
     cache_dir=None#'/home/zgoussea/scratch/data_cache/'
+    directory = f'results/ice_results_profile'
 
     climatology = ds[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
     climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
@@ -149,6 +151,7 @@ if __name__ == '__main__':
     model = NextFramePredictorS2S(
         thresh=thresh,
         experiment_name=experiment_name,
+        directory=directory,
         input_features=input_features,
         input_timesteps=input_timesteps,
         output_timesteps=output_timesteps,
@@ -220,13 +223,8 @@ if __name__ == '__main__':
                 timestep=np.arange(1, output_timesteps+1),
             ),
         )
-
-        results_dir = f'results/ice_results_profile'
-
-        if not os.path.exists(results_dir):
-            os.makedirs(results_dir)
         
-        ds.to_netcdf(f'{results_dir}/valpredictions_{experiment_name}.nc')
+        ds.to_netcdf(f'{directory}/valpredictions_{experiment_name}.nc')
 
-        model.loss.to_csv(f'{results_dir}/loss_{experiment_name}.csv')
-        model.save(results_dir)
+        model.loss.to_csv(f'{directory}/loss_{experiment_name}.csv')
+        model.save(directory)

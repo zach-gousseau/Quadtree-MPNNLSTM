@@ -117,7 +117,7 @@ class GraphConv(nn.Module):
     def forward(self, x: Union[Tensor, PairTensor], edge_index: Adj, edge_attr: OptTensor = None, return_attention_weights=False):
         for i in range(self.n_layers):
             
-            if return_attention_weights and self.convolution_type=='TransformerConv' and x.shape[-1]==8:
+            if return_attention_weights and self.convolution_type=='TransformerConv':# and x.shape[-1]==8:
                 import numpy as np
                 out, (edge_index, alpha) = self.convolutions[i](x, edge_index, edge_attr, return_attention_weights=True)
 
@@ -153,7 +153,7 @@ class GraphConv(nn.Module):
                     np.save(f, np.array(att_map_from))
                     np.save(f, np.array(att_map_to))
 
-                warnings.warn('Asked for attention weights.')
+                raise NotImplementedError('Asked for attention weights.')
                 
             x = self.convolutions[i](x, edge_index, edge_attr)
         return x
@@ -761,6 +761,9 @@ class SplitGConvLSTM(nn.Module):
 
         self.convolution_type = convolution_type
         self.n_conv_layers = n_conv_layers
+        
+        self.return_attention_weights = False#True
+        self.name = name
 
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -782,7 +785,7 @@ class SplitGConvLSTM(nn.Module):
         H: torch.FloatTensor = None,
         C: torch.FloatTensor = None,
         ) -> torch.FloatTensor:
-        X = self.conv(X, edge_index, edge_weight)
+        X = self.conv(X, edge_index, edge_weight, self.return_attention_weights and self.name=='encoder')
 
         outputs, (hidden, cell) = self.rnn(X.unsqueeze(0), (H.unsqueeze(0), C.unsqueeze(0))) if H is not None else self.rnn(X.unsqueeze(0))
         return outputs.squeeze(0), hidden.squeeze(0), cell.squeeze(0)
