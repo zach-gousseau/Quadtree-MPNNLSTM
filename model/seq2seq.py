@@ -128,7 +128,8 @@ class Decoder(torch.nn.Module):
                     )
 
         # Dummy convolutions don't project the data into a new dimensionality
-        in_channels = hidden_size + 0 + concat_layers_dim if not (dummy or convolution_type=='Dummy') else 3 + 0 + concat_layers_dim
+        # in_channels = hidden_size + 0 + concat_layers_dim if not (dummy or convolution_type=='Dummy') else 3 + 0 + concat_layers_dim
+        in_channels = hidden_size + 0 + 0 if not (dummy or convolution_type=='Dummy') else 3 + 0 + 0
 
         conv_func = CONVOLUTIONS[convolution_type]
         conv_func_kwargs = CONVOLUTION_KWARGS[convolution_type]
@@ -147,7 +148,7 @@ class Decoder(torch.nn.Module):
         # torch.nn.init.zeros_(self.fc_out3.weight)
         # torch.nn.init.zeros_(self.fc_out3.bias)
         
-        # self.gnn1 = conv_func(in_channels=concat_layers_dim, out_channels=hidden_size, **conv_func_kwargs)
+        self.gnn1 = conv_func(in_channels=concat_layers_dim, out_channels=hidden_size, **conv_func_kwargs)
         # self.gnn2 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
         # self.gnn2 = conv_func(in_channels=hidden_size, out_channels=1, **conv_func_kwargs)
 
@@ -195,9 +196,10 @@ class Decoder(torch.nn.Module):
 
         # Concatenate with the concat layers
         if concat_layers is not None:
-            # gnn_output = self.gnn(concat_layers, edge_index, edge_weight)
+            gnn_output = self.gnn(concat_layers, edge_index, edge_weight)
             # output = torch.cat([output, gnn_output, concat_layers], dim=-1)
-            output = torch.cat([output, concat_layers], dim=-1)
+            # output = torch.cat([output, concat_layers], dim=-1)
+            output = output + gnn_output
 
         # Pass output through the final GNN to reduce to desired dimensionality
         output = self.mlp_out(output, edge_index, edge_weight)
@@ -229,10 +231,10 @@ class Decoder(torch.nn.Module):
     def gnn(self, x, edge_index, edge_weight):
         x = self.gnn1(x, edge_index, edge_weight)
         x = F.relu(x)
-        x = self.gnn2(x, edge_index, edge_weight)
-        x = F.relu(x)
+        # x = self.gnn2(x, edge_index, edge_weight)
+        # x = F.relu(x)
         # x = self.gnn3(x, edge_index, edge_weight)
-        x = F.relu(x)
+        # x = F.relu(x)
         return x        
 
 class Seq2Seq(torch.nn.Module):
@@ -280,44 +282,32 @@ class Seq2Seq(torch.nn.Module):
             dummy=dummy,
             )
         
-        self.decoder_2 = Decoder(
-            1+3,  # 1 output variable + 3 (positional encoding and node_size)
-            hidden_size,
-            dropout,
-            n_layers=n_layers,
-            concat_layers_dim=2,  # We've removed the persistence and climatology concatenations
-            convolution_type=convolution_type,
-            rnn_type=rnn_type,
-            n_conv_layers=n_conv_layers,
-            binary=binary,
-            dummy=dummy,
-            )
+        # self.decoder_2 = Decoder(
+        #     1+3,  # 1 output variable + 3 (positional encoding and node_size)
+        #     hidden_size,
+        #     dropout,
+        #     n_layers=n_layers,
+        #     concat_layers_dim=2,  # We've removed the persistence and climatology concatenations
+        #     convolution_type=convolution_type,
+        #     rnn_type=rnn_type,
+        #     n_conv_layers=n_conv_layers,
+        #     binary=binary,
+        #     dummy=dummy,
+        #     )
         
-        self.decoder_3 = Decoder(
-            1+3,  # 1 output variable + 3 (positional encoding and node_size)
-            hidden_size,
-            dropout,
-            n_layers=n_layers,
-            concat_layers_dim=2,  # We've removed the persistence and climatology concatenations
-            convolution_type=convolution_type,
-            rnn_type=rnn_type,
-            n_conv_layers=n_conv_layers,
-            binary=binary,
-            dummy=dummy,
-            )
-        
-        self.decoder_4 = Decoder(
-            1+3,  # 1 output variable + 3 (positional encoding and node_size)
-            hidden_size,
-            dropout,
-            n_layers=n_layers,
-            concat_layers_dim=2,  # We've removed the persistence and climatology concatenations
-            convolution_type=convolution_type,
-            rnn_type=rnn_type,
-            n_conv_layers=n_conv_layers,
-            binary=binary,
-            dummy=dummy,
-            )
+        # self.decoder_3 = Decoder(
+        #     1+3,  # 1 output variable + 3 (positional encoding and node_size)
+        #     hidden_size,
+        #     dropout,
+        #     n_layers=n_layers,
+        #     concat_layers_dim=2,  # We've removed the persistence and climatology concatenations
+        #     convolution_type=convolution_type,
+        #     rnn_type=rnn_type,
+        #     n_conv_layers=n_conv_layers,
+        #     binary=binary,
+        #     dummy=dummy,
+        #     )
+
 
         self.input_timesteps = input_timesteps
         self.output_timesteps = output_timesteps
@@ -465,14 +455,13 @@ class Seq2Seq(torch.nn.Module):
             self.graph.pyg.to(self.device)
 
             # Perform decoding step
-            if t < 5:
-                decoder = self.decoder_1
-            elif t < 15:
-                decoder = self.decoder_2
-            elif t < 30:
-                decoder = self.decoder_3
-            else:
-                decoder = self.decoder_4
+            # if t < 5:
+            #     decoder = self.decoder_1
+            # elif t < 15:
+            #     decoder = self.decoder_2
+            # else:
+            #     decoder = self.decoder_3
+            decoder = self.decoder_1
                 
             output, hidden, cell = decoder(
                 X=self.graph.pyg.x,

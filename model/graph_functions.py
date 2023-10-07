@@ -510,11 +510,11 @@ def image_to_graph_pixelwise(img, mask=None, use_edge_attrs=True, resolution=0.2
     img0, _ = torch.max(img[..., 0], 0)  # For multi-step inputs
     image_shape = img.shape[1:3]
 
-    labels = ma.masked_array((~mask).flatten().cumsum() - 1, mask=mask.astype(bool)).filled(-1).reshape(img0.shape)
-
     if mask is not None:
+        labels = ma.masked_array((~mask).flatten().cumsum() - 1, mask=mask.astype(bool)).filled(-1).reshape(img0.shape)
         graph_nodes = torch.arange(np.sum(~mask))
     else:
+        labels = np.arange(np.prod(img.shape[1:3])).reshape(img.shape[1:3])
         graph_nodes = torch.arange(np.prod(img0.shape))
 
     data = flatten_pixelwise(img, mask)
@@ -728,6 +728,14 @@ def create_static_homogeneous_graph(image_shape, max_grid_size, mask, high_inter
 
     graph_structure['graph_nodes'] = replace_with_map(graph_structure['graph_nodes'], node_mapping)
     graph_structure['edge_index'] = replace_with_map(graph_structure['edge_index'], node_mapping)
+    
+    # Remove mappings from land->cell
+    for i, pixel in enumerate(mask.flatten()):
+        if pixel:
+            graph_structure['mapping'][:, i] = 0
+            
+    # Re-calculate n_pixels_per_node
+    graph_structure['n_pixels_per_node'] = graph_structure['mapping'].sum(1)
 
     # Back to Tensors
     graph_structure['edge_index'] = torch.Tensor(graph_structure['edge_index']).type(torch.int64).to(device)

@@ -125,7 +125,7 @@ def flatten_unflatten(arr, graph_structure, mask):
     return arr
 
 baseline_lam = {
-    1: 0.0910778,
+    1: 0.03482741,
     2: 0.04492987,
     3: 0.04820256,
     4: 0.06156681,
@@ -221,6 +221,18 @@ results_dir = f'results/ice_results_20years_era5_3conv_noconv_20yearsstraight_sp
 results_dir = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_4decoders'
 # results_dir = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_4decoders_transformer'
 # results_dir = f'results/ice_results_20years_era5_3conv_noconv_20yearsstraight_splitgconvlstm_adam_transformer'
+results_dir = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_4decoders_transformer_homo'
+
+results_dir = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_2decoders'
+# results_dir = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_4decoders_transformer'
+results_dir = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_2decoders_transformer'
+# results_dir = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_2decoders_transformer_homo'
+# results_dir = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_2decoders_transformer'
+
+results_dir = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_4decoders'
+# results_dir = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_4decoders_transformer'
+results_dir = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_1decoders_transformer'
+
 accuracy = False
 
 year_start, year_end, timestep_in, timestep_out = re.search(r'Y(\d+)_Y(\d+)_I(\d+)O(\d+)', glob.glob(results_dir+'/*.nc')[0]).groups()
@@ -255,8 +267,8 @@ image_shape = mask.shape
 # ds = ds.sel(launch_date=slice(datetime.datetime(2014, 1, 1), datetime.datetime(2019, 1, 1)))
 
 
-graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12)
-# graph_structure = create_static_heterogeneous_graph(image_shape, 1, mask, high_interest_region=None, use_edge_attrs=False, resolution=1/12, device=None)
+# graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12)
+graph_structure = create_static_heterogeneous_graph(image_shape, 1, mask, high_interest_region=None, use_edge_attrs=False, resolution=1/12, device=None)
 # graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12)
 
 num_timesteps = ds.timestep.size
@@ -265,12 +277,13 @@ num_timesteps = ds.timestep.size
 if not os.path.exists(f'{results_dir}/gif'):
     os.makedirs(f'{results_dir}/gif')
 
-generate_gif = True
+generate_gif = False
 year = int(ds.launch_date.dt.year.values[0])
 if generate_gif:
     ld = 15
     for month in months:
         fns = []
+        arr = []
         for ts in range(1, 91):
             fig, axs = plt.subplots(1, 2, figsize=(8, 3))
             (ds.sel(launch_date=datetime.datetime(year, month, 15), timestep=ts).where(~mask).y_true).plot(ax=axs[0], vmin=0, vmax=1)
@@ -282,6 +295,10 @@ if generate_gif:
             fns.append(fn)
             plt.savefig(fn)
             plt.close()
+            arr.append(ds.sel(launch_date=datetime.datetime(year, month, 15), timestep=ts).where(~mask).to_array().values)
+        with open(f'{results_dir}/gif/{str(datetime.datetime(year, month, 15))[:10]}.npy', 'wb') as f:
+            for a in arr:
+                np.save(f, a)
         from PIL import Image
         frames = []
         for fn in fns:
@@ -295,6 +312,7 @@ if generate_gif:
                     loop=0)
         for fn in fns:
             os.remove(fn)
+            
 
 # LOSSES ----------------------------
 months = range(1, 13)
@@ -324,33 +342,33 @@ plt.savefig(f'{results_dir}/losses.png')
 
 # HEATMAP ----------------------
 
-heatmap = create_heatmap_fast(ds)
-heatmap.to_csv(f'{results_dir}/heatmap.csv')
+# heatmap = create_heatmap_fast(ds)
+# heatmap.to_csv(f'{results_dir}/heatmap.csv')
 
-plt.figure(dpi=80)
-sns.heatmap(heatmap, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.28, vmin=0.02)
-plt.xlabel('Lead time (days)')
-plt.savefig(f'{results_dir}/heatmap.png')
-plt.close()
+# plt.figure(dpi=80)
+# sns.heatmap(heatmap, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.28, vmin=0.02)
+# plt.xlabel('Lead time (days)')
+# plt.savefig(f'{results_dir}/heatmap.png')
+# plt.close()
 
-climatology = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc'))
-# climatology = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5_D/*.nc'))
-climatology = climatology.sel(time=slice(datetime.datetime(1993, 1, 1), datetime.datetime(2014, 1, 1)))
-climatology = climatology['siconc'].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).values
-climatology = np.nan_to_num(climatology)
-climatology = flatten_unflatten(torch.Tensor(climatology.reshape((-1, *image_shape, 1))), graph_structure, mask)
+# climatology = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc'))
+# # climatology = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5_D/*.nc'))
+# climatology = climatology.sel(time=slice(datetime.datetime(1993, 1, 1), datetime.datetime(2014, 1, 1)))
+# climatology = climatology['siconc'].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).values
+# climatology = np.nan_to_num(climatology)
+# climatology = flatten_unflatten(torch.Tensor(climatology.reshape((-1, *image_shape, 1))), graph_structure, mask)
 
-arr_clim = np.array([[climatology[(doy.item()-1+i)%365, :, :, 0].numpy() for i in range(num_timesteps)] for doy in ds.launch_date.dt.dayofyear])
-ds['y_hat'].values = arr_clim
-heatmap_clim = create_heatmap_fast(ds)
+# arr_clim = np.array([[climatology[(doy.item()-1+i)%365, :, :, 0].numpy() for i in range(num_timesteps)] for doy in ds.launch_date.dt.dayofyear])
+# ds['y_hat'].values = arr_clim
+# heatmap_clim = create_heatmap_fast(ds)
 
-plt.figure(dpi=80)
-sns.heatmap(heatmap_clim, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.28, vmin=0.02)
-plt.xlabel('Lead time (days)')
-plt.savefig(f'{results_dir}/heatmap_clim.png')
-plt.close()
+# plt.figure(dpi=80)
+# sns.heatmap(heatmap_clim, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.28, vmin=0.02)
+# plt.xlabel('Lead time (days)')
+# plt.savefig(f'{results_dir}/heatmap_clim.png')
+# plt.close()
 
-heatmap_clim.to_csv(f'{results_dir}/heatmap_clim.csv')
+# heatmap_clim.to_csv(f'{results_dir}/heatmap_clim.csv')
 
 # heatmap = pd.read_csv(f'{results_dir}/heatmap.csv', index_col=0)
 # heatmap.columns = heatmap.columns.astype(int)
@@ -358,7 +376,7 @@ heatmap_clim.to_csv(f'{results_dir}/heatmap_clim.csv')
 # heatmap_clim.columns = heatmap_clim.columns.astype(int)
 # heatmap_pers = pd.read_csv(f'{results_dir}/heatmap_pers.csv', index_col=0)
 # heatmap_pers.columns = heatmap_pers.columns.astype(int)
-
+allo
 
 arr_pers = flatten_unflatten(torch.Tensor(ds.y_true.isel(timestep=0).values).unsqueeze(-1), graph_structure, mask)
 arr_pers = np.array(arr_pers.repeat(1, 1, 1, 90))
@@ -393,39 +411,39 @@ heatmap_pers.to_csv(f'{results_dir}/heatmap_pers.csv')
 # plt.savefig(f'{results_dir}/heatmap_diff_hyb.png')
 # plt.close()
 
-plt.figure(dpi=80)
-sns.heatmap((heatmap - heatmap_clim), yticklabels=[month_name[i][:3] for i in range(1, 13)], cmap='coolwarm', center=0)
-plt.title('Blue -> Model outperforms climatology')
-plt.xlabel('Lead time (days)')
-plt.savefig(f'{results_dir}/heatmap_diff_clim.png')
-plt.close()
+# plt.figure(dpi=80)
+# sns.heatmap((heatmap - heatmap_clim), yticklabels=[month_name[i][:3] for i in range(1, 13)], cmap='coolwarm', center=0)
+# plt.title('Blue -> Model outperforms climatology')
+# plt.xlabel('Lead time (days)')
+# plt.savefig(f'{results_dir}/heatmap_diff_clim.png')
+# plt.close()
 
-plt.figure(dpi=80)
-sns.heatmap((heatmap - heatmap_pers), yticklabels=[month_name[i][:3] for i in range(1, 13)], cmap='coolwarm', center=0)#, vmin=-0.05, vmax=0.05)
-plt.title('Blue -> Model outperforms persistence')
-plt.xlabel('Lead time (days)')
-plt.savefig(f'{results_dir}/heatmap_diff_pers.png')
-plt.close()
+# plt.figure(dpi=80)
+# sns.heatmap((heatmap - heatmap_pers), yticklabels=[month_name[i][:3] for i in range(1, 13)], cmap='coolwarm', center=0)#, vmin=-0.05, vmax=0.05)
+# plt.title('Blue -> Model outperforms persistence')
+# plt.xlabel('Lead time (days)')
+# plt.savefig(f'{results_dir}/heatmap_diff_pers.png')
+# plt.close()
 
-def get_weights():
-    weights = {m: [np.e**(-baseline_lam[m] * t) for t in range(90)] for m in range(1, 13)}
-    return weights
+# def get_weights():
+#     weights = {m: [np.e**(-baseline_lam[m] * t) for t in range(90)] for m in range(1, 13)}
+#     return weights
 
-weights = get_weights()
+# weights = get_weights()
 
-weights = pd.DataFrame(weights).T
-weights.columns=heatmap.columns
+# weights = pd.DataFrame(weights).T
+# weights.columns=heatmap.columns
 
-heatmap_base = heatmap_pers * weights + heatmap_clim * (1-weights)
+# heatmap_base = heatmap_pers * weights + heatmap_clim * (1-weights)
 
-heatmap_base.to_csv(f'{results_dir}/heatmap_base.csv')
+# heatmap_base.to_csv(f'{results_dir}/heatmap_base.csv')
 
-plt.figure(dpi=80)
-sns.heatmap((heatmap - heatmap_base), yticklabels=[month_name[i][:3] for i in range(1, 13)], cmap='coolwarm', center=0)#, vmin=-0.05, vmax=0.05)
-plt.title('Blue -> Model outperforms baseline')
-plt.xlabel('Lead time (days)')
-plt.savefig(f'{results_dir}/heatmap_diff_base.png')
-plt.close()
+# plt.figure(dpi=80)
+# sns.heatmap((heatmap - heatmap_base), yticklabels=[month_name[i][:3] for i in range(1, 13)], cmap='coolwarm', center=0)#, vmin=-0.05, vmax=0.05)
+# plt.title('Blue -> Model outperforms baseline')
+# plt.xlabel('Lead time (days)')
+# plt.savefig(f'{results_dir}/heatmap_diff_base.png')
+# plt.close()
 
 
 # #COMPARE

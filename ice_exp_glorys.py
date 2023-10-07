@@ -26,9 +26,9 @@ from model.graph_functions import create_static_heterogeneous_graph, create_stat
 
 if __name__ == '__main__':
 
-    np.random.seed(21)
-    random.seed(21)
-    torch.manual_seed(21)
+    np.random.seed(42)
+    random.seed(42)
+    torch.manual_seed(42)
 
     start = time.time()
 
@@ -58,9 +58,9 @@ if __name__ == '__main__':
     # training_years_1 = range(2002, 2003)
     # training_years_4 = range(2002, 2010)
     
-    training_years_1 = training_years_4 = range(1993, 2013)
+    training_years_1 = training_years_4 = range(1993, 2014)
     
-    x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf', 'usi', 'vsi', 'sithick']
+    x_vars = ['siconc', 't2m', 'v10', 'u10', 'sshf', 'usi', 'vsi', 'sithick', 'thetao', 'so']
     y_vars = ['siconc']
     input_features = len(x_vars)
     input_timesteps = 10
@@ -232,6 +232,30 @@ if __name__ == '__main__':
         directory = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_4decoders_transformer_homo'
         n_conv_layers = 3
         cache_dir = None
+    elif exp == 33:
+        multires_training = False
+        preset_mesh = 'heterogeneous'
+        rnn_type = 'NoConvLSTM'
+        n_epochs = [50]
+        lr = 0.001
+        directory = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_1decoders'
+        n_conv_layers = 6
+    elif exp == 34:
+        convolution_type = 'TransformerConv'
+        multires_training = False
+        preset_mesh = 'heterogeneous'
+        rnn_type = 'NoConvLSTM'
+        n_epochs = [30]
+        lr = 0.001
+        directory = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_1decoders_transformer'
+    elif exp == 35:
+        convolution_type = 'TransformerConv'
+        multires_training = False
+        preset_mesh = 'homogeneous'
+        rnn_type = 'NoConvLSTM'
+        n_epochs = [30]
+        lr = 0.001
+        directory = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_1decoders_transformer_homo'
 
         
         
@@ -252,14 +276,14 @@ if __name__ == '__main__':
         graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, high_interest_region=high_interest_region, use_edge_attrs=use_edge_attrs, resolution=1/12, device=device)
     elif preset_mesh == 'homogeneous':
         graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, high_interest_region=high_interest_region, use_edge_attrs=use_edge_attrs, resolution=1/12, device=device)
-    
+
     # Full resolution datasets
     data_train_1 = IceDataset(ds, training_years_1, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
     # data_train_2 = IceDataset(ds, training_years_2, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
     # data_train_3 = IceDataset(ds, training_years_3, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
     # data_train_4 = IceDataset(ds, training_years_4, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
     data_test = IceDataset(ds, range(training_years_4[-1]+1, training_years_4[-1]+1+2), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
-    data_val = IceDataset(ds, range(training_years_4[-1]+1+2+1-2, training_years_4[-1]+1+2+1+4), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
+    data_val = IceDataset(ds, range(training_years_4[-1]+1+2+1-2-1, training_years_4[-1]+1+2+1+4-1), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
 
     loader_train_1 = DataLoader(data_train_1, batch_size=1, shuffle=True)
     # loader_train_2 = DataLoader(data_train_2, batch_size=1, shuffle=True)
@@ -285,7 +309,7 @@ if __name__ == '__main__':
 
     # Arguments passed to Seq2Seq constructor
     model_kwargs = dict(
-        hidden_size=64,
+        hidden_size=32,
         dropout=0.1,
         n_layers=1,
         transform_func=dist_from_05,

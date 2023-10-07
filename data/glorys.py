@@ -3,6 +3,8 @@ from pydap.client import open_url
 import xarray as xr
 import rioxarray
 import numpy as np
+from requests.sessions import Session
+
 
 USERNAME = 'your-cmems-username'
 PASSWORD = 'your-cmems-password'
@@ -12,13 +14,21 @@ def copernicusmarine_datastore(dataset, username, password):
     cas_url = 'https://cmems-cas.cls.fr/cas/login'
     session = setup_session(cas_url, username, password)
     session.cookies.set("CASTGC", session.cookies.get_dict()['CASTGC'])
+    
+    # Set timeout for the session
+    session_with_timeout = Session()
+    session_with_timeout.verify = session.verify
+    session_with_timeout.auth = session.auth
+    session_with_timeout.cookies = session.cookies
+    session_with_timeout.headers = session.headers
+    
     database = ['my', 'nrt']
     url = f'https://{database[0]}.cmems-du.eu/thredds/dodsC/{dataset}'
     try:
-        data_store = xr.backends.PydapDataStore(open_url(url, session=session))  
+        data_store = xr.backends.PydapDataStore(open_url(url, session=session_with_timeout, timeout=600))  
     except:
         url = f'https://{database[1]}.cmems-du.eu/thredds/dodsC/{dataset}'
-        data_store = xr.backends.PydapDataStore(open_url(url, session=session))
+        data_store = xr.backends.PydapDataStore(open_url(url, session=session_with_timeout, timeout=600))
     return data_store
 
 def get_glorys_values(ds, dt, var_='siconc', lats=(51, 70), lons=(-95, -65)):

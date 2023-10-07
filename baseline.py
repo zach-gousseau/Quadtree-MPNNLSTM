@@ -44,9 +44,9 @@ def evaluate(lam=0.05):
 
 from scipy.optimize import minimize 
 
-for month in range(5, 13):
+for month in range(1, 2):
     ds = ds_full.sel(time=(ds_full.time.dt.month==month))
     doys = ds.time.dt.dayofyear.values
     y_true = ds.values
     print(month)
-    print(minimize(evaluate, 0.2))
+    print(minimize(evaluate, 0.02))
