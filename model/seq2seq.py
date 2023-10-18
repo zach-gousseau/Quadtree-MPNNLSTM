@@ -192,7 +192,7 @@ class Decoder(torch.nn.Module):
 
         # Use top layer's output
         # output = self.norm_o(output)
-        output = F.relu(output)
+        output = F.leaky_relu(output)
 
         # Concatenate with the concat layers
         if concat_layers is not None:
@@ -219,22 +219,22 @@ class Decoder(torch.nn.Module):
 
     def mlp_out(self, x, edge_index, edge_weight):
         x = self.gnn_out1(x, edge_index, edge_weight)
-        x = F.relu(x)
+        x = F.leaky_relu(x)
         x = self.dropout(x)
         x = self.gnn_out2(x, edge_index, edge_weight)
         x = self.dropout(x)
-        # x = F.relu(x)
+        # x = F.leaky_relu(x)
         # x = self.gnn_out3(x, edge_index, edge_weight)
         # x = self.dropout(x)
         return x
     
     def gnn(self, x, edge_index, edge_weight):
         x = self.gnn1(x, edge_index, edge_weight)
-        x = F.relu(x)
+        x = F.leaky_relu(x)
         # x = self.gnn2(x, edge_index, edge_weight)
-        # x = F.relu(x)
+        # x = F.leaky_relu(x)
         # x = self.gnn3(x, edge_index, edge_weight)
-        # x = F.relu(x)
+        # x = F.leaky_relu(x)
         return x        
 
 class Seq2Seq(torch.nn.Module):

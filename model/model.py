@@ -4,10 +4,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Parameter
 from typing import Optional, Tuple, Union
-from torch_geometric.typing import Adj, OptTensor, PairTensor
+from torch_geometric.typing import Adj, OptTensor, PairTensor, OptPairTensor, Size
 from torch_geometric.nn.dense.linear import Linear
 from torch_geometric.nn.conv import MessagePassing
-from torch_geometric.nn import GCNConv, ChebConv, TransformerConv, GATConv, GATv2Conv
+from torch_geometric.nn import GCNConv, ChebConv, TransformerConv, GATConv, GATv2Conv, GINEConv
 from torch_geometric.nn.inits import glorot, zeros
 
 import warnings
@@ -58,6 +58,27 @@ class TransformerConvCustom(TransformerConv):
 
         out = out * alpha.view(-1, self.heads, 1)
         return out
+    
+    
+class GINEConvMLP(torch.nn.Module):
+    def __init__(self, in_channels, out_channels, **conv_kwargs):
+        super(GINEConvMLP, self).__init__()
+        
+        hidden_size = out_channels if out_channels != 1 else in_channels
+    
+        mlp = nn.Sequential(
+                        nn.Linear(in_channels, hidden_size),
+                        nn.ReLU(),
+                        nn.Linear(hidden_size, hidden_size),
+                        nn.ReLU(),
+                        nn.Linear(hidden_size, out_channels),
+                    )
+        
+        self.conv = GINEConv(nn=mlp, **conv_kwargs)
+        
+    def forward(self, x: Union[Tensor, OptPairTensor], edge_index: Adj,
+                edge_attr: OptTensor = None, size: Size = None):
+        return self.conv(x, edge_index, edge_attr, size)
 
     
 
@@ -81,7 +102,8 @@ CONVOLUTIONS = {
     'ChebConv': ChebConv,
     'GATConv': GATConv,
     'GATv2Conv': GATv2Conv,
-    'Dummy': None
+    'Dummy': None,
+    'GINEConv': GINEConvMLP,
 }
 
 CONVOLUTION_KWARGS = {
@@ -92,6 +114,7 @@ CONVOLUTION_KWARGS = {
     'GATConv': dict(heads=1, edge_dim=2),
     'GATv2Conv': dict(heads=1, edge_dim=2),
     'Dummy': dict(),
+    'GINEConv': dict(eps=0, train_eps=False, edge_dim=2)
 }
 
 class GraphConv(nn.Module):
@@ -116,7 +139,6 @@ class GraphConv(nn.Module):
     
     def forward(self, x: Union[Tensor, PairTensor], edge_index: Adj, edge_attr: OptTensor = None, return_attention_weights=False):
         for i in range(self.n_layers):
-            
             if return_attention_weights and self.convolution_type=='TransformerConv':# and x.shape[-1]==8:
                 import numpy as np
                 out, (edge_index, alpha) = self.convolutions[i](x, edge_index, edge_attr, return_attention_weights=True)
@@ -345,7 +367,7 @@ class GConvLSTM(nn.Module):
 
         self.convolution_type = convolution_type
         self.n_conv_layers = n_conv_layers
-        self.return_attention_weights = False#True
+        self.return_attention_weights = True#True
         self.name = name
 
         self.in_channels = in_channels
