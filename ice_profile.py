@@ -30,14 +30,15 @@ if __name__ == '__main__':
     # device = torch.device('mps')
     print('device:', device)
 
-    month = 4
+    month = 6
     # convolution_type = 'TransformerConv'
-    convolution_type = 'GCNConv'
+    # convolution_type = 'GCNConv'
+    convolution_type = 'GINEConv'
     # convolution_type = 'Dummy'
     generate_predictions = True
 
-    # ds = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS_2x/*.nc'))  # ln -s /home/zgoussea/scratch/ERA5_GLORYS data/ERA5_GLORYS
-    ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5_D/*.nc'))
+    ds = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS_2x/*.nc'))  # ln -s /home/zgoussea/scratch/ERA5_GLORYS data/ERA5_GLORYS
+    # ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5_D/*.nc'))
 
     # ds = ds.isel(latitude=slice(175, 275), longitude=slice(125, 225))
 
@@ -56,8 +57,8 @@ if __name__ == '__main__':
     high_interest_region = None
 
     image_shape = mask.shape
-    # graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
-    graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=False, resolution=1/12, device=device)
+    graph_structure = create_static_heterogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
+    # graph_structure = create_static_homogeneous_graph(image_shape, 4, mask, use_edge_attrs=True, resolution=1/12, device=device)
 
     print(f'Num nodes: {len(graph_structure["graph_nodes"])}')
 
@@ -75,7 +76,7 @@ if __name__ == '__main__':
 
     # Number of frames to read as input
     input_timesteps = 10
-    output_timesteps= 10
+    output_timesteps= 45
 
     start = time.time()
 
@@ -97,7 +98,7 @@ if __name__ == '__main__':
         climatology = flatten_pixelwise(climatology[0], mask)
         climatology = climatology.unsqueeze(0)
 
-    input_features = len(x_vars)
+    input_features = len(x_vars)# + (len(x_vars)+3)
     
     data_train = IceDataset(ds, 
                             training_years, 
@@ -110,10 +111,11 @@ if __name__ == '__main__':
                             y_binary_thresh=binary_thresh if binary else None, 
                             graph_structure=graph_structure,
                             mask=mask, 
-                            cache_dir=cache_dir
+                            cache_dir=cache_dir,
+                            flatten_y=True
                             )
     data_test = IceDataset(ds, 
-                           range(2013, 2015),
+                           range(2013, 2014),
                            month, 
                            input_timesteps, 
                            output_timesteps,
@@ -122,11 +124,12 @@ if __name__ == '__main__':
                            y_binary_thresh=binary_thresh if binary else None,
                            graph_structure=graph_structure,
                            mask=mask, 
-                           cache_dir=cache_dir
+                           cache_dir=cache_dir,
+                           flatten_y=True
                            )
 
     loader_profile = DataLoader(data_train, batch_size=1)#, sampler=torch.utils.data.SubsetRandomSampler(range(30)))
-    loader_test = DataLoader(data_test, batch_size=1)#, shuffle=False, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
+    loader_test = DataLoader(data_test, batch_size=1, shuffle=False)#, shuffle=False, sampler=torch.utils.data.SubsetRandomSampler(range(5)))
 
     thresh = 0.15
     thresh = -np.inf
@@ -142,7 +145,7 @@ if __name__ == '__main__':
         transform_func=dist_from_05,
         dummy=False,
         convolution_type=convolution_type,
-        rnn_type='GRU',
+        rnn_type='NoConvLSTM',
         image_shape=image_shape
     )
 
@@ -223,6 +226,34 @@ if __name__ == '__main__':
                 timestep=np.arange(1, output_timesteps+1),
             ),
         )
+        
+        fns = []
+        for ts in range(output_timesteps):
+            year = 2013
+            fig, axs=plt.subplots(1, 2, figsize=(12, 4))
+            ds.isel(launch_date=5, timestep=ts).y_hat.where(~mask).plot(vmin=0, vmax=1, ax=axs[1])
+            ds.isel(launch_date=5, timestep=ts).y_true.where(~mask).plot(vmin=0, vmax=1, ax=axs[0])
+            axs[0].set_title(f'True ({str(datetime.datetime(year, month, 15))[:10]}, step {ts})')
+            axs[1].set_title(f'Pred ({str(datetime.datetime(year, month, 15))[:10]}, step {ts})')
+            plt.tight_layout()
+            fn = f'scratch/gif/{str(datetime.datetime(year, month, 15))[:10]}_{ts}.png'
+            fns.append(fn)
+            plt.savefig(fn)
+            plt.close()
+        from PIL import Image
+        frames = []
+        for fn in fns:
+            new_frame = Image.open(fn)
+            frames.append(new_frame)
+        frames[0].save(f'scratch/gif/{str(datetime.datetime(year, month, 15))[:10]}.gif',
+                    format='GIF',
+                    append_images=frames[1:],
+                    save_all=True,
+                    duration=300,
+                    loop=0)
+        for fn in fns:
+            os.remove(fn)
+            
         
         ds.to_netcdf(f'{directory}/valpredictions_{experiment_name}.nc')
 

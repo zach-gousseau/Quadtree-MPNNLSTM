@@ -351,6 +351,7 @@ def get_adj(labels, xx, yy, edges_at_corners=True, use_edge_attrs=True):
         )).T
     else:
         edge_attrs = dist(edge_sources, edge_targets, xx, yy)
+        edge_attrs = 1 - (edge_attrs / edge_attrs.max())
 
     edge_index = torch.tensor([edge_sources, edge_targets], dtype=torch.long)
     return edge_index, edge_attrs
@@ -677,6 +678,7 @@ def image_to_graph(img, thresh=0.05, max_grid_size=64, mask=None, high_interest_
         graph_nodes=graph_nodes,
         mapping=mapping,
         n_pixels_per_node=n_pixels_per_node,
+        max_cell_size=max_grid_size,
     )
 
     return out

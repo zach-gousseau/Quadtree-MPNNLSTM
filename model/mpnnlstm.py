@@ -32,6 +32,41 @@ from abc import ABC, abstractmethod
 
 from pytorch_msssim import ssim
 
+class SobelLoss(nn.Module):
+    def __init__(self):
+        super(SobelLoss, self).__init__()
+
+        # Define Sobel filters
+        self.sobel_x = nn.Parameter(torch.Tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]).view(1, 1, 3, 3), requires_grad=False)
+        self.sobel_y = nn.Parameter(torch.Tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]]).view(1, 1, 3, 3), requires_grad=False)
+
+    def forward(self, pred, true, mask=None):
+        pred_sobel_x = F.conv2d(pred, self.sobel_x, padding=1)
+        pred_sobel_y = F.conv2d(pred, self.sobel_y, padding=1)
+        
+        true_sobel_x = F.conv2d(true, self.sobel_x, padding=1)
+        true_sobel_y = F.conv2d(true, self.sobel_y, padding=1)
+        
+        if mask is not None:
+            pred_sobel_x, true_sobel_x = pred_sobel_x[:, :, ~mask], true_sobel_x[:, :, ~mask]
+            pred_sobel_y, true_sobel_y = pred_sobel_y[:, :, ~mask], true_sobel_y[:, :, ~mask]
+
+        loss_x = F.mse_loss(pred_sobel_x, true_sobel_x)
+        loss_y = F.mse_loss(pred_sobel_y, true_sobel_y)
+
+        return loss_x + loss_y
+    
+class MSE_masked(nn.Module):
+    def __init__(self):
+        super(MSE_masked, self).__init__()
+
+    def forward(self, pred, true, mask=None):
+        
+        if mask is not None:
+            pred, true = pred[:, ~mask], true[:, ~mask]
+
+        return F.mse_loss(pred, true)
+
 class MSE_NIIEE(nn.Module):
     def __init__(self):
         super(MSE_NIIEE, self).__init__()
@@ -53,14 +88,83 @@ class NIIEE(nn.Module):
         return loss
     
 class MSE_SSIM(nn.Module):
-    def __init__(self, mask):
+    def __init__(self):
         super(MSE_SSIM, self).__init__()
         self.mse = torch.nn.MSELoss()
         self.ssim = ssim
-        self.mask = mask
         
     def forward(self, output, target):
-        loss = 0.1*self.ssim(output.unsqueeze(1), target.unsqueeze(1), data_range=1) + self.mse(output[:, ~self.mask], target[:, ~self.mask])
+        loss = 0.1*self.ssim(output.unsqueeze(1), target.unsqueeze(1), data_range=1) + self.mse(output, target)
+        return loss
+    
+class MSE_Sobel(nn.Module):
+    def __init__(self):
+        super(MSE_Sobel, self).__init__()
+        self.mse = MSE_masked()
+        self.sobel = SobelLoss()
+        
+    def forward(self, output, target, mask=None):
+        loss = 0.01*self.sobel(output.moveaxis(-1, 1), target.moveaxis(-1, 1), mask) + self.mse(output, target, mask)
+        return loss
+    
+# class MSE_SIP(nn.Module):
+#     def __init__(self):
+#         super(MSE_SIP, self).__init__()
+#         self.mse = torch.nn.MSELoss()
+        
+#     def sip_loss(self, pred, true):
+#         return 1
+        
+#     def forward(self, output, target):
+#         loss = self.sip_loss(output, target) + self.mse(output, target)
+#         return loss
+    
+class MSE_SIP(nn.Module):
+    def __init__(self):
+        super(MSE_SIP, self).__init__()
+        
+    def weight_func(self, x):
+        return 4*(x-0.5)**2 + 1
+        
+    def forward(self, output, target, mask=None, weights=None):
+        if mask is not None:
+            output, target = output[:, ~mask], target[:, ~mask]
+        # alpha_tensor = ((target < 0.15) | (target > 0.85)) * (alpha-1) + 1
+        alpha_tensor = self.weight_func(target)
+        loss = (output - target) ** 2
+        # loss = (loss * alpha_tensor)
+        # if weights is not None:
+            # loss = loss * weights[None, :, None]
+        return loss.mean()
+    
+class BCE(nn.Module):
+    def __init__(self):
+        super(BCE, self).__init__()
+        self.bce = torch.nn.BCELoss(reduction='none')
+        
+    def forward(self, output, target, mask=None, weights=None):
+        if mask is not None:
+            output, target = output[:, ~mask], target[:, ~mask]
+        
+        # output, target  = output > 0.15, target > 0.15
+        # output = torch.sigmoid(output)
+        target  = (target > 0.15).float()
+        loss = self.bce(output, target)
+        
+        if weights is not None:
+            loss = loss * weights[None, :, None]
+        return loss.mean()
+
+class MSE_SIP_bin(nn.Module):
+    def __init__(self):
+        super(MSE_SIP_bin, self).__init__()
+        self.mse = MSE_SIP()
+        self.bce = BCE()
+        
+    def forward(self, output, target, mask=None, weights=None, alpha=1):
+        mse_loss = self.mse(output, target, mask, weights)
+        bce_loss = self.bce(output, target, mask, weights) * 0.1
+        loss = alpha * mse_loss + (1-alpha) * bce_loss
         return loss
 
 
@@ -208,11 +312,14 @@ class NextFramePredictorS2S(NextFramePredictor):
         # self.loss_func = MSE_NIIEE() if not self.binary else torch.nn.BCELoss()
         # self.loss_func_name = 'MSE+0.1NIEE' if not self.binary else 'BCE'  # For printing
         
-        self.loss_func = torch.nn.MSELoss() if not self.binary else torch.nn.BCELoss()
-        self.loss_func_name = 'MSE' if not self.binary else 'BCE'  # For printing
+        # self.loss_func = torch.nn.MSELoss() if not self.binary else torch.nn.BCELoss()
+        # self.loss_func_name = 'MSE' if not self.binary else 'BCE'  # For printing
         
-        # self.loss_func = MSE_SSIM(mask) if not self.binary else torch.nn.BCELoss()
-        # self.loss_func_name = 'MSE_SSIM' if not self.binary else 'BCE'  # For printing
+        # self.loss_func = MSE_weighted() if not self.binary else torch.nn.BCELoss()
+        # self.loss_func_name = 'MSE' if not self.binary else 'BCE'  # For printing
+        
+        self.loss_func = MSE_SIP_bin() if not self.binary else torch.nn.BCELoss()
+        self.loss_func_name = 'MSE_SSIM' if not self.binary else 'BCE'  # For printing
         
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=0.01)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)#, weight_decay=0.001)
@@ -290,12 +397,15 @@ class NextFramePredictorS2S(NextFramePredictor):
                             )
                         # print(y_hat[0].dtype, y_hat_mappings[0].dtype)
                         # with amp.autocast(enabled=False):
-                            # y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
-                            # y_hat = torch.stack(y_hat, dim=0)
+                        #     if graph_structure is not None:
+                        #         y_hat = unflatten(torch.stack(y_hat), graph_structure['mapping'], image_shape, mask)
+                        #     else:
+                        #         y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
+                        #         y_hat = torch.stack(y_hat, dim=0)
                         
                         # loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
                         y_hat = torch.stack(y_hat, dim=0)
-                        loss = self.loss_func(y_hat, y)  
+                        loss = self.loss_func(y_hat, y, weights=graph_structure['n_pixels_per_node'])  
                         
                         self.scaler.scale(loss).backward()
                         self.scaler.unscale_(self.optimizer)
@@ -364,7 +474,8 @@ class NextFramePredictorS2S(NextFramePredictor):
                         y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(len(y_hat))]
                         y_hat = torch.stack(y_hat, dim=0)
                         
-                        loss = self.loss_func(y_hat[:, ~mask], y[unroll_steps][:, ~mask])  
+                        # loss = self.loss_func(y_hat[:, ~mask], y[unroll_steps][:, ~mask])  
+                        loss = self.loss_func(y_hat, y[unroll_steps])  
                         loss.backward(retain_graph=True)
 
                         # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=.5)
@@ -405,12 +516,15 @@ class NextFramePredictorS2S(NextFramePredictor):
                             graph_structure=graph_structure
                             )
                         # with amp.autocast(enabled=False):
-                            # y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
-                            # y_hat = torch.stack(y_hat, dim=0)
+                        #     if graph_structure is not None:
+                        #         y_hat = unflatten(torch.stack(y_hat), graph_structure['mapping'], image_shape, mask)
+                        #     else:
+                        #         y_hat = [unflatten(y_hat[i], y_hat_mappings[i], image_shape, mask) for i in range(self.output_timesteps)]
+                        #         y_hat = torch.stack(y_hat, dim=0)
                     
                         # loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
                         y_hat = torch.stack(y_hat, dim=0)
-                        loss = self.loss_func(y_hat, y)  
+                        loss = self.loss_func(y_hat, y, weights=graph_structure['n_pixels_per_node'])  
 
                 step_test += 1
                 running_loss_test += loss

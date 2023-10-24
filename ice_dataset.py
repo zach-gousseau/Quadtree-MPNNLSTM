@@ -7,6 +7,44 @@ from torch.utils.data import Dataset
 from model.graph_functions import flatten
 import torch
 
+import numpy as np
+
+def get_positional_encoding(position, d_model):
+    """
+    Compute positional encoding for a given position and model depth (d_model).
+    
+    Args:
+    - position (int): The position of the word in the sequence.
+    - d_model (int): The depth of the model.
+    
+    Returns:
+    - numpy.ndarray: Positional encoding of shape (d_model,)
+    """
+    angle_rates = 1 / np.power(10000, (2 * (np.arange(d_model) // 2)) / np.float32(d_model))
+    angle_rads = position * angle_rates
+    
+    # apply sin to even indices in the array; 2i
+    angle_rads[0::2] = np.sin(angle_rads[0::2])
+    
+    # apply cos to odd indices in the array; 2i+1
+    angle_rads[1::2] = np.cos(angle_rads[1::2])
+    
+    return angle_rads
+
+def positional_encoding(positions, d_model):
+    """
+    Compute positional encodings for a range of positions.
+    
+    Args:
+    - positions (int): Maximum position encoding.
+    - d_model (int): The depth of the model.
+    
+    Returns:
+    - numpy.ndarray: Positional encoding matrix of shape (positions, d_model)
+    """
+    pos_encoding = np.array([get_positional_encoding(pos, d_model) for pos in range(positions)])
+    return pos_encoding
+
 
 from model.utils import add_positional_encoding
 class IceDataset(Dataset):
@@ -22,7 +60,8 @@ class IceDataset(Dataset):
                  y_binary_thresh=None, 
                  graph_structure=None,
                  mask=None,
-                 cache_dir=None
+                 cache_dir=None,
+                 flatten_y=True,
                  ):
         self.train = train
         
@@ -37,7 +76,8 @@ class IceDataset(Dataset):
             y_binary_thresh=y_binary_thresh, 
             graph_structure=graph_structure, 
             mask=mask,
-            cache_dir=cache_dir
+            cache_dir=cache_dir,
+            flatten_y=flatten_y,
             )
         self.image_shape = (ds.latitude.size, ds.longitude.size)
 
@@ -47,7 +87,7 @@ class IceDataset(Dataset):
     def __getitem__(self, idx):
         return self.x[idx], self.y[idx], self.launch_dates[idx]
 
-    def get_xy(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None, y_binary_thresh=None, graph_structure=None, mask=None, cache_dir=None):
+    def get_xy(self, ds, years, month, input_timesteps, output_timesteps, x_vars=None, y_vars=None, y_binary_thresh=None, graph_structure=None, mask=None, cache_dir=None, flatten_y=True):
         
         if cache_dir is not None:
             dataset_id = f'LA{ds.latitude.min().values.item()}_{ds.latitude.max().values.item()}_LO{ds.longitude.min().values.item()}_{ds.longitude.max().values.item()}' + \
@@ -104,7 +144,6 @@ class IceDataset(Dataset):
             
             # Add DOY
             ds_year['doy'] = (('time', 'latitude', 'longitude'), ds_year.time.dt.dayofyear.values.reshape(-1, 1, 1) * np.ones(shape=(ds_year[x_vars[0]].shape)))
-            
             ds_year = (ds_year - ds_year.min()) / (ds_year.max() - ds_year.min())
 
             num_samples = ds_year.time.size - output_timesteps - input_timesteps
@@ -133,7 +172,13 @@ class IceDataset(Dataset):
             np.save(os.path.join(cache_dir, 'launch_dates.npy'), launch_dates)
             
         if graph_structure is not None:
-            x, y = self.flatten_xy_chunked(x, y, graph_structure, mask)
+            x, y = self.flatten_xy_chunked(x, y, graph_structure, mask, flatten_y=flatten_y)
+            # pos_encoding = positional_encoding(x.shape[-2], x.shape[-1])
+            # pos_encoding = np.expand_dims(np.expand_dims(pos_encoding, 0), 0)
+            # pos_encoding = np.repeat(pos_encoding, x.shape[0], axis=0)
+            # pos_encoding = np.repeat(pos_encoding, x.shape[1], axis=1)
+            # x = x + pos_encoding
+            # x = np.concatenate([x, pos_encoding.astype('float32')], -1)
             
         if y_binary_thresh is not None:
             y = y > y_binary_thresh
@@ -147,7 +192,7 @@ class IceDataset(Dataset):
         x = torch.Tensor(x.reshape(x_shape[0]*x_shape[1], *x_shape[2:])).to(graph_structure['mapping'].device)  # Flatten first two dims
         x = add_positional_encoding(x)
         x = flatten(x, graph_structure['mapping'], graph_structure['n_pixels_per_node'], mask)
-        node_sizes = torch.Tensor(graph_structure['n_pixels_per_node']) / ((4/2)**2)  # TODO: Don't assume 4 !!
+        node_sizes = torch.Tensor(graph_structure['n_pixels_per_node']) / (graph_structure['max_cell_size']**2)
         node_sizes = node_sizes.repeat((x.shape[0], *[1]*len(node_sizes.shape)))
         x = torch.cat([x, node_sizes.unsqueeze(-1)], -1)
         x = np.array(x.detach().cpu()).reshape(*x_shape[:2], *x.shape[1:])  # Unflatten first two dims
@@ -158,7 +203,7 @@ class IceDataset(Dataset):
         y = np.array(y.detach().cpu()).reshape(*y_shape[:2], *y.shape[1:])  # Unflatten first two dims
         return x, y
     
-    def flatten_xy_chunked(self, x, y, graph_structure, mask, chunk_size=100):
+    def flatten_xy_chunked(self, x, y, graph_structure, mask, chunk_size=100, flatten_y=True):
         total_samples = len(x)
         num_chunks = (total_samples + chunk_size - 1) // chunk_size
 
@@ -174,4 +219,7 @@ class IceDataset(Dataset):
             results_x.extend(np.array(results_x_chunk))
             results_y.extend(np.array(results_y_chunk))
 
-        return np.array(results_x), np.array(results_y)
+        if flatten_y:
+            return np.array(results_x), np.array(results_y)
+        else:
+            return results_x, y

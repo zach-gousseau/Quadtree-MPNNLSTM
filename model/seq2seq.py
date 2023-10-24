@@ -211,6 +211,8 @@ class Decoder(torch.nn.Module):
         # output = output + X[:, [0]]  
         # output = output + concat_layers[:, [0]]
         output = output + y_initial
+        output = torch.clamp(output, min=0, max=1) 
+        # output = torch.sigmoid(output)
 
         if self.binary:
             output = torch.sigmoid(output)
