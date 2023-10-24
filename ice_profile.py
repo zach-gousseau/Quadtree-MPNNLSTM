@@ -216,7 +216,8 @@ if __name__ == '__main__':
         
         ds = xr.Dataset(
             data_vars=dict(
-                y_hat=(["launch_date", "timestep", "latitude", "longitude"], val_preds.squeeze(-1)),
+                y_hat=(["launch_date", "timestep", "latitude", "longitude"], val_preds[..., 0]),
+                y_hat_sip=(["launch_date", "timestep", "latitude", "longitude"], val_preds[..., 1]),
                 y_true=(["launch_date", "timestep", "latitude", "longitude"], y_true.squeeze(-1)),
             ),
             coords=dict(
@@ -226,17 +227,21 @@ if __name__ == '__main__':
                 timestep=np.arange(1, output_timesteps+1),
             ),
         )
-        
+
         fns = []
         for ts in range(output_timesteps):
             year = 2013
-            fig, axs=plt.subplots(1, 2, figsize=(12, 4))
-            ds.isel(launch_date=5, timestep=ts).y_hat.where(~mask).plot(vmin=0, vmax=1, ax=axs[1])
+            fig, axs=plt.subplots(1, 4, figsize=(20, 4))
+            ds.isel(launch_date=5, timestep=ts).y_hat.where(~mask).plot(vmin=0, vmax=1, ax=axs[2])
+            ds.isel(launch_date=5, timestep=ts).y_hat_sip.where(~mask).plot(vmin=0, vmax=1, ax=axs[3])
             ds.isel(launch_date=5, timestep=ts).y_true.where(~mask).plot(vmin=0, vmax=1, ax=axs[0])
-            axs[0].set_title(f'True ({str(datetime.datetime(year, month, 15))[:10]}, step {ts})')
-            axs[1].set_title(f'Pred ({str(datetime.datetime(year, month, 15))[:10]}, step {ts})')
+            (ds.isel(launch_date=5, timestep=ts).y_true>0.15).where(~mask).plot(vmin=0, vmax=1, ax=axs[1])
+            axs[0].set_title(f'True ({str(datetime.datetime(year, month, 5))[:10]}, step {ts})')
+            axs[1].set_title(f'True ({str(datetime.datetime(year, month, 5))[:10]}, step {ts})')
+            axs[2].set_title(f'Pred ({str(datetime.datetime(year, month, 5))[:10]}, step {ts})')
+            axs[3].set_title(f'Pred ({str(datetime.datetime(year, month, 5))[:10]}, step {ts})')
             plt.tight_layout()
-            fn = f'scratch/gif/{str(datetime.datetime(year, month, 15))[:10]}_{ts}.png'
+            fn = f'scratch/gif/{str(datetime.datetime(year, month, 5))[:10]}_{ts}.png'
             fns.append(fn)
             plt.savefig(fn)
             plt.close()
@@ -254,7 +259,7 @@ if __name__ == '__main__':
         for fn in fns:
             os.remove(fn)
             
-        
+
         ds.to_netcdf(f'{directory}/valpredictions_{experiment_name}.nc')
 
         model.loss.to_csv(f'{directory}/loss_{experiment_name}.csv')

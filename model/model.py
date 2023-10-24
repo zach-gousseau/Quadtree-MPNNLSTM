@@ -64,7 +64,7 @@ class GINEConvMLP(torch.nn.Module):
     def __init__(self, in_channels, out_channels, **conv_kwargs):
         super(GINEConvMLP, self).__init__()
         
-        hidden_size = out_channels if out_channels != 1 else in_channels
+        hidden_size = out_channels if out_channels > 2 else in_channels
     
         mlp = nn.Sequential(
                         nn.Linear(in_channels, hidden_size),

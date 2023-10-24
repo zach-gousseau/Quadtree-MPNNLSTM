@@ -26,9 +26,9 @@ from model.graph_functions import create_static_heterogeneous_graph, create_stat
 
 if __name__ == '__main__':
 
-    np.random.seed(42)
-    random.seed(42)
-    torch.manual_seed(42)
+    np.random.seed(41)
+    random.seed(41)
+    torch.manual_seed(41)
 
     start = time.time()
 
@@ -236,7 +236,7 @@ if __name__ == '__main__':
         multires_training = False
         preset_mesh = 'heterogeneous'
         rnn_type = 'NoConvLSTM'
-        n_epochs = [50]
+        n_epochs = [45]
         lr = 0.001
         directory = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_1decoders'
         n_conv_layers = 6
@@ -256,7 +256,14 @@ if __name__ == '__main__':
         n_epochs = [30]
         lr = 0.001
         directory = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_1decoders_transformer_homo'
-
+    elif exp == 36:
+        convolution_type = 'GINEConv'
+        multires_training = False
+        preset_mesh = 'heterogeneous'
+        rnn_type = 'NoConvLSTM'
+        n_epochs = [45]
+        lr = 0.001
+        directory = f'results/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_1decoders_gine'
         
         
     use_edge_attrs = False if convolution_type == 'GCNConv' else True
@@ -279,16 +286,10 @@ if __name__ == '__main__':
 
     # Full resolution datasets
     data_train_1 = IceDataset(ds, training_years_1, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
-    # data_train_2 = IceDataset(ds, training_years_2, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
-    # data_train_3 = IceDataset(ds, training_years_3, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
-    # data_train_4 = IceDataset(ds, training_years_4, month, input_timesteps, output_timesteps, x_vars, y_vars, train=True, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
     data_test = IceDataset(ds, range(training_years_4[-1]+1, training_years_4[-1]+1+2), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
-    data_val = IceDataset(ds, range(training_years_4[-1]+1+2+1-2-1, training_years_4[-1]+1+2+1+4-1), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
+    data_val = IceDataset(ds, range(training_years_4[-1]+1+2+1-2-1, training_years_4[-1]+1+2+1+4-1), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=None, flatten_y=False)
 
     loader_train_1 = DataLoader(data_train_1, batch_size=1, shuffle=True)
-    # loader_train_2 = DataLoader(data_train_2, batch_size=1, shuffle=True)
-    # loader_train_3 = DataLoader(data_train_3, batch_size=1, shuffle=True)
-    # loader_train_4 = DataLoader(data_train_4, batch_size=1, shuffle=True)
     loader_test = DataLoader(data_test, batch_size=1, shuffle=True)
     loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
 
@@ -350,42 +351,6 @@ if __name__ == '__main__':
         truncated_backprop=truncated_backprop,
         graph_structure=graph_structure,
         )
-    
-    # model.train(
-    #     loader_train_2,
-    #     loader_test,
-    #     climatology,
-    #     lr=lr,
-    #     n_epochs=n_epochs[1],
-    #     mask=mask,
-    #     truncated_backprop=truncated_backprop,
-    #     graph_structure=graph_structure,
-    #     ) 
- 
-    # model.train(
-    #     loader_train_3,
-    #     loader_test,
-    #     climatology,
-    #     lr=lr,
-    #     n_epochs=n_epochs[2],
-    #     mask=mask,
-    #     truncated_backprop=truncated_backprop,
-    #     graph_structure=graph_structure,
-    #     ) 
-  
-    # model.train(
-    #     loader_train_4,
-    #     loader_test,
-    #     climatology,
-    #     lr=lr,
-    #     n_epochs=n_epochs[1],
-    #     mask=mask,
-    #     truncated_backprop=truncated_backprop,
-    #     graph_structure=graph_structure,
-    #     ) 
-
-    # Save model and losses
-    # directory = f'results/ice_results_20years_glorys_6conv_f32'
 
     model.loss.to_csv(f'{directory}/loss_{experiment_name}.csv')
     model.load(directory)
@@ -403,14 +368,16 @@ if __name__ == '__main__':
     # Save results
     launch_dates = [int_to_datetime(t) for t in loader_val.dataset.launch_dates]
     
-    if graph_structure is not None:
-        y_true = torch.Tensor(loader_val.dataset.y)
-        y_true = torch.stack([unflatten(y_true[i].to(device), graph_structure['mapping'], image_shape, mask).detach().cpu() for i in range(y_true.shape[0])])
-        y_true = np.array(y_true)
+    # if graph_structure is not None:
+    #     y_true = torch.Tensor(loader_val.dataset.y)
+    #     y_true = torch.stack([unflatten(y_true[i].to(device), graph_structure['mapping'], image_shape, mask).detach().cpu() for i in range(y_true.shape[0])])
+    #     y_true = np.array(y_true)
+    y_true = loader_val.dataset.y
 
     ds = xr.Dataset(
         data_vars=dict(
-            y_hat=(["launch_date", "timestep", "latitude", "longitude"], val_preds.squeeze(-1).astype('float')),
+            y_hat_sic=(["launch_date", "timestep", "latitude", "longitude"], val_preds[..., 0].astype('float')),
+            y_hat_sip=(["launch_date", "timestep", "latitude", "longitude"], val_preds[..., 1].astype('float')),
             y_true=(["launch_date", "timestep", "latitude", "longitude"], y_true.squeeze(-1).astype('float')),
         ),
         coords=dict(

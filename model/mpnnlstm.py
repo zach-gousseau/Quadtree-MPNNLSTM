@@ -166,6 +166,18 @@ class MSE_SIP_bin(nn.Module):
         bce_loss = self.bce(output, target, mask, weights) * 0.1
         loss = alpha * mse_loss + (1-alpha) * bce_loss
         return loss
+    
+class MSE_SIP_bin_sep(nn.Module):
+    def __init__(self):
+        super(MSE_SIP_bin_sep, self).__init__()
+        self.mse = MSE_SIP()
+        self.bce = BCE()
+        
+    def forward(self, output, target, mask=None, weights=None):
+        mse_loss = self.mse(output[..., [0]], target, mask, weights)
+        bce_loss = self.bce(output[..., [1]], target, mask, weights) * 0.1
+        loss = mse_loss + bce_loss
+        return loss
 
 
 class NextFramePredictor(ABC):
@@ -318,7 +330,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         # self.loss_func = MSE_weighted() if not self.binary else torch.nn.BCELoss()
         # self.loss_func_name = 'MSE' if not self.binary else 'BCE'  # For printing
         
-        self.loss_func = MSE_SIP_bin() if not self.binary else torch.nn.BCELoss()
+        self.loss_func = MSE_SIP_bin_sep() if not self.binary else torch.nn.BCELoss()
         self.loss_func_name = 'MSE_SSIM' if not self.binary else 'BCE'  # For printing
         
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=0.01)

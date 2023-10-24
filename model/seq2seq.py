@@ -139,7 +139,7 @@ class Decoder(torch.nn.Module):
         # self.fc_out3 = Linear(in_channels=hidden_size, out_channels=1)
         self.gnn_out1 = conv_func(in_channels=in_channels, out_channels=hidden_size, **conv_func_kwargs)
         # self.gnn_out2 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
-        self.gnn_out2 = conv_func(in_channels=hidden_size, out_channels=1, **conv_func_kwargs)
+        self.gnn_out2 = conv_func(in_channels=hidden_size, out_channels=2, **conv_func_kwargs)
         
         # torch.nn.init.zeros_(self.fc_out1.weight)
         # torch.nn.init.zeros_(self.fc_out1.bias)
@@ -205,14 +205,18 @@ class Decoder(torch.nn.Module):
         output = self.mlp_out(output, edge_index, edge_weight)
 
         # Squeeze everything to (-1, 1)
-        output = torch.tanh(output)
+        # output = torch.tanh(output)
         
         # Add to previous step's SIC map, OR to the launch date's SIC map (not used)
         # output = output + X[:, [0]]  
         # output = output + concat_layers[:, [0]]
         output = output + y_initial
-        output = torch.clamp(output, min=0, max=1) 
-        # output = torch.sigmoid(output)
+        # output[..., 1] = torch.clamp(output[..., 1], min=0, max=1) 
+        # sip = torch.sigmoid(output[..., [1]])
+        # sic = torch.clamp(output[..., [0]], min=0, max=1) 
+        # output = torch.cat((sic, sip), dim=-1)
+
+        output = torch.sigmoid(output)
 
         if self.binary:
             output = torch.sigmoid(output)
@@ -272,7 +276,7 @@ class Seq2Seq(torch.nn.Module):
             dummy=dummy,
             )
         self.decoder_1 = Decoder(
-            1+3,  # 1 output variable + 3 (positional encoding and node_size)
+            2+3,  # 1 output variable + 3 (positional encoding and node_size)
             hidden_size,
             dropout,
             n_layers=n_layers,
@@ -418,6 +422,10 @@ class Seq2Seq(torch.nn.Module):
         
         # First input to the decoder is the last input to the encoder 
         self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -3, -2, -1]]  # Node size
+        
+        # Add SIP and reorder as [SIC, SIP, x, y, node_size]
+        self.graph.pyg.x = torch.cat([(self.graph.pyg.x[..., [0]] > 0.15).float(), self.graph.pyg.x], -1)
+        self.graph.pyg.x = self.graph.pyg.x[:, [1, 0, 2, 3, 4]]
         # self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -2, -1]]
 
 
@@ -470,7 +478,7 @@ class Seq2Seq(torch.nn.Module):
                 edge_index=self.graph.pyg.edge_index,
                 edge_weight=self.graph.pyg.edge_attr, 
                 concat_layers=self.graph.concat_layers if hasattr(self.graph, 'concat_layers') else None,
-                y_initial=self.graph.persistence,
+                y_initial=self.graph.pyg.x[:, :2],#self.graph.persistence,
                 H=self.graph.hidden, 
                 C=self.graph.cell
                 )
@@ -518,7 +526,7 @@ class Seq2Seq(torch.nn.Module):
             high_interest_region=high_interest_region,
             remesh_every=remesh_every
             )
-            
+
         return outputs, output_mappings
 
     def update_without_remesh(self, data, hidden, cell, teacher_force=False, teacher_input=None):
@@ -530,7 +538,7 @@ class Seq2Seq(torch.nn.Module):
             # self.graph.pyg.x = torch.cat([self.graph.pyg.x, self.graph.n_pixels_per_node.unsqueeze(-1)], dim=-1)  # Add node sizes
         else:
             # Add positional encoding
-            pos_encoding = self.graph.pyg.x[..., 1:]
+            pos_encoding = self.graph.pyg.x[..., 2:]
             self.graph.pyg.x = torch.cat([data, pos_encoding], dim=-1)
 
         self.graph.hidden = hidden
