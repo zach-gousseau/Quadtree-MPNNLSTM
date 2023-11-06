@@ -131,6 +131,7 @@ class MSE_SIP(nn.Module):
             output, target = output[:, ~mask], target[:, ~mask]
         # alpha_tensor = ((target < 0.15) | (target > 0.85)) * (alpha-1) + 1
         alpha_tensor = self.weight_func(target)
+        # output = torch.sigmoid(output)
         loss = (output - target) ** 2
         # loss = (loss * alpha_tensor)
         # if weights is not None:
@@ -140,7 +141,8 @@ class MSE_SIP(nn.Module):
 class BCE(nn.Module):
     def __init__(self):
         super(BCE, self).__init__()
-        self.bce = torch.nn.BCELoss(reduction='none')
+        # self.bce = torch.nn.BCELoss(reduction='none')
+        self.bce = torch.nn.BCEWithLogitsLoss(reduction='none')
         
     def forward(self, output, target, mask=None, weights=None):
         if mask is not None:

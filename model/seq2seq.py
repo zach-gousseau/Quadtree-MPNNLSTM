@@ -93,7 +93,7 @@ class Encoder(torch.nn.Module):
         return hidden, cell
 
 class Decoder(torch.nn.Module):
-    def __init__(self, input_features, hidden_size, dropout, n_layers=1, concat_layers_dim=3, convolution_type='GCNConv', rnn_type='LSTM', n_conv_layers=3, binary=False, dummy=False):
+    def __init__(self, input_features, hidden_size, dropout, n_layers=1, concat_layers_dim=3, convolution_type='GCNConv', rnn_type='LSTM', n_conv_layers=3, binary=False, dummy=False, multitask=True):
         super().__init__()
 
         assert rnn_type in ['GRU', 'LSTM', 'SplitLSTM', 'NoConvLSTM']
@@ -115,6 +115,7 @@ class Decoder(torch.nn.Module):
         self.n_layers = n_layers
         self.binary = binary
         self.dummy = dummy
+        self.multitask = multitask
 
         n_conv_layers = 1  # Hard-coded single convolutional layer in the decoder (TODO: make this not hard coded.)
 
@@ -137,9 +138,10 @@ class Decoder(torch.nn.Module):
         # self.fc_out1 = Linear(in_channels=in_channels, out_channels=hidden_size)
         # self.fc_out2 = Linear(in_channels=hidden_size, out_channels=hidden_size)
         # self.fc_out3 = Linear(in_channels=hidden_size, out_channels=1)
+        outdim = 2 if self.multitask else 1
         self.gnn_out1 = conv_func(in_channels=in_channels, out_channels=hidden_size, **conv_func_kwargs)
         # self.gnn_out2 = conv_func(in_channels=hidden_size, out_channels=hidden_size, **conv_func_kwargs)
-        self.gnn_out2 = conv_func(in_channels=hidden_size, out_channels=2, **conv_func_kwargs)
+        self.gnn_out2 = conv_func(in_channels=hidden_size, out_channels=outdim, **conv_func_kwargs)  # MULTITASK
         
         # torch.nn.init.zeros_(self.fc_out1.weight)
         # torch.nn.init.zeros_(self.fc_out1.bias)
@@ -204,19 +206,23 @@ class Decoder(torch.nn.Module):
         # Pass output through the final GNN to reduce to desired dimensionality
         output = self.mlp_out(output, edge_index, edge_weight)
 
-        # Squeeze everything to (-1, 1)
-        # output = torch.tanh(output)
+        # Squeeze everything to (-1, 1)  # TODO REMOVE THIS BANDAID
+        if not self.multitask:
+            output = torch.tanh(output)
         
         # Add to previous step's SIC map, OR to the launch date's SIC map (not used)
         # output = output + X[:, [0]]  
         # output = output + concat_layers[:, [0]]
         output = output + y_initial
         # output[..., 1] = torch.clamp(output[..., 1], min=0, max=1) 
-        # sip = torch.sigmoid(output[..., [1]])
-        # sic = torch.clamp(output[..., [0]], min=0, max=1) 
-        # output = torch.cat((sic, sip), dim=-1)
+        
+        # MULTITASK
+        if self.multitask:
+            sic = torch.sigmoid(output[..., [0]])
+            sip = output[..., [1]]
+            output = torch.cat((sic, sip), dim=-1)
 
-        output = torch.sigmoid(output)
+        # output = torch.sigmoid(output)
 
         if self.binary:
             output = torch.sigmoid(output)
@@ -235,6 +241,8 @@ class Decoder(torch.nn.Module):
         return x
     
     def gnn(self, x, edge_index, edge_weight):
+        # print(x.shape)
+        # print(self.gnn1)
         x = self.gnn1(x, edge_index, edge_weight)
         x = F.leaky_relu(x)
         # x = self.gnn2(x, edge_index, edge_weight)
@@ -262,7 +270,8 @@ class Seq2Seq(torch.nn.Module):
                  image_shape=None,
                  dummy=False,
                  device=None,
-                 debug=False):
+                 debug=False,
+                 multitask=True):
         super().__init__()
         
         self.encoder = Encoder(
@@ -276,7 +285,7 @@ class Seq2Seq(torch.nn.Module):
             dummy=dummy,
             )
         self.decoder_1 = Decoder(
-            2+3,  # 1 output variable + 3 (positional encoding and node_size)
+            1+3 if not multitask else 2+3,  # 1 output variable + 3 (positional encoding and node_size)  # MULTITASK
             hidden_size,
             dropout,
             n_layers=n_layers,
@@ -286,6 +295,7 @@ class Seq2Seq(torch.nn.Module):
             n_conv_layers=n_conv_layers,
             binary=binary,
             dummy=dummy,
+            multitask=multitask
             )
         
         # self.decoder_2 = Decoder(
@@ -324,6 +334,7 @@ class Seq2Seq(torch.nn.Module):
         self.image_shape = image_shape
 
         self.convolution_type = convolution_type
+        self.multitask = multitask
 
         # These convolutions can accept edge attributes, the others cannot.
         if convolution_type in ['MHTransformerConv', 'TransformerConv', 'GATConv']:
@@ -423,9 +434,11 @@ class Seq2Seq(torch.nn.Module):
         # First input to the decoder is the last input to the encoder 
         self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -3, -2, -1]]  # Node size
         
-        # Add SIP and reorder as [SIC, SIP, x, y, node_size]
-        self.graph.pyg.x = torch.cat([(self.graph.pyg.x[..., [0]] > 0.15).float(), self.graph.pyg.x], -1)
-        self.graph.pyg.x = self.graph.pyg.x[:, [1, 0, 2, 3, 4]]
+        # Add SIP and reorder as [SIC, SIP, x, y, node_size]  # MULTITASK
+        if self.multitask:
+            self.graph.pyg.x = torch.cat([(self.graph.pyg.x[..., [0]] > 0.15).float(), self.graph.pyg.x], -1)
+            self.graph.pyg.x = self.graph.pyg.x[:, [1, 0, 2, 3, 4]]
+        
         # self.graph.pyg.x = self.graph.pyg.x[-1, :, [0, -2, -1]]
 
 
@@ -478,7 +491,8 @@ class Seq2Seq(torch.nn.Module):
                 edge_index=self.graph.pyg.edge_index,
                 edge_weight=self.graph.pyg.edge_attr, 
                 concat_layers=self.graph.concat_layers if hasattr(self.graph, 'concat_layers') else None,
-                y_initial=self.graph.pyg.x[:, :2],#self.graph.persistence,
+                # y_initial=self.graph.pyg.x[:, :1] if not self.multitask else self.graph.pyg.x[:, :2],#self.graph.persistence,  # MULTITASK
+                y_initial=self.graph.persistence if not self.multitask else self.graph.pyg.x[:, :2],#self.graph.persistence,  # TODO: REMOVE THIS BANDAID
                 H=self.graph.hidden, 
                 C=self.graph.cell
                 )
@@ -538,7 +552,7 @@ class Seq2Seq(torch.nn.Module):
             # self.graph.pyg.x = torch.cat([self.graph.pyg.x, self.graph.n_pixels_per_node.unsqueeze(-1)], dim=-1)  # Add node sizes
         else:
             # Add positional encoding
-            pos_encoding = self.graph.pyg.x[..., 2:]
+            pos_encoding = self.graph.pyg.x[..., 1:]  if not self.multitask else self.graph.pyg.x[..., 2:] # MULTITASK
             self.graph.pyg.x = torch.cat([data, pos_encoding], dim=-1)
 
         self.graph.hidden = hidden
