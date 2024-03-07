@@ -270,12 +270,12 @@ if __name__ == '__main__':
     data_test = IceDataset(ds, range(training_years_4[-1]+1, training_years_4[-1]+1+2), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
     data_val = IceDataset(ds, range(training_years_4[-1]+1+2+1-2, training_years_4[-1]+1+2+1+4), month, input_timesteps, output_timesteps, x_vars, y_vars, graph_structure=graph_structure, mask=mask, cache_dir=cache_dir)
 
-    loader_train_1 = DataLoader(data_train_1, batch_size=1, shuffle=True)
+    loader_train_1 = DataLoader(data_train_1, batch_size=1, shuffle=True, num_workers=2)
     # loader_train_2 = DataLoader(data_train_2, batch_size=1, shuffle=True)
     # loader_train_3 = DataLoader(data_train_3, batch_size=1, shuffle=True)
     # loader_train_4 = DataLoader(data_train_4, batch_size=1, shuffle=True)
-    loader_test = DataLoader(data_test, batch_size=1, shuffle=True)
-    loader_val = DataLoader(data_val, batch_size=1, shuffle=False)
+    loader_test = DataLoader(data_test, batch_size=1, shuffle=True, num_workers=2)
+    loader_val = DataLoader(data_val, batch_size=1, shuffle=False, num_workers=2)
 
     climatology = ds[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
     climatology = torch.tensor(np.nan_to_num(climatology)).to(device)

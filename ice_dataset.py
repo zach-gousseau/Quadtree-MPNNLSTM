@@ -129,7 +129,7 @@ class IceDataset(Dataset):
                 # start_date = datetime.datetime(year, month, 1) - relativedelta(months=1)
                 # end_date = datetime.datetime(year, month, 1) + relativedelta(months=2)
                 start_date = datetime.datetime(year, month, 1) - relativedelta(days=15)
-                end_date = datetime.datetime(year, month, 1) + relativedelta(months=1) + relativedelta(days=1)
+                end_date = datetime.datetime(year, month, 1) + relativedelta(months=1) + relativedelta(days=15)
             else:
                 start_date = datetime.datetime(year, month, 1)
                 end_date = datetime.datetime(year, month, 1) + relativedelta(months=1)

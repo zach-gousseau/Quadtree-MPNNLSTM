@@ -356,6 +356,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         loader_train,
         loader_test,
         climatology=None,
+        climatology_test=None,
         n_epochs=200,
         lr=0.01,
         lr_decay=0.95,
@@ -363,6 +364,7 @@ class NextFramePredictorS2S(NextFramePredictor):
         high_interest_region=None,
         truncated_backprop=45,
         graph_structure=None,
+        graph_structure_test=None,
         ):
 
         image_shape = loader_train.dataset.image_shape
@@ -514,7 +516,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                 x, y = x.squeeze(0).to(self.device), y.squeeze(0).to(self.device)
 
                 if climatology is not None:
-                    concat_layers = self.get_climatology_array(climatology, launch_date)
+                    concat_layers = self.get_climatology_array(climatology_test if climatology_test is not None else climatology, launch_date)
                 else:
                     concat_layers = None
 
@@ -527,7 +529,7 @@ class NextFramePredictorS2S(NextFramePredictor):
                             teacher_forcing_ratio=0, 
                             mask=mask, 
                             high_interest_region=high_interest_region,
-                            graph_structure=graph_structure
+                            graph_structure=graph_structure_test if graph_structure_test is not None else graph_structure
                             )
                         # with amp.autocast(enabled=False):
                         #     if graph_structure is not None:
@@ -538,7 +540,9 @@ class NextFramePredictorS2S(NextFramePredictor):
                     
                         # loss = self.loss_func(y_hat[:, ~mask], y[:, ~mask])  
                         y_hat = torch.stack(y_hat, dim=0)
-                        loss = self.loss_func(y_hat, y, weights=graph_structure['n_pixels_per_node'])  
+                        loss = self.loss_func(y_hat,
+                                              y,
+                                              weights=graph_structure_test['n_pixels_per_node'] if graph_structure_test is not None else graph_structure['n_pixels_per_node'])  
 
                 step_test += 1
                 running_loss_test += loss
