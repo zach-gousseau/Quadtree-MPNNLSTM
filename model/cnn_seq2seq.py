@@ -51,9 +51,10 @@ class CNNEncoder(torch.nn.Module):
         if self.dummy:
             return H, C
 
-        # X shape: (timesteps, batch, channels, height, width)
-        # Take the first timestep
-        X = X[0]  # (batch, channels, height, width)
+        # X shape: (1, channels, height, width) - single timestep
+        # Ensure batch dimension is present
+        if X.dim() == 3:  # Add batch dimension if missing
+            X = X.unsqueeze(0)  # (1, channels, height, width)
 
         _, hidden_layer, cell_layer = self.rnns[0](X, H=H, C=C)
 
@@ -223,7 +224,7 @@ class CNNSeq2Seq(torch.nn.Module):
             )
         
         self.decoder_1 = CNNDecoder(
-            1+3 if not multitask else 2+3,  # 1 output variable + 3 (positional encoding and node_size) -> for CNN we'll use fewer features
+            4,  # [SIC, SIP, x_pos, y_pos] for multitask or [SIC, x_pos, y_pos, constant] for non-multitask
             hidden_size,
             dropout,
             n_layers=n_layers,
@@ -249,10 +250,10 @@ class CNNSeq2Seq(torch.nn.Module):
     def process_inputs(self, x, mask=None):
         """
         Process input images for CNN-LSTM
-        x shape: (timesteps, batch, height, width, channels)
+        x shape: (timesteps, height, width, channels)
         """
-        # Convert to CNN format: (timesteps, batch, channels, height, width)
-        x = x.permute(0, 1, 4, 2, 3)
+        # Convert to CNN format: (timesteps, channels, height, width)
+        x = x.permute(0, 3, 1, 2)
         
         # Store for later use
         self.hidden, self.cell = None, None
@@ -269,28 +270,28 @@ class CNNSeq2Seq(torch.nn.Module):
             self.cell = cell
 
         # Persistence (last input frame)
-        self.persistence = x[-1, :, [0]]  # Take first channel of last timestep
+        self.persistence = x[-1, [0]]  # Take first channel of last timestep
         
         # First input to the decoder is the last input to the encoder 
         # For CNN, we'll use fewer channels than the GNN version
         if self.multitask:
             # [SIC, SIP, x_pos, y_pos] - simplified positional encoding
-            batch, _, height, width = x[-1].shape
-            x_pos = torch.linspace(-1, 1, width).view(1, 1, 1, width).expand(batch, 1, height, width).to(x.device)
-            y_pos = torch.linspace(-1, 1, height).view(1, 1, height, 1).expand(batch, 1, height, width).to(x.device)
+            channels, height, width = x[-1].shape
+            x_pos = torch.linspace(-1, 1, width).view(1, 1, width).expand(1, height, width).to(x.device)
+            y_pos = torch.linspace(-1, 1, height).view(1, height, 1).expand(1, height, width).to(x.device)
             
-            sic = x[-1, :, [0]]  # SIC channel
+            sic = x[-1, [0]]  # SIC channel
             sip = (sic > 0.15).float()  # SIP derived from SIC
             
-            self.decoder_input = torch.cat([sic, sip, x_pos, y_pos], dim=1)
+            self.decoder_input = torch.cat([sic, sip, x_pos, y_pos], dim=0).unsqueeze(0)  # Add batch dimension
         else:
             # [SIC, x_pos, y_pos, constant]
-            batch, _, height, width = x[-1].shape
-            x_pos = torch.linspace(-1, 1, width).view(1, 1, 1, width).expand(batch, 1, height, width).to(x.device)
-            y_pos = torch.linspace(-1, 1, height).view(1, 1, height, 1).expand(batch, 1, height, width).to(x.device)
-            constant = torch.ones(batch, 1, height, width).to(x.device)
+            channels, height, width = x[-1].shape
+            x_pos = torch.linspace(-1, 1, width).view(1, 1, width).expand(1, height, width).to(x.device)
+            y_pos = torch.linspace(-1, 1, height).view(1, height, 1).expand(1, height, width).to(x.device)
+            constant = torch.ones(1, height, width).to(x.device)
             
-            self.decoder_input = torch.cat([x[-1, :, [0]], x_pos, y_pos, constant], dim=1)
+            self.decoder_input = torch.cat([x[-1, [0]], x_pos, y_pos, constant], dim=0).unsqueeze(0)  # Add batch dimension
 
     def unroll_output(self, unroll_steps, y, concat_layers=None, teacher_forcing_ratio=0.5, mask=None):
         """
@@ -315,9 +316,11 @@ class CNNSeq2Seq(torch.nn.Module):
             
             # Process concat layers if provided
             if concat_layers is not None:
-                # concat_layers should be in format (batch, channels, height, width)
-                concat_layers_t = torch.cat([concat_layers[t], (torch.ones_like(concat_layers[t][:, [0]]) * t)/self.output_timesteps], dim=1)
-                self.concat_layers = concat_layers_t
+                # concat_layers[t] has shape (channels, height, width)
+                # Add timestep information as an additional channel
+                timestep_channel = (torch.ones_like(concat_layers[t][[0]]) * t) / self.output_timesteps
+                concat_layers_t = torch.cat([concat_layers[t], timestep_channel], dim=0)  # Concatenate along channel dimension
+                self.concat_layers = concat_layers_t.unsqueeze(0)  # Add batch dimension for decoder
             else:
                 concat_layers_t = None
 
@@ -327,7 +330,7 @@ class CNNSeq2Seq(torch.nn.Module):
             output, hidden, cell = decoder(
                 X=self.decoder_input,
                 concat_layers=self.concat_layers if hasattr(self, 'concat_layers') else None,
-                y_initial=self.persistence if not self.multitask else self.decoder_input[:, :2],
+                y_initial=self.persistence.unsqueeze(0) if not self.multitask else self.decoder_input[:, :1],
                 H=self.hidden, 
                 C=self.cell
                 )
@@ -336,7 +339,7 @@ class CNNSeq2Seq(torch.nn.Module):
 
             # Decide whether to use prediction or ground truth for next step
             teacher_force = random.random() < teacher_forcing_ratio
-            teacher_input = y[t] if teacher_force else None
+            teacher_input = y[t] if (teacher_force and y is not None) else None
 
             self.update_without_remesh(output, hidden, cell, teacher_force=teacher_force, teacher_input=teacher_input)
 
@@ -345,7 +348,7 @@ class CNNSeq2Seq(torch.nn.Module):
     def forward(self, x, y=None, concat_layers=None, teacher_forcing_ratio=0.5, mask=None, **kwargs):
         """
         Forward pass for CNN Seq2Seq
-        x shape: (timesteps, batch, height, width, channels)
+        x shape: (timesteps, height, width, channels)
         """
         # Encoder
         self.process_inputs(x, mask=mask)
@@ -365,8 +368,8 @@ class CNNSeq2Seq(torch.nn.Module):
         """Update decoder input for next timestep"""
         if teacher_force and teacher_input is not None:
             # Use ground truth
-            # Convert teacher_input from (batch, height, width, channels) to (batch, channels, height, width)
-            teacher_input = teacher_input.permute(0, 3, 1, 2)
+            # Convert teacher_input from (height, width, channels) to (channels, height, width)
+            teacher_input = teacher_input.permute(2, 0, 1).unsqueeze(0)  # Add batch dimension
             
             # Keep positional encoding from current decoder input
             pos_encoding = self.decoder_input[:, 1:] if not self.multitask else self.decoder_input[:, 2:]

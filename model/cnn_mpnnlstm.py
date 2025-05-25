@@ -152,8 +152,8 @@ class NextFramePredictorCNNS2S(NextFramePredictorCNN):
                 
                 if climatology is not None:
                     concat_layers = self.get_climatology_array(climatology, launch_date)
-                    # Convert to CNN format: (timesteps, batch, channels, height, width)
-                    concat_layers = concat_layers.permute(1, 0, 2, 3).unsqueeze(1)  # Add batch dimension
+                    # Convert to CNN format: (timesteps, channels, height, width)
+                    concat_layers = concat_layers.unsqueeze(1)  # Add channel dimension: (timesteps, 1, height, width)
                 else:
                     concat_layers = None
                 
@@ -174,10 +174,13 @@ class NextFramePredictorCNNS2S(NextFramePredictorCNN):
                     # Convert to match expected format: (timesteps, batch, height, width, channels)
                     y_hat = y_hat.permute(0, 1, 3, 4, 2)
                     
+                    # Squeeze batch dimension since DataLoader batch_size=1
+                    y_hat = y_hat.squeeze(1)  # (timesteps, height, width, channels)
+                    
                     # Apply mask if provided
                     if mask is not None:
                         # Expand mask to match y_hat dimensions
-                        mask_expanded = mask.unsqueeze(0).unsqueeze(0).unsqueeze(-1).expand_as(y_hat)
+                        mask_expanded = mask.unsqueeze(0).unsqueeze(-1).expand_as(y_hat)
                         y_hat_masked = y_hat[~mask_expanded].reshape(-1, y_hat.shape[-1])
                         y_masked = y[~mask_expanded].reshape(-1, y.shape[-1])
                         loss = self.loss_func(y_hat_masked, y_masked)
@@ -207,7 +210,7 @@ class NextFramePredictorCNNS2S(NextFramePredictorCNN):
 
                 if climatology is not None:
                     concat_layers = self.get_climatology_array(climatology_test if climatology_test is not None else climatology, launch_date)
-                    concat_layers = concat_layers.permute(1, 0, 2, 3).unsqueeze(1)
+                    concat_layers = concat_layers.unsqueeze(1)  # Add channel dimension: (timesteps, 1, height, width)
                 else:
                     concat_layers = None
 
@@ -224,8 +227,11 @@ class NextFramePredictorCNNS2S(NextFramePredictorCNN):
                         y_hat = torch.stack(y_hat, dim=0)
                         y_hat = y_hat.permute(0, 1, 3, 4, 2)
                         
+                        # Squeeze batch dimension since DataLoader batch_size=1
+                        y_hat = y_hat.squeeze(1)  # (timesteps, height, width, channels)
+                        
                         if mask is not None:
-                            mask_expanded = mask.unsqueeze(0).unsqueeze(0).unsqueeze(-1).expand_as(y_hat)
+                            mask_expanded = mask.unsqueeze(0).unsqueeze(-1).expand_as(y_hat)
                             y_hat_masked = y_hat[~mask_expanded].reshape(-1, y_hat.shape[-1])
                             y_masked = y[~mask_expanded].reshape(-1, y.shape[-1])
                             loss = self.loss_func(y_hat_masked, y_masked)
@@ -271,8 +277,8 @@ class NextFramePredictorCNNS2S(NextFramePredictorCNN):
         Get the daily climate normals for each day of the year in the output timesteps
         """
         doys = [int_to_datetime(launch_date.numpy()[0] + 8.640e13 * t).timetuple().tm_yday - 1 for t in range(1, self.output_timesteps+1)]
-        out = climatology[:, doys]
-        out = torch.moveaxis(out, 0, -1)
+        out = climatology[:, :, doys]  # (height, width, timesteps)
+        out = torch.moveaxis(out, -1, 0)  # (timesteps, height, width)
         return out
         
     def predict(self, loader, climatology=None, mask=None, **kwargs):
@@ -291,7 +297,7 @@ class NextFramePredictorCNNS2S(NextFramePredictorCNN):
 
             if climatology is not None:
                 concat_layers = self.get_climatology_array(climatology, launch_date)
-                concat_layers = concat_layers.permute(1, 0, 2, 3).unsqueeze(1)
+                concat_layers = concat_layers.unsqueeze(1)  # Add channel dimension: (timesteps, 1, height, width)
             else:
                 concat_layers = None
 
@@ -306,6 +312,10 @@ class NextFramePredictorCNNS2S(NextFramePredictorCNN):
                 
                 # Convert outputs: list of (batch, channels, height, width) -> (timesteps, batch, height, width, channels)
                 y_hat = torch.stack(y_hat, dim=0).permute(0, 1, 3, 4, 2).detach().cpu()
+                
+                # Squeeze batch dimension since DataLoader batch_size=1
+                y_hat = y_hat.squeeze(1)  # (timesteps, height, width, channels)
+                
                 y_hat = np.array(y_hat)
                 
                 y_pred.append(y_hat)

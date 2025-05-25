@@ -79,7 +79,9 @@ if __name__ == '__main__':
     # Climatology for CNN (no flattening needed)
     climatology = ds[y_vars].fillna(0).groupby('time.dayofyear').mean('time', skipna=True).to_array().values
     climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
-    climatology = torch.moveaxis(climatology, 0, -1)
+    # Shape is (variables, height, width, days) -> (height, width, days)
+    climatology = climatology.squeeze(0)  # Remove variable dimension since y_vars has only 1 variable
+    # Now shape is (height, width, days) which is what get_climatology_array expects
 
     # Arguments passed to CNNSeq2Seq constructor
     model_kwargs = dict(
@@ -91,6 +93,7 @@ if __name__ == '__main__':
         rnn_type=rnn_type,
         kernel_size=3,
         padding=1,
+        multitask=False,  # Only predicting siconc, not multitask
     )
 
     experiment_name = f'CNN_M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
@@ -152,14 +155,11 @@ if __name__ == '__main__':
 
     try:
         # Try to create xarray Dataset
-        # val_preds: (num_samples, timesteps, batch, height, width, channels)
+        # val_preds: (num_samples, timesteps, height, width, channels)
         # y_true: (num_samples, output_timesteps, height, width, channels)
         
-        # Squeeze batch dimension from val_preds if it exists
-        if val_preds.ndim == 6:
-            val_preds_squeezed = val_preds.squeeze(2)  # Remove batch dimension
-        else:
-            val_preds_squeezed = val_preds
+        # No need to squeeze batch dimension anymore since it's handled in predict method
+        val_preds_squeezed = val_preds
         
         # Squeeze channel dimension if it's 1
         if val_preds_squeezed.shape[-1] == 1:
