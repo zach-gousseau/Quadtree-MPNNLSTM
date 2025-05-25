@@ -1,4 +1,3 @@
-import netCDF4
 import xarray as xr
 import dask
 import os
