@@ -6,8 +6,8 @@ import numpy as np
 from requests.sessions import Session
 
 
-USERNAME = 'your-cmems-username'
-PASSWORD = 'your-cmems-password'
+CMEMS_USERNAME = 'zgousseau'#'your_cmems_username'
+CMEMS_PASSWORD = 'Lopolmuk8!'
 DATASET_ID = 'cmems_mod_glo_phy_my_0.083_P1D-m'
 
 def copernicusmarine_datastore(dataset, username, password):
@@ -46,9 +46,22 @@ def get_glorys_values(ds, dt, var_='siconc', lats=(51, 70), lons=(-95, -65)):
     arr.values[np.isnan(ds_sub.zos.values)] = np.nan
     return arr
 
-def get_glorys(username, password):
-    data_store = copernicusmarine_datastore(DATASET_ID, username, password)
-    glorys = xr.open_dataset(data_store)
-    glorys['time'] = np.array([dt - 12 * 3600000000000 for dt in glorys.time.values])
-    glorys = glorys.rio.write_crs(4326)
-    return glorys
+import copernicusmarine
+
+def get_glorys(username, password, year):
+    copernicusmarine.login(username=username, password=password, force_overwrite=True)
+    ds = copernicusmarine.open_dataset(dataset_id='cmems_mod_glo_phy_my_0.083deg_P1D-m')
+    ds = ds.rio.write_crs(4326)
+    ds = ds.sel(time=slice(f'{year}-01-01', f'{year}-12-31'))
+    return ds
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-y', '--year', type=int, default=2024)
+    parser.add_argument('-o', '--output_dir', type=str, default='.')
+    args = parser.parse_args()
+    year = args.year
+    output_dir = args.output_dir
+    ds = get_glorys(CMEMS_USERNAME, CMEMS_PASSWORD)
+    ds.to_netcdf(f'{output_dir}/GLORYS_{year}.nc')

@@ -7,7 +7,6 @@ import datetime
 import argparse
 import glob
 
-from glorys import get_glorys
 
 """
 Combine ERA5 atmospheric data (stored locally) with GLORYS12 SIC data (from CMEMS online archive)
@@ -34,7 +33,7 @@ if __name__ == '__main__':
     era5 = era5[['t2m', 'v10', 'u10', 'sshf']]  # Only these atmospheric variables
 
     # Get GLORYS12 over OPENDAP
-    glorys = get_glorys(CMEMS_USERNAME, CMEMS_PASSWORD)
+    glorys = xr.open_dataset(f'/home/zgoussea/scratch/ERA5_GLORYS/GLORYS_{year}.nc')
     # glorys = glorys['siconc']  # Only SIC
     glorys = glorys[['siconc', 'sithick', 'thetao', 'vsi', 'usi', 'so']].isel(depth=0)  # Only SIC
     
