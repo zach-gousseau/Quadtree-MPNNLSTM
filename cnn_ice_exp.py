@@ -94,9 +94,13 @@ if __name__ == '__main__':
     )
 
     experiment_name = f'CNN_M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
+    
+    # Save model and losses    
+    results_dir = '/home/zgoussea/projects/def-ka3scott/zgoussea/Quadtree-MPNNLSTM/results/cnn_new'   
 
     model = NextFramePredictorCNNS2S(
         experiment_name=experiment_name,
+        directory=results_dir,
         input_features=input_features,
         input_timesteps=input_timesteps,
         output_timesteps=output_timesteps,
@@ -119,9 +123,6 @@ if __name__ == '__main__':
         mask=mask,    
         truncated_backprop=truncated_backprop,    
         )       
-
-    # Save model and losses    
-    results_dir = '/home/zgoussea/projects/def-ka3scott/zgoussea/Quadtree-MPNNLSTM/results/cnn_new'   
 
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
