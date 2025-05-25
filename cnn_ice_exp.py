@@ -61,7 +61,7 @@ if __name__ == '__main__':
     # -------------------------------------------
 
     # Full resolution dataset
-    ds = xr.open_mfdataset(glob.glob('/home/zgoussea/data/ERA5_GLORYS/*.nc'))
+    ds = xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5_GLORYS/*.nc'))
     mask = np.isnan(ds.siconc.isel(time=0)).values
     high_interest_region = None
 
