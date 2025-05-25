@@ -50,7 +50,7 @@ class CNNIceDataset(IceDataset):
         """
         
         if cache_dir is not None:
-            dataset_id = f'CNN_LA{ds.latitude.min().values.item()}_{ds.latitude.max().values.item()}_LO{ds.longitude.min().values.item()}_{ds.longitude.max().values.item()}' + \
+            dataset_id = f'LA{ds.latitude.min().values.item()}_{ds.latitude.max().values.item()}_LO{ds.longitude.min().values.item()}_{ds.longitude.max().values.item()}' + \
                          f'_RES{(ds.latitude[1] - ds.latitude[0]).values.item().__round__(4)}' + \
                          f'_Y{years[0]}_Y{years[-1]}' + \
                          f'_M{month}' + \
