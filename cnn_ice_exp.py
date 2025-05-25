@@ -81,6 +81,19 @@ if __name__ == '__main__':
     climatology = torch.tensor(np.nan_to_num(climatology)).to(device)
     # Shape is (variables, height, width, days) -> (height, width, days)
     climatology = climatology.squeeze(0)  # Remove variable dimension since y_vars has only 1 variable
+    
+    # Ensure climatology spatial dimensions match input data dimensions
+    # Input data has shape (samples, timesteps, height=229, width=361, channels)
+    # So climatology should have shape (height=229, width=361, days)
+    print(f"DEBUG: climatology shape after squeeze: {climatology.shape}")
+    print(f"DEBUG: expected input data spatial shape: (229, 361)")
+    
+    # If climatology dimensions are swapped, transpose them
+    if climatology.shape[0] == 361 and climatology.shape[1] == 229:
+        print("DEBUG: Transposing climatology to match input data dimensions")
+        climatology = climatology.transpose(1, 0, 2)  # (width, height, days) -> (height, width, days)
+    
+    print(f"DEBUG: final climatology shape: {climatology.shape}")
     # Now shape is (height, width, days) which is what get_climatology_array expects
 
     # Arguments passed to CNNSeq2Seq constructor
