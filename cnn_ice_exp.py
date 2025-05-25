@@ -82,18 +82,13 @@ if __name__ == '__main__':
     # Shape is (variables, height, width, days) -> (height, width, days)
     climatology = climatology.squeeze(0)  # Remove variable dimension since y_vars has only 1 variable
     
-    # Ensure climatology spatial dimensions match input data dimensions
-    # Input data has shape (samples, timesteps, height=229, width=361, channels)
-    # So climatology should have shape (height=229, width=361, days)
-    print(f"DEBUG: climatology shape after squeeze: {climatology.shape}")
-    print(f"DEBUG: expected input data spatial shape: (229, 361)")
+    # The climatology from xarray groupby has shape (days, height, width)
+    # We need to transpose it to (height, width, days)
+    if len(climatology.shape) == 3 and climatology.shape[0] == 366:  # 366 days in a year
+        print(f"Transposing climatology from {climatology.shape} to (height, width, days)")
+        climatology = climatology.transpose(1, 2, 0)  # (days, height, width) -> (height, width, days)
+        print(f"Final climatology shape: {climatology.shape}")
     
-    # If climatology dimensions are swapped, transpose them
-    if climatology.shape[0] == 361 and climatology.shape[1] == 229:
-        print("DEBUG: Transposing climatology to match input data dimensions")
-        climatology = climatology.transpose(1, 0, 2)  # (width, height, days) -> (height, width, days)
-    
-    print(f"DEBUG: final climatology shape: {climatology.shape}")
     # Now shape is (height, width, days) which is what get_climatology_array expects
 
     # Arguments passed to CNNSeq2Seq constructor

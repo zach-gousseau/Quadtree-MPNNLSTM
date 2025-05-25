@@ -149,14 +149,11 @@ class NextFramePredictorCNNS2S(NextFramePredictorCNN):
             for x, y, launch_date in tqdm(loader_train, leave=True):
 
                 x, y = x.squeeze(0).to(self.device), y.squeeze(0).to(self.device)
-                print(f"DEBUG: x shape after squeeze: {x.shape}")
-                print(f"DEBUG: y shape after squeeze: {y.shape}")
                 
                 if climatology is not None:
                     concat_layers = self.get_climatology_array(climatology, launch_date)
                     # Convert to CNN format: (timesteps, channels, height, width)
                     concat_layers = concat_layers.unsqueeze(1)  # Add channel dimension: (timesteps, 1, height, width)
-                    print(f"DEBUG: concat_layers shape after unsqueeze: {concat_layers.shape}")
                 else:
                     concat_layers = None
                 
@@ -279,13 +276,9 @@ class NextFramePredictorCNNS2S(NextFramePredictorCNN):
         """
         Get the daily climate normals for each day of the year in the output timesteps
         """
-        print(f"DEBUG: climatology shape: {climatology.shape}")
         doys = [int_to_datetime(launch_date.numpy()[0] + 8.640e13 * t).timetuple().tm_yday - 1 for t in range(1, self.output_timesteps+1)]
-        print(f"DEBUG: doys length: {len(doys)}")
         out = climatology[:, :, doys]  # (height, width, timesteps)
-        print(f"DEBUG: out shape after indexing: {out.shape}")
         out = torch.moveaxis(out, -1, 0)  # (timesteps, height, width)
-        print(f"DEBUG: out shape after moveaxis: {out.shape}")
         return out
         
     def predict(self, loader, climatology=None, mask=None, **kwargs):

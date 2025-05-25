@@ -150,14 +150,10 @@ class CNNDecoder(torch.nn.Module):
 
         # Use top layer's output
         output = F.leaky_relu(output)
-        print(f"DEBUG: output shape after leaky_relu: {output.shape}")
 
         # Concatenate with the concat layers
         if concat_layers is not None:
-            print(f"DEBUG: concat_layers shape in decoder: {concat_layers.shape}")
             cnn_output = self.cnn(concat_layers)
-            print(f"DEBUG: cnn_output shape: {cnn_output.shape}")
-            print(f"DEBUG: output shape before addition: {output.shape}")
             output = output + cnn_output
 
         # Pass output through the final CNN to reduce to desired dimensionality
@@ -296,7 +292,6 @@ class CNNSeq2Seq(torch.nn.Module):
             constant = torch.ones(1, height, width).to(x.device)
             
             self.decoder_input = torch.cat([x[-1, [0]], x_pos, y_pos, constant], dim=0).unsqueeze(0)  # Add batch dimension
-            print(f"DEBUG: decoder_input shape: {self.decoder_input.shape}")
 
     def unroll_output(self, unroll_steps, y, concat_layers=None, teacher_forcing_ratio=0.5, mask=None):
         """
