@@ -36,11 +36,9 @@ if __name__ == '__main__':
     # CLI arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--month')  # Month number
-    parser.add_argument('-e', '--exp')
 
     args = vars(parser.parse_args())
     month = int(args['month'])
-    exp = int(args['exp'])
 
     # Defaults
     lr = 0.001
