@@ -15,4 +15,4 @@ module load hdf5/1.14.2
 module load netcdf/4.9.2
 source /home/zgoussea/geospatial/bin/activate
 
-mpirun -np 1 python cnn_ice_dataset.py --month ${SLURM_ARRAY_TASK_ID}
+mpirun -np 1 python cnn_ice_exp.py --month ${SLURM_ARRAY_TASK_ID}
