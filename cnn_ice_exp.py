@@ -86,7 +86,7 @@ if __name__ == '__main__':
     # We need to transpose it to (height, width, days)
     if len(climatology.shape) == 3 and climatology.shape[0] == 366:  # 366 days in a year
         print(f"Transposing climatology from {climatology.shape} to (height, width, days)")
-        climatology = climatology.transpose(1, 2, 0)  # (days, height, width) -> (height, width, days)
+        climatology = climatology.permute(1, 2, 0)  # (days, height, width) -> (height, width, days)
         print(f"Final climatology shape: {climatology.shape}")
     
     # Now shape is (height, width, days) which is what get_climatology_array expects
