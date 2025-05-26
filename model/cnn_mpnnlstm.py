@@ -132,6 +132,10 @@ class NextFramePredictorCNNS2S(NextFramePredictorCNN):
 
         image_shape = loader_train.dataset.image_shape
         
+        # Convert mask to PyTorch tensor if provided
+        if mask is not None:
+            mask = torch.tensor(mask, dtype=torch.bool).to(self.device)
+        
         # Initialize training only if it's the first train() call
         if not self.training_initiated:
             self.initiate_training(lr, lr_decay, mask)
@@ -287,6 +291,10 @@ class NextFramePredictorCNNS2S(NextFramePredictorCNN):
         """
         
         image_shape = loader.dataset.image_shape
+        
+        # Convert mask to PyTorch tensor if provided
+        if mask is not None:
+            mask = torch.tensor(mask, dtype=torch.bool).to(self.device)
             
         self.model.to(self.device)
         
