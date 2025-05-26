@@ -99,8 +99,8 @@ class NextFramePredictorCNNS2S(NextFramePredictorCNN):
             self.model.load_state_dict(torch.load(os.path.join(directory, f'{self.experiment_name}.pth'), map_location=torch.device('cpu')))
 
     def initiate_training(self, lr, lr_decay, mask):
-        self.loss_func = MSE_SIP_bin_sep() if not self.binary else torch.nn.BCELoss()
-        self.loss_func_name = 'MSE_SIP_bin_sep' if not self.binary else 'BCE'
+        self.loss_func = MSE_SIP() if not self.binary else torch.nn.BCELoss()
+        self.loss_func_name = 'MSE_SIP' if not self.binary else 'BCE'
         
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.scheduler = StepLR(self.optimizer, step_size=3, gamma=lr_decay)
