@@ -56,7 +56,7 @@ if __name__ == '__main__':
 
     binary=False
     
-    n_epochs = 50
+    n_epochs = 1
         
     # -------------------------------------------
 
@@ -93,11 +93,11 @@ if __name__ == '__main__':
 
     # Arguments passed to CNNSeq2Seq constructor
     model_kwargs = dict(
-        hidden_size=32,
+        hidden_size=8,
         dropout=0.1,
         n_layers=1,
         dummy=False,
-        n_conv_layers=3,
+        n_conv_layers=2,
         rnn_type=rnn_type,
         kernel_size=3,
         padding=1,
