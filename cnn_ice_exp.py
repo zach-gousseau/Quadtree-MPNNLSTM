@@ -93,7 +93,7 @@ if __name__ == '__main__':
 
     # Arguments passed to CNNSeq2Seq constructor
     model_kwargs = dict(
-        hidden_size=32,
+        hidden_size=8,
         dropout=0.1,
         n_layers=1,
         dummy=False,
