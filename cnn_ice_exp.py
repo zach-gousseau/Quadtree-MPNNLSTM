@@ -107,7 +107,7 @@ if __name__ == '__main__':
     experiment_name = f'CNN_M{str(month)}_Y{training_years[0]}_Y{training_years[-1]}_I{input_timesteps}O{output_timesteps}'
     
     # Save model and losses    
-    results_dir = '/home/zgoussea/projects/def-ka3scott/zgoussea/Quadtree-MPNNLSTM/results/cnn_new'   
+    results_dir = '/home/zgoussea/projects/def-ka3scott/zgoussea/Quadtree-MPNNLSTM/results/cnn_new_2'   
 
     model = NextFramePredictorCNNS2S(
         experiment_name=experiment_name,
