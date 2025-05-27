@@ -126,7 +126,7 @@ months, ds = [], []
 for month in range(1, 13):
     print(month)
     try:
-        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_CNNLSTM_M{month}_Y{year_start}_Y{year_end}_I{timestep_in}O{timestep_out}.nc', engine='netcdf4').isel(launch_date=slice(0, 365)).astype('float16'))
+        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_CNN_M{month}_Y{year_start}_Y{year_end}_I{timestep_in}O{timestep_out}.nc', engine='netcdf4').isel(launch_date=slice(0, 365)).astype('float16'))
         months.append(month)
     except Exception as e: #FileNotFoundError:
         print(e)
