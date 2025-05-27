@@ -192,12 +192,11 @@ def get_preds(ds, persistence, climatology):
 
 
 
-mask = np.isnan(xr.open_dataset('data/ERA5_GLORYS/ERA5_GLORYS_1993.nc').siconc.isel(time=0)).values
+mask = np.isnan(xr.open_dataset('/home/zgoussea/scratch/ERA5_GLORYS/ERA5_GLORYS_1994.nc').siconc.isel(time=0)).values
 # mask = np.isnan(xr.open_mfdataset(glob.glob('/home/zgoussea/scratch/ERA5_D/*.nc')[0]).siconc.isel(time=0)).values
 # mask = np.isnan(xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc')).isel(latitude=slice(175, 275), longitude=slice(125, 225)).siconc.isel(time=0)).values
 
-results_dir = '/home/zgoussea/scratch/results'
-results_dir = f'{results_dir}/ice_results_20years_glorys_3conv_noconv_20yearsstraight_splitgconvlstm_adam_nodecay_lr001_1decoders_transformer_multitask'
+results_dir = f'/home/zgoussea/projects/def-ka3scott/zgoussea/Quadtree-MPNNLSTM/results/cnn_new'
 
 accuracy = False
 
@@ -208,7 +207,7 @@ for month in range(1, 13):
     print(month)
     try:
         # ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y{year_start}_Y{year_end}_I{timestep_in}O{timestep_out}.nc', engine='netcdf4').astype('float16'))
-        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_M{month}_Y{year_start}_Y{year_end}_I{timestep_in}O{timestep_out}.nc', engine='netcdf4').isel(launch_date=slice(0, 365)).astype('float16'))
+        ds.append(xr.open_dataset(f'{results_dir}/valpredictions_CNN_M{month}_Y{year_start}_Y{year_end}_I{timestep_in}O{timestep_out}.nc', engine='netcdf4').isel(launch_date=slice(0, 365)).astype('float16'))
         months.append(month)
     except Exception as e: #FileNotFoundError:
         print(e)
@@ -244,7 +243,7 @@ num_timesteps = ds.timestep.size
 if not os.path.exists(f'{results_dir}/gif'):
     os.makedirs(f'{results_dir}/gif')
 
-generate_gif = True
+generate_gif = False
 year = int(ds.launch_date.dt.year.values[0])
 if generate_gif:
     ld = 15
@@ -308,24 +307,24 @@ plt.savefig(f'{results_dir}/losses.png')
 
 # HEATMAP ----------------------
 
-# heatmap = create_heatmap_fast(ds[['y_true', 'y_hat_sic']], accuracy )
-# heatmap.to_csv(f'{results_dir}/heatmap.csv')
-
-# plt.figure(dpi=80)
-# sns.heatmap(heatmap, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.28, vmin=0.02)
-# plt.xlabel('Lead time (days)')
-# plt.savefig(f'{results_dir}/heatmap.png')
-# plt.close()
-# allo
-
-heatmap = create_heatmap_fast(ds[['y_true', 'y_hat_sip']], accuracy=True)
-heatmap.to_csv(f'{results_dir}/heatmap_bin.csv')
+heatmap = create_heatmap_fast(ds[['y_true', 'y_hat']], accuracy )
+heatmap.to_csv(f'{results_dir}/heatmap.csv')
 
 plt.figure(dpi=80)
-sns.heatmap(heatmap, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=1, vmin=0.8)
+sns.heatmap(heatmap, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=0.28, vmin=0.02)
 plt.xlabel('Lead time (days)')
-plt.savefig(f'{results_dir}/heatmap_bin.png')
+plt.savefig(f'{results_dir}/heatmap.png')
 plt.close()
+# allo
+
+# heatmap = create_heatmap_fast(ds[['y_true', 'y_hat_sip']], accuracy=True)
+# heatmap.to_csv(f'{results_dir}/heatmap_bin.csv')
+
+# plt.figure(dpi=80)
+# sns.heatmap(heatmap, yticklabels=[month_name[i][:3] for i in range(1, 13)], vmax=1, vmin=0.8)
+# plt.xlabel('Lead time (days)')
+# plt.savefig(f'{results_dir}/heatmap_bin.png')
+# plt.close()
 
 
 # climatology = xr.open_mfdataset(glob.glob('data/ERA5_GLORYS/*.nc'))
