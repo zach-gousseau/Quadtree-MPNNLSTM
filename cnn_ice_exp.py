@@ -139,7 +139,9 @@ if __name__ == '__main__':
         os.makedirs(results_dir)
 
     model.loss.to_csv(f'{results_dir}/loss_{experiment_name}.csv')
-    model.save(results_dir)
+    # model.save(results_dir)
+    
+    model.load(results_dir)
     
     # Generate predictions
     model.model.eval()
